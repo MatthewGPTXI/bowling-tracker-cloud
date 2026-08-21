@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isGroupMember(groupId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+    }
+
+    // Each user's full bowling history is private to that account.
+    match /users/{userId} {
+      allow read, create, update, delete: if isSelf(userId);
+
+      match /games/{gameId} {
+        allow read, create, update, delete: if isSelf(userId);
+      }
+    }
+
+    // Group IDs double as invite codes. A signed-in user can fetch a group
+    // only when they already know its exact code; listing all groups is blocked.
+    match /groups/{groupId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if signedIn()
+        && resource.data.ownerUid == request.auth.uid;
+
+      match /members/{memberId} {
+        // Only existing members can read the group's leaderboard rows.
+        allow read: if isGroupMember(groupId);
+
+        // A user may create/update only their own leaderboard row.
+        allow create: if isSelf(memberId)
+          && exists(/databases/$(database)/documents/groups/$(groupId))
+          && request.resource.data.uid == request.auth.uid;
+        allow update: if isSelf(memberId)
+          && request.resource.data.uid == request.auth.uid;
+        allow delete: if isSelf(memberId);
+      }
+    }
+  }
+}

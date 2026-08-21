@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17213a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Bowling Tracker">
+  <meta name="description" content="Offline-first personal bowling tracker for scores, sessions, strikes, open frames, clean games, series, and more.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Bowling Tracker</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">OFFLINE BOWLING LOG</p>
+        <h1>Bowling Tracker</h1>
+        <p class="subtitle">Games, sessions, averages, strikes, clean games, personal bests, optional cloud sync, and friend leaderboards.</p>
+      </div>
+      <div class="top-actions">
+        <button id="installBtn" class="btn secondary hidden" type="button">Install</button>
+        <button id="openCloudBtn" class="btn secondary cloud-button" type="button"><span id="cloudButtonDot" class="status-dot"></span><span id="cloudButtonLabel">Cloud</span></button>
+        <button id="openSettingsBtn" class="btn secondary" type="button">Settings</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="stats-grid" aria-label="Career statistics">
+        <article class="stat-card primary-stat">
+          <span class="stat-label">Average</span>
+          <strong id="statAverage" class="stat-value">—</strong>
+          <span id="statAverageDetail" class="stat-detail">0 games</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">High game</span>
+          <strong id="statHighGame" class="stat-value">—</strong>
+          <span id="statHighGameDetail" class="stat-detail">No games yet</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">High 3-game series</span>
+          <strong id="statHighSeries" class="stat-value">—</strong>
+          <span id="statHighSeriesDetail" class="stat-detail">Need 3 games in one session</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Strike %</span>
+          <strong id="statStrikePct" class="stat-value">—</strong>
+          <span id="statStrikePctDetail" class="stat-detail">0 strikes</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Open frames / game</span>
+          <strong id="statOpenAvg" class="stat-value">—</strong>
+          <span id="statOpenRateDetail" class="stat-detail">0% open-frame rate</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Clean games</span>
+          <strong id="statCleanGames" class="stat-value">0</strong>
+          <span id="statCleanGamesDetail" class="stat-detail">0% of games</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Total strikes</span>
+          <strong id="statTotalStrikes" class="stat-value">0</strong>
+          <span id="statStrikesPerGame" class="stat-detail">0 per game</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Sessions</span>
+          <strong id="statSessions" class="stat-value">0</strong>
+          <span id="statGamesAndMilestones" class="stat-detail">0 games · 0 scores of 200+</span>
+        </article>
+      </section>
+
+      <section class="panel entry-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LOG A GAME</p>
+            <h2 id="entryHeading">Add game</h2>
+            <p id="entrySubheading" class="section-copy">Enter the numbers directly or use a scoreboard photo as a reference.</p>
+          </div>
+          <div class="segmented" role="group" aria-label="Entry method">
+            <button id="manualTab" class="segment active" type="button">Manual</button>
+            <button id="photoTab" class="segment" type="button">Photo</button>
+          </div>
+        </div>
+
+        <div id="photoArea" class="photo-area hidden">
+          <label class="upload-box" for="scoreboardPhoto">
+            <span class="upload-icon">📷</span>
+            <strong>Choose or take a scoreboard photo</strong>
+            <span>The photo stays on your device and is used only as a visual reference in this version.</span>
+          </label>
+          <input id="scoreboardPhoto" class="visually-hidden" type="file" accept="image/*" capture="environment">
+          <div id="photoPreviewWrap" class="photo-preview-wrap hidden">
+            <img id="photoPreview" alt="Selected bowling scoreboard">
+            <button id="clearPhotoBtn" class="btn secondary compact" type="button">Remove photo</button>
+          </div>
+          <div class="notice">
+            <strong>Photo workflow ready.</strong> You can take/select a photo, then confirm or edit the fields below. Automatic scoreboard OCR can be added later without changing your saved-data format.
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            <span>Bowler</span>
+            <input id="bowlerInput" type="text" autocomplete="name" placeholder="Your name">
+          </label>
+          <label>
+            <span>Date</span>
+            <input id="dateInput" type="date">
+          </label>
+          <label>
+            <span>Session name <small>optional</small></span>
+            <input id="sessionNameInput" type="text" placeholder="League night, Practice…">
+          </label>
+          <label>
+            <span>Game score</span>
+            <input id="scoreInput" type="number" min="0" max="300" inputmode="numeric" placeholder="0–300">
+          </label>
+          <label>
+            <span>Open frames</span>
+            <input id="openFramesInput" type="number" min="0" max="10" inputmode="numeric" placeholder="0–10">
+          </label>
+          <label>
+            <span>Strikes</span>
+            <input id="strikesInput" type="number" min="0" max="12" inputmode="numeric" placeholder="0–12">
+          </label>
+          <label>
+            <span>Strike opportunities <small>10–12</small></span>
+            <input id="strikeOppInput" type="number" min="1" max="12" inputmode="numeric" value="10">
+            <small class="field-help">Use 11 or 12 when tenth-frame fill shots created extra strike chances.</small>
+          </label>
+          <label>
+            <span>Notes <small>optional</small></span>
+            <input id="notesInput" type="text" placeholder="Lane, ball, tournament, oil pattern…">
+          </label>
+        </div>
+
+        <div class="entry-actions">
+          <button id="saveGameBtn" class="btn primary" type="button">Save game</button>
+          <button id="cancelEditBtn" class="btn secondary hidden" type="button">Cancel edit</button>
+          <span id="entryStatus" class="status-text" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading history-heading">
+          <div>
+            <p class="eyebrow">HISTORY</p>
+            <h2>Sessions</h2>
+            <p class="section-copy">Games on the same date with the same session name are grouped together automatically.</p>
+          </div>
+          <div class="history-filters">
+            <label>
+              <span>Bowler</span>
+              <select id="bowlerFilter">
+                <option value="all">All bowlers</option>
+              </select>
+            </label>
+            <label>
+              <span>Sort</span>
+              <select id="sortFilter">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="highscore">Highest game</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div id="emptyHistory" class="empty-state">
+          <div class="empty-icon">🎳</div>
+          <strong>No games yet</strong>
+          <span>Add your first game above. Your history will appear here.</span>
+        </div>
+        <div id="sessionsList" class="sessions-list"></div>
+      </section>
+
+      <section class="panel milestones-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">MORE STATS</p>
+            <h2>Milestones & form</h2>
+          </div>
+        </div>
+        <div class="milestone-grid">
+          <div class="mini-stat"><span>Games</span><strong id="moreGames">0</strong></div>
+          <div class="mini-stat"><span>200+ games</span><strong id="more200">0</strong></div>
+          <div class="mini-stat"><span>250+ games</span><strong id="more250">0</strong></div>
+          <div class="mini-stat"><span>Perfect games</span><strong id="more300">0</strong></div>
+          <div class="mini-stat"><span>Avg strikes / game</span><strong id="moreStrikeAvg">—</strong></div>
+          <div class="mini-stat"><span>Clean-game rate</span><strong id="moreCleanRate">—</strong></div>
+          <div class="mini-stat"><span>Last 5 average</span><strong id="moreLast5">—</strong></div>
+          <div class="mini-stat"><span>Best session avg</span><strong id="moreBestSessionAvg">—</strong></div>
+        </div>
+      </section>
+      <section class="panel leaderboard-panel" id="leaderboardPanel">
+        <div class="section-heading leaderboard-heading">
+          <div>
+            <p class="eyebrow">FRIENDS</p>
+            <h2>Leaderboard</h2>
+            <p class="section-copy">Create a private bowling group, share the invite code, and compare stats across your friends.</p>
+          </div>
+          <div class="leaderboard-controls">
+            <label>
+              <span>Group</span>
+              <select id="leaderboardGroupSelect" disabled>
+                <option value="">No group selected</option>
+              </select>
+            </label>
+            <label>
+              <span>Rank by</span>
+              <select id="leaderboardMetricSelect">
+                <option value="average">Average</option>
+                <option value="highGame">High game</option>
+                <option value="highSeries">High series</option>
+                <option value="strikePct">Strike %</option>
+                <option value="cleanGames">Clean games</option>
+                <option value="totalStrikes">Total strikes</option>
+                <option value="bestSessionAvg">Best session avg</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div id="leaderboardSignedOut" class="empty-state">
+          <div class="empty-icon">☁️</div>
+          <strong>Cloud sync is optional</strong>
+          <span>Connect a free Firebase account to sync your games across devices and join private leaderboards.</span>
+          <button id="leaderboardConnectBtn" class="btn primary" type="button">Set up cloud sync</button>
+        </div>
+        <div id="leaderboardNoGroup" class="empty-state hidden">
+          <div class="empty-icon">🏆</div>
+          <strong>No bowling group yet</strong>
+          <span>Create one or join a friend's invite code from Cloud settings.</span>
+          <button id="leaderboardManageGroupsBtn" class="btn secondary" type="button">Manage groups</button>
+        </div>
+        <div id="leaderboardContent" class="hidden">
+          <div class="leaderboard-meta">
+            <div>
+              <strong id="leaderboardGroupName">Bowling Group</strong>
+              <span id="leaderboardGroupCode" class="group-code">Invite code —</span>
+            </div>
+            <div class="leaderboard-refresh">
+              <button id="refreshLeaderboardBtn" class="btn secondary compact" type="button">Refresh</button>
+              <span id="leaderboardStatus" class="status-text" aria-live="polite"></span>
+            </div>
+          </div>
+          <div class="leaderboard-table-wrap">
+            <table class="leaderboard-table">
+              <thead>
+                <tr><th>Rank</th><th>Bowler</th><th id="leaderboardMetricHeading">Average</th><th>Games</th></tr>
+              </thead>
+              <tbody id="leaderboardBody"></tbody>
+            </table>
+          </div>
+          <p class="small-note leaderboard-note">Average and strike-rate rankings are marked provisional until a bowler has 10 games.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Offline-first · Local by default · Optional Firebase sync</span>
+      <span id="offlineStatus">Checking offline support…</span>
+    </footer>
+  </div>
+
+  <dialog id="settingsDialog">
+    <div class="dialog-inner">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">DATA & BACKUP</p>
+          <h2>Settings</h2>
+        </div>
+        <button id="closeSettingsBtn" class="icon-btn" type="button" aria-label="Close settings">×</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>Default bowler</h3>
+        <label>
+          <span>Name</span>
+          <input id="defaultBowlerInput" type="text" placeholder="Your name">
+        </label>
+        <button id="saveDefaultBowlerBtn" class="btn secondary" type="button">Save default</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>Backups</h3>
+        <p>JSON backup preserves every saved game and can be imported later. CSV is convenient for spreadsheets.</p>
+        <div class="button-row">
+          <button id="exportJsonBtn" class="btn secondary" type="button">Export backup</button>
+          <button id="exportCsvBtn" class="btn secondary" type="button">Export CSV</button>
+          <button id="importJsonBtn" class="btn secondary" type="button">Import backup</button>
+          <input id="importJsonInput" class="visually-hidden" type="file" accept="application/json,.json">
+        </div>
+        <p class="small-note">Scoreboard photos are not included in backups because this version does not save photos after the game is entered.</p>
+      </div>
+
+      <div class="settings-section danger-zone">
+        <h3>Reset</h3>
+        <p>Deletes all bowling history from this device. When signed in, those deletions also sync to your cloud account.</p>
+        <button id="clearAllBtn" class="btn danger" type="button">Delete all data</button>
+      </div>
+      <div id="settingsStatus" class="status-text" aria-live="polite"></div>
+    </div>
+  </dialog>
+
+  <dialog id="cloudDialog">
+    <div class="dialog-inner">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">CLOUD SYNC</p>
+          <h2>Account & leaderboards</h2>
+        </div>
+        <button id="closeCloudBtn" class="icon-btn" type="button" aria-label="Close cloud settings">×</button>
+      </div>
+
+      <div id="cloudConfigMissing" class="settings-section">
+        <h3>Firebase connection needed</h3>
+        <p>This build is cloud-ready, but it still needs the Firebase configuration from your own free project. Paste that configuration into <code>firebase-config.js</code>, then upload the updated files to GitHub.</p>
+        <p class="small-note">The Firebase web configuration is designed to live in client code. Access to your bowling data is controlled by Authentication and Firestore Security Rules.</p>
+      </div>
+
+      <div id="cloudOfflineNotice" class="notice cloud-notice hidden">
+        You are offline. Bowling data still saves locally; cloud changes will sync after you reconnect.
+      </div>
+
+      <div id="cloudSignedOut" class="settings-section hidden">
+        <h3>Sign in or create an account</h3>
+        <p>Use the same account on another phone or computer to pull down your bowling history.</p>
+        <div class="cloud-auth-grid">
+          <label>
+            <span>Leaderboard name</span>
+            <input id="cloudDisplayNameInput" type="text" autocomplete="nickname" placeholder="Matthew">
+          </label>
+          <label>
+            <span>Email</span>
+            <input id="cloudEmailInput" type="email" autocomplete="email" placeholder="you@example.com">
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="cloudPasswordInput" type="password" autocomplete="current-password" placeholder="At least 6 characters">
+          </label>
+        </div>
+        <div class="button-row">
+          <button id="cloudSignInBtn" class="btn primary" type="button">Sign in</button>
+          <button id="cloudCreateAccountBtn" class="btn secondary" type="button">Create account</button>
+          <button id="cloudResetPasswordBtn" class="text-btn" type="button">Reset password</button>
+        </div>
+      </div>
+
+      <div id="cloudSignedIn" class="hidden">
+        <div class="settings-section account-summary">
+          <div>
+            <h3>Signed in</h3>
+            <p id="cloudAccountEmail">—</p>
+          </div>
+          <span id="cloudSyncBadge" class="sync-badge">Ready</span>
+        </div>
+
+        <div class="settings-section">
+          <h3>Leaderboard profile</h3>
+          <p>Your cloud account can sync every locally saved game, while the leaderboard uses one selected bowler name for your public stats.</p>
+          <div class="cloud-profile-grid">
+            <label>
+              <span>Display name</span>
+              <input id="profileDisplayNameInput" type="text" placeholder="Matthew">
+            </label>
+            <label>
+              <span>Stats bowler</span>
+              <select id="profileBowlerSelect"></select>
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="saveCloudProfileBtn" class="btn secondary" type="button">Save profile</button>
+            <button id="syncNowBtn" class="btn secondary" type="button">Sync now</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Private bowling groups</h3>
+          <p>Create a group and share its invite code, or enter a friend's code to join their leaderboard.</p>
+          <div class="group-actions-grid">
+            <div class="group-action-box">
+              <label>
+                <span>New group name</span>
+                <input id="newGroupNameInput" type="text" placeholder="Friday Night Bowling">
+              </label>
+              <button id="createGroupBtn" class="btn secondary" type="button">Create group</button>
+            </div>
+            <div class="group-action-box">
+              <label>
+                <span>Invite code</span>
+                <input id="joinGroupCodeInput" type="text" inputmode="text" autocapitalize="characters" placeholder="AB7K9Q2P">
+              </label>
+              <button id="joinGroupBtn" class="btn secondary" type="button">Join group</button>
+            </div>
+          </div>
+          <div id="myGroupsList" class="my-groups-list"></div>
+        </div>
+
+        <div class="settings-section">
+          <button id="cloudSignOutBtn" class="btn secondary" type="button">Sign out</button>
+        </div>
+      </div>
+      <div id="cloudStatus" class="status-text" aria-live="polite"></div>
+    </div>
+  </dialog>
+
+  <script src="./app.js" defer></script>
+  <script src="./firebase-config.js" defer></script>
+  <script src="./cloud.js" defer></script>
+</body>
+</html>

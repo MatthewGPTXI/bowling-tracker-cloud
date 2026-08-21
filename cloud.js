@@ -1,0 +1,874 @@
+(() => {
+  'use strict';
+
+  const FIREBASE_SDK_VERSION = '12.17.1';
+  const config = window.BOWLING_FIREBASE_CONFIG || {};
+  const $ = (id) => document.getElementById(id);
+
+  const dom = {
+    openCloudBtn: $('openCloudBtn'),
+    cloudButtonDot: $('cloudButtonDot'),
+    cloudButtonLabel: $('cloudButtonLabel'),
+    cloudDialog: $('cloudDialog'),
+    closeCloudBtn: $('closeCloudBtn'),
+    configMissing: $('cloudConfigMissing'),
+    offlineNotice: $('cloudOfflineNotice'),
+    signedOut: $('cloudSignedOut'),
+    signedIn: $('cloudSignedIn'),
+    cloudStatus: $('cloudStatus'),
+    displayName: $('cloudDisplayNameInput'),
+    email: $('cloudEmailInput'),
+    password: $('cloudPasswordInput'),
+    signInBtn: $('cloudSignInBtn'),
+    createAccountBtn: $('cloudCreateAccountBtn'),
+    resetPasswordBtn: $('cloudResetPasswordBtn'),
+    accountEmail: $('cloudAccountEmail'),
+    syncBadge: $('cloudSyncBadge'),
+    profileDisplayName: $('profileDisplayNameInput'),
+    profileBowler: $('profileBowlerSelect'),
+    saveProfileBtn: $('saveCloudProfileBtn'),
+    syncNowBtn: $('syncNowBtn'),
+    signOutBtn: $('cloudSignOutBtn'),
+    newGroupName: $('newGroupNameInput'),
+    createGroupBtn: $('createGroupBtn'),
+    joinGroupCode: $('joinGroupCodeInput'),
+    joinGroupBtn: $('joinGroupBtn'),
+    myGroupsList: $('myGroupsList'),
+    leaderboardConnectBtn: $('leaderboardConnectBtn'),
+    leaderboardManageGroupsBtn: $('leaderboardManageGroupsBtn'),
+    groupSelect: $('leaderboardGroupSelect'),
+    metricSelect: $('leaderboardMetricSelect'),
+    leaderboardSignedOut: $('leaderboardSignedOut'),
+    leaderboardNoGroup: $('leaderboardNoGroup'),
+    leaderboardContent: $('leaderboardContent'),
+    leaderboardGroupName: $('leaderboardGroupName'),
+    leaderboardGroupCode: $('leaderboardGroupCode'),
+    leaderboardMetricHeading: $('leaderboardMetricHeading'),
+    leaderboardBody: $('leaderboardBody'),
+    leaderboardStatus: $('leaderboardStatus'),
+    refreshLeaderboardBtn: $('refreshLeaderboardBtn')
+  };
+
+  let modules = null;
+  let firebaseApp = null;
+  let auth = null;
+  let firestore = null;
+  let currentUser = null;
+  let profile = null;
+  let groups = [];
+  let selectedGroupId = '';
+  let initializing = null;
+  let syncing = false;
+  let lastSyncAt = 0;
+
+  const metricInfo = {
+    average: { label: 'Average', format: (v) => Number(v || 0).toFixed(1), provisional: true },
+    highGame: { label: 'High game', format: (v) => String(Number(v || 0)) },
+    highSeries: { label: 'High series', format: (v) => String(Number(v || 0)) },
+    strikePct: { label: 'Strike %', format: (v) => `${Number(v || 0).toFixed(1)}%`, provisional: true },
+    cleanGames: { label: 'Clean games', format: (v) => String(Number(v || 0)) },
+    totalStrikes: { label: 'Total strikes', format: (v) => String(Number(v || 0)) },
+    bestSessionAvg: { label: 'Best session avg', format: (v) => Number(v || 0).toFixed(1) }
+  };
+
+  function configReady() {
+    const required = ['apiKey', 'authDomain', 'projectId', 'appId'];
+    return required.every((key) => {
+      const value = String(config[key] || '');
+      return value && !value.includes('PASTE_');
+    });
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, (char) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[char]));
+  }
+
+  function setStatus(message, type = '') {
+    if (!dom.cloudStatus) return;
+    dom.cloudStatus.textContent = message;
+    dom.cloudStatus.classList.remove('success', 'error');
+    if (type) dom.cloudStatus.classList.add(type);
+  }
+
+  function setLeaderboardStatus(message, type = '') {
+    if (!dom.leaderboardStatus) return;
+    dom.leaderboardStatus.textContent = message;
+    dom.leaderboardStatus.classList.remove('success', 'error');
+    if (type) dom.leaderboardStatus.classList.add(type);
+  }
+
+  function setSyncBadge(text, state = '') {
+    if (!dom.syncBadge) return;
+    dom.syncBadge.textContent = text;
+    dom.syncBadge.className = `sync-badge ${state}`.trim();
+  }
+
+  function setCloudButton(state, label) {
+    if (dom.cloudButtonLabel) dom.cloudButtonLabel.textContent = label;
+    if (dom.cloudButtonDot) dom.cloudButtonDot.className = `status-dot ${state}`.trim();
+  }
+
+  function friendlyError(error) {
+    const code = error?.code || '';
+    const map = {
+      'auth/invalid-credential': 'Email or password was not accepted.',
+      'auth/email-already-in-use': 'That email already has an account. Try Sign in.',
+      'auth/weak-password': 'Choose a stronger password.',
+      'auth/invalid-email': 'Enter a valid email address.',
+      'auth/too-many-requests': 'Too many attempts. Try again later.',
+      'auth/network-request-failed': 'Network unavailable. Your local bowling data is still safe.',
+      'permission-denied': 'Firebase blocked this request. Check that the provided Firestore rules are published.'
+    };
+    return map[code] || error?.message || 'Something went wrong with cloud sync.';
+  }
+
+  function waitForBowlingApp() {
+    if (window.BowlingApp?.ready) return Promise.resolve(window.BowlingApp);
+    return new Promise((resolve) => {
+      window.addEventListener('bowling:ready', () => resolve(window.BowlingApp), { once: true });
+    });
+  }
+
+  async function loadFirebaseModules() {
+    if (modules) return modules;
+    const base = `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}`;
+    const [appModule, authModule, firestoreModule] = await Promise.all([
+      import(`${base}/firebase-app.js`),
+      import(`${base}/firebase-auth.js`),
+      import(`${base}/firebase-firestore.js`)
+    ]);
+    modules = { ...appModule, ...authModule, ...firestoreModule };
+    return modules;
+  }
+
+  async function initFirebase() {
+    if (!configReady()) {
+      renderConnectionState();
+      return false;
+    }
+    if (firebaseApp) return true;
+    if (!navigator.onLine) {
+      renderConnectionState();
+      return false;
+    }
+    if (initializing) return initializing;
+
+    initializing = (async () => {
+      try {
+        setCloudButton('working', 'Cloud…');
+        const fb = await loadFirebaseModules();
+        firebaseApp = fb.initializeApp(config);
+        auth = fb.getAuth(firebaseApp);
+        firestore = fb.getFirestore(firebaseApp);
+        await fb.setPersistence(auth, fb.browserLocalPersistence);
+        fb.onAuthStateChanged(auth, handleAuthStateChanged);
+        return true;
+      } catch (error) {
+        console.error(error);
+        setCloudButton('error', 'Cloud error');
+        setStatus(friendlyError(error), 'error');
+        return false;
+      } finally {
+        initializing = null;
+      }
+    })();
+
+    return initializing;
+  }
+
+  function renderConnectionState() {
+    const configured = configReady();
+    dom.configMissing?.classList.toggle('hidden', configured);
+    dom.offlineNotice?.classList.toggle('hidden', navigator.onLine);
+
+    if (!configured) {
+      setCloudButton('off', 'Cloud setup');
+      dom.signedOut?.classList.add('hidden');
+      dom.signedIn?.classList.add('hidden');
+      dom.leaderboardSignedOut?.classList.remove('hidden');
+      dom.leaderboardNoGroup?.classList.add('hidden');
+      dom.leaderboardContent?.classList.add('hidden');
+      return;
+    }
+
+    if (!navigator.onLine && !currentUser) {
+      setCloudButton('off', 'Cloud offline');
+    } else if (currentUser) {
+      setCloudButton('on', 'Cloud ✓');
+    } else {
+      setCloudButton('off', 'Cloud');
+    }
+
+    dom.signedOut?.classList.toggle('hidden', Boolean(currentUser));
+    dom.signedIn?.classList.toggle('hidden', !currentUser);
+    dom.leaderboardSignedOut?.classList.toggle('hidden', Boolean(currentUser));
+    if (!currentUser) {
+      dom.leaderboardNoGroup?.classList.add('hidden');
+      dom.leaderboardContent?.classList.add('hidden');
+    }
+  }
+
+  async function userProfileRef() {
+    return modules.doc(firestore, 'users', currentUser.uid);
+  }
+
+  async function loadOrCreateProfile() {
+    const app = await waitForBowlingApp();
+    const ref = await userProfileRef();
+    const snap = await modules.getDoc(ref);
+    if (snap.exists()) {
+      profile = snap.data();
+    } else {
+      const defaultBowler = (await app.getDefaultBowler()) || app.getBowlerNames()[0] || currentUser.displayName || '';
+      profile = {
+        email: currentUser.email || '',
+        displayName: currentUser.displayName || defaultBowler || 'Bowler',
+        statsBowler: defaultBowler || currentUser.displayName || 'Bowler',
+        groupIds: [],
+        activeGroupId: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      await modules.setDoc(ref, profile, { merge: true });
+    }
+    profile.groupIds = Array.isArray(profile.groupIds) ? profile.groupIds : [];
+    return profile;
+  }
+
+  function updateProfileBowlerOptions() {
+    if (!dom.profileBowler || !window.BowlingApp) return;
+    const bowlers = window.BowlingApp.getBowlerNames();
+    const selected = profile?.statsBowler || bowlers[0] || '';
+    dom.profileBowler.innerHTML = bowlers.length
+      ? bowlers.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')
+      : '<option value="">No local bowlers yet</option>';
+    if (bowlers.includes(selected)) dom.profileBowler.value = selected;
+  }
+
+  async function renderAccount() {
+    renderConnectionState();
+    if (!currentUser || !profile) return;
+    dom.accountEmail.textContent = currentUser.email || 'Signed in';
+    dom.profileDisplayName.value = profile.displayName || currentUser.displayName || '';
+    updateProfileBowlerOptions();
+    await loadGroups();
+  }
+
+  async function handleAuthStateChanged(user) {
+    currentUser = user || null;
+    profile = null;
+    groups = [];
+    selectedGroupId = '';
+    renderConnectionState();
+
+    if (!currentUser) {
+      setSyncBadge('Signed out');
+      renderGroups();
+      renderLeaderboardShell();
+      return;
+    }
+
+    try {
+      setCloudButton('working', 'Cloud…');
+      await loadOrCreateProfile();
+      await renderAccount();
+      await syncAll('Signed in');
+      setCloudButton('on', 'Cloud ✓');
+    } catch (error) {
+      console.error(error);
+      setStatus(friendlyError(error), 'error');
+      setCloudButton('error', 'Cloud error');
+    }
+  }
+
+  function cloudGameRef(id) {
+    return modules.doc(firestore, 'users', currentUser.uid, 'games', String(id));
+  }
+
+  function cloudGamePayload(game) {
+    return {
+      id: Number(game.id),
+      bowler: String(game.bowler),
+      date: String(game.date),
+      sessionName: String(game.sessionName || ''),
+      score: Number(game.score),
+      openFrames: Number(game.openFrames),
+      strikes: Number(game.strikes),
+      strikeOpportunities: Number(game.strikeOpportunities || 10),
+      notes: String(game.notes || ''),
+      createdAt: Number(game.createdAt || Date.now()),
+      updatedAt: Number(game.updatedAt || Date.now()),
+      deleted: false,
+      schemaVersion: 2
+    };
+  }
+
+  function cloudDeletePayload(tombstone) {
+    return {
+      id: Number(tombstone.id),
+      updatedAt: Number(tombstone.updatedAt || Date.now()),
+      deleted: true,
+      schemaVersion: 2
+    };
+  }
+
+  async function writeInChunks(operations) {
+    const chunkSize = 30;
+    for (let i = 0; i < operations.length; i += chunkSize) {
+      const chunk = operations.slice(i, i + chunkSize);
+      await Promise.all(chunk.map((op) => modules.setDoc(op.ref, op.data)));
+    }
+  }
+
+  async function syncAll(reason = 'Sync') {
+    if (!currentUser || !firestore || syncing) return;
+    if (!navigator.onLine) {
+      setSyncBadge('Local only', 'pending');
+      setStatus('Offline: changes are saved locally and will sync when you reconnect.');
+      return;
+    }
+
+    syncing = true;
+    setSyncBadge('Syncing…', 'working');
+    setStatus(`${reason}: syncing local and cloud bowling history…`);
+
+    try {
+      const app = await waitForBowlingApp();
+      const localGames = app.getGames();
+      const localTombstones = await app.getTombstones();
+      const localGameMap = new Map(localGames.map((game) => [Number(game.id), game]));
+      const tombstoneMap = new Map(localTombstones.map((t) => [Number(t.id), t]));
+      const remoteSnap = await modules.getDocs(modules.collection(firestore, 'users', currentUser.uid, 'games'));
+      const remoteMap = new Map();
+      remoteSnap.forEach((item) => remoteMap.set(Number(item.id), item.data()));
+
+      const cloudWrites = [];
+      const localUpserts = [];
+      const localDeletes = [];
+
+      for (const [id, remote] of remoteMap.entries()) {
+        const local = localGameMap.get(id);
+        const tombstone = tombstoneMap.get(id);
+        const remoteAt = Number(remote.updatedAt || 0);
+        const localAt = Number(local?.updatedAt || 0);
+        const deleteAt = Number(tombstone?.updatedAt || 0);
+
+        if (remote.deleted) {
+          if (local && localAt > remoteAt && localAt > deleteAt) {
+            cloudWrites.push({ ref: cloudGameRef(id), data: cloudGamePayload(local) });
+          } else if (tombstone && deleteAt > remoteAt) {
+            cloudWrites.push({ ref: cloudGameRef(id), data: cloudDeletePayload(tombstone) });
+          } else if (local || !tombstone || remoteAt > deleteAt) {
+            localDeletes.push({ id, updatedAt: remoteAt });
+          }
+          continue;
+        }
+
+        if (tombstone && deleteAt >= remoteAt && deleteAt >= localAt) {
+          cloudWrites.push({ ref: cloudGameRef(id), data: cloudDeletePayload(tombstone) });
+        } else if (local && localAt >= remoteAt) {
+          if (localAt > remoteAt) cloudWrites.push({ ref: cloudGameRef(id), data: cloudGamePayload(local) });
+        } else {
+          localUpserts.push(remote);
+        }
+      }
+
+      for (const [id, local] of localGameMap.entries()) {
+        if (!remoteMap.has(id)) cloudWrites.push({ ref: cloudGameRef(id), data: cloudGamePayload(local) });
+      }
+      for (const [id, tombstone] of tombstoneMap.entries()) {
+        if (!remoteMap.has(id)) cloudWrites.push({ ref: cloudGameRef(id), data: cloudDeletePayload(tombstone) });
+      }
+
+      if (localUpserts.length || localDeletes.length) {
+        await app.applyRemoteChanges({ upserts: localUpserts, deletes: localDeletes });
+      }
+      if (cloudWrites.length) await writeInChunks(cloudWrites);
+
+      await publishAllSummaries();
+      setSyncBadge('Synced', 'success');
+      setStatus(`Synced ${app.getGames().length} local game${app.getGames().length === 1 ? '' : 's'} with Firebase.`, 'success');
+      lastSyncAt = Date.now();
+      await loadLeaderboard();
+    } catch (error) {
+      console.error(error);
+      setSyncBadge('Needs sync', 'error');
+      setStatus(`Sync paused: ${friendlyError(error)}`, 'error');
+    } finally {
+      syncing = false;
+    }
+  }
+
+  async function saveSingleGame(game) {
+    if (!currentUser || !navigator.onLine) return;
+    await modules.setDoc(cloudGameRef(game.id), cloudGamePayload(game));
+  }
+
+  async function saveSingleDeletion(tombstone) {
+    if (!currentUser || !navigator.onLine) return;
+    await modules.setDoc(cloudGameRef(tombstone.id), cloudDeletePayload(tombstone));
+  }
+
+  function randomGroupCode() {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const bytes = new Uint32Array(8);
+    crypto.getRandomValues(bytes);
+    return [...bytes].map((n) => alphabet[n % alphabet.length]).join('');
+  }
+
+  async function setProfileGroupIds(groupIds, activeGroupId = selectedGroupId) {
+    const unique = [...new Set(groupIds)];
+    profile.groupIds = unique;
+    profile.activeGroupId = activeGroupId && unique.includes(activeGroupId) ? activeGroupId : (unique[0] || '');
+    profile.updatedAt = Date.now();
+    await modules.setDoc(await userProfileRef(), {
+      groupIds: unique,
+      activeGroupId: profile.activeGroupId,
+      updatedAt: profile.updatedAt
+    }, { merge: true });
+  }
+
+  async function memberPayload() {
+    const app = await waitForBowlingApp();
+    const statsBowler = profile.statsBowler || app.getBowlerNames()[0] || profile.displayName || 'Bowler';
+    const summary = app.getLeaderboardSummary(statsBowler);
+    return {
+      uid: currentUser.uid,
+      displayName: profile.displayName || currentUser.displayName || statsBowler || 'Bowler',
+      statsBowler,
+      ...summary,
+      updatedAt: Date.now()
+    };
+  }
+
+  async function publishSummaryToGroup(groupId) {
+    if (!currentUser || !groupId) return;
+    const payload = await memberPayload();
+    const ref = modules.doc(firestore, 'groups', groupId, 'members', currentUser.uid);
+    await modules.setDoc(ref, payload, { merge: true });
+  }
+
+  async function publishAllSummaries() {
+    if (!profile?.groupIds?.length || !navigator.onLine) return;
+    for (const groupId of profile.groupIds) {
+      try {
+        await publishSummaryToGroup(groupId);
+      } catch (error) {
+        console.warn('Could not publish leaderboard summary for', groupId, error);
+      }
+    }
+  }
+
+  async function createGroup() {
+    const name = dom.newGroupName.value.trim();
+    if (!name) {
+      setStatus('Enter a group name first.', 'error');
+      return;
+    }
+    if (!await initFirebase() || !currentUser) return;
+
+    try {
+      setStatus('Creating private group…');
+      let createdCode = '';
+      for (let attempt = 0; attempt < 5 && !createdCode; attempt += 1) {
+        const code = randomGroupCode();
+        const ref = modules.doc(firestore, 'groups', code);
+        try {
+          await modules.setDoc(ref, {
+            name,
+            code,
+            ownerUid: currentUser.uid,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          });
+          createdCode = code;
+        } catch (error) {
+          if (error.code !== 'permission-denied') throw error;
+        }
+      }
+      if (!createdCode) throw new Error('Could not create a unique group code. Try again.');
+
+      await setProfileGroupIds([...profile.groupIds, createdCode], createdCode);
+      selectedGroupId = createdCode;
+      await publishSummaryToGroup(createdCode);
+      dom.newGroupName.value = '';
+      await loadGroups();
+      setStatus(`Group created. Share invite code ${createdCode}.`, 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(friendlyError(error), 'error');
+    }
+  }
+
+  async function joinGroup() {
+    const code = dom.joinGroupCode.value.trim().toUpperCase().replace(/\s+/g, '');
+    if (!code) {
+      setStatus('Enter the invite code.', 'error');
+      return;
+    }
+    if (!await initFirebase() || !currentUser) return;
+
+    try {
+      setStatus('Checking invite code…');
+      const ref = modules.doc(firestore, 'groups', code);
+      const snap = await modules.getDoc(ref);
+      if (!snap.exists()) throw new Error('No group was found with that invite code.');
+      await publishSummaryToGroup(code);
+      await setProfileGroupIds([...profile.groupIds, code], code);
+      selectedGroupId = code;
+      dom.joinGroupCode.value = '';
+      await loadGroups();
+      setStatus(`Joined ${snap.data().name || code}.`, 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(friendlyError(error), 'error');
+    }
+  }
+
+  async function loadGroups() {
+    if (!currentUser || !profile) {
+      groups = [];
+      selectedGroupId = '';
+      renderGroups();
+      renderLeaderboardShell();
+      return;
+    }
+
+    const loaded = [];
+    const validIds = [];
+    for (const groupId of profile.groupIds || []) {
+      try {
+        const snap = await modules.getDoc(modules.doc(firestore, 'groups', groupId));
+        if (snap.exists()) {
+          loaded.push({ id: groupId, ...snap.data() });
+          validIds.push(groupId);
+        }
+      } catch (error) {
+        console.warn('Could not load group', groupId, error);
+      }
+    }
+    groups = loaded;
+    if (validIds.length !== (profile.groupIds || []).length) {
+      await setProfileGroupIds(validIds, profile.activeGroupId);
+    }
+    selectedGroupId = validIds.includes(profile.activeGroupId) ? profile.activeGroupId : (validIds[0] || '');
+    profile.activeGroupId = selectedGroupId;
+    renderGroups();
+    renderLeaderboardShell();
+    if (selectedGroupId) await loadLeaderboard();
+  }
+
+  function renderGroups() {
+    if (!dom.myGroupsList || !dom.groupSelect) return;
+    dom.groupSelect.disabled = !currentUser || !groups.length;
+    dom.groupSelect.innerHTML = groups.length
+      ? groups.map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name || g.id)}</option>`).join('')
+      : '<option value="">No groups yet</option>';
+    if (selectedGroupId && groups.some((g) => g.id === selectedGroupId)) dom.groupSelect.value = selectedGroupId;
+
+    dom.myGroupsList.innerHTML = groups.length
+      ? groups.map((g) => `
+        <div class="my-group-row ${g.id === selectedGroupId ? 'active' : ''}">
+          <div><strong>${escapeHtml(g.name || 'Bowling Group')}</strong><span>${escapeHtml(g.id)}</span></div>
+          <button class="text-btn choose-group" data-group="${escapeHtml(g.id)}" type="button">View</button>
+        </div>`).join('')
+      : '<p class="small-note">You have not joined any groups yet.</p>';
+
+    dom.myGroupsList.querySelectorAll('.choose-group').forEach((button) => {
+      button.addEventListener('click', async () => selectGroup(button.dataset.group));
+    });
+  }
+
+  async function selectGroup(groupId) {
+    if (!groupId || !groups.some((g) => g.id === groupId)) return;
+    selectedGroupId = groupId;
+    profile.activeGroupId = groupId;
+    await modules.setDoc(await userProfileRef(), { activeGroupId: groupId, updatedAt: Date.now() }, { merge: true });
+    renderGroups();
+    renderLeaderboardShell();
+    await loadLeaderboard();
+  }
+
+  function renderLeaderboardShell() {
+    if (!currentUser) {
+      dom.leaderboardSignedOut.classList.remove('hidden');
+      dom.leaderboardNoGroup.classList.add('hidden');
+      dom.leaderboardContent.classList.add('hidden');
+      return;
+    }
+    if (!groups.length || !selectedGroupId) {
+      dom.leaderboardSignedOut.classList.add('hidden');
+      dom.leaderboardNoGroup.classList.remove('hidden');
+      dom.leaderboardContent.classList.add('hidden');
+      return;
+    }
+    const group = groups.find((g) => g.id === selectedGroupId);
+    dom.leaderboardSignedOut.classList.add('hidden');
+    dom.leaderboardNoGroup.classList.add('hidden');
+    dom.leaderboardContent.classList.remove('hidden');
+    dom.leaderboardGroupName.textContent = group?.name || 'Bowling Group';
+    dom.leaderboardGroupCode.textContent = `Invite code ${selectedGroupId}`;
+  }
+
+  async function loadLeaderboard() {
+    if (!currentUser || !selectedGroupId || !navigator.onLine) {
+      if (currentUser && selectedGroupId) setLeaderboardStatus('Offline · showing the last loaded leaderboard');
+      return;
+    }
+    try {
+      setLeaderboardStatus('Refreshing…');
+      const snap = await modules.getDocs(modules.collection(firestore, 'groups', selectedGroupId, 'members'));
+      const members = [];
+      snap.forEach((item) => members.push(item.data()));
+      renderLeaderboardRows(members);
+      setLeaderboardStatus(`Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`, 'success');
+    } catch (error) {
+      console.error(error);
+      setLeaderboardStatus(friendlyError(error), 'error');
+    }
+  }
+
+  function renderLeaderboardRows(members) {
+    const metric = dom.metricSelect.value || 'average';
+    const info = metricInfo[metric] || metricInfo.average;
+    dom.leaderboardMetricHeading.textContent = info.label;
+    const sorted = [...members].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0)
+      || String(a.displayName || '').localeCompare(String(b.displayName || '')));
+
+    if (!sorted.length) {
+      dom.leaderboardBody.innerHTML = '<tr><td colspan="4" class="empty-table-cell">No leaderboard entries yet.</td></tr>';
+      return;
+    }
+
+    dom.leaderboardBody.innerHTML = sorted.map((member, index) => {
+      const provisional = info.provisional && Number(member.games || 0) < 10;
+      const you = member.uid === currentUser?.uid;
+      return `
+        <tr class="${you ? 'you-row' : ''}">
+          <td><span class="rank-badge">${index + 1}</span></td>
+          <td><strong>${escapeHtml(member.displayName || 'Bowler')}${you ? ' · You' : ''}</strong>${provisional ? '<span class="provisional">Provisional</span>' : ''}</td>
+          <td class="leader-value">${escapeHtml(info.format(member[metric]))}</td>
+          <td>${Number(member.games || 0)}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  async function saveProfile() {
+    if (!currentUser || !profile) return;
+    const displayName = dom.profileDisplayName.value.trim();
+    const statsBowler = dom.profileBowler.value;
+    if (!displayName) {
+      setStatus('Enter a leaderboard display name.', 'error');
+      return;
+    }
+    if (!statsBowler) {
+      setStatus('Add at least one local game so there is a bowler to publish.', 'error');
+      return;
+    }
+    try {
+      profile.displayName = displayName;
+      profile.statsBowler = statsBowler;
+      profile.updatedAt = Date.now();
+      await modules.updateProfile(currentUser, { displayName });
+      await modules.setDoc(await userProfileRef(), {
+        displayName,
+        statsBowler,
+        email: currentUser.email || '',
+        updatedAt: profile.updatedAt
+      }, { merge: true });
+      await publishAllSummaries();
+      await loadLeaderboard();
+      setStatus('Cloud profile saved.', 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(friendlyError(error), 'error');
+    }
+  }
+
+  async function createAccount() {
+    const displayName = dom.displayName.value.trim();
+    const email = dom.email.value.trim();
+    const password = dom.password.value;
+    if (!displayName || !email || !password) {
+      setStatus('Enter a leaderboard name, email, and password.', 'error');
+      return;
+    }
+    if (password.length < 6) {
+      setStatus('Use a password with at least 6 characters.', 'error');
+      return;
+    }
+    if (!await initFirebase()) return;
+    try {
+      setStatus('Creating account…');
+      const credential = await modules.createUserWithEmailAndPassword(auth, email, password);
+      await modules.updateProfile(credential.user, { displayName });
+      const app = await waitForBowlingApp();
+      const statsBowler = (await app.getDefaultBowler()) || app.getBowlerNames()[0] || displayName;
+      await modules.setDoc(modules.doc(firestore, 'users', credential.user.uid), {
+        email,
+        displayName,
+        statsBowler,
+        groupIds: [],
+        activeGroupId: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }, { merge: true });
+      dom.password.value = '';
+      setStatus('Account created. Your local games will sync automatically.', 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(friendlyError(error), 'error');
+    }
+  }
+
+  async function signIn() {
+    const email = dom.email.value.trim();
+    const password = dom.password.value;
+    if (!email || !password) {
+      setStatus('Enter your email and password.', 'error');
+      return;
+    }
+    if (!await initFirebase()) return;
+    try {
+      setStatus('Signing in…');
+      await modules.signInWithEmailAndPassword(auth, email, password);
+      dom.password.value = '';
+    } catch (error) {
+      console.error(error);
+      setStatus(friendlyError(error), 'error');
+    }
+  }
+
+  async function resetPassword() {
+    const email = dom.email.value.trim();
+    if (!email) {
+      setStatus('Enter your email first, then tap Reset password.', 'error');
+      return;
+    }
+    if (!await initFirebase()) return;
+    try {
+      await modules.sendPasswordResetEmail(auth, email);
+      setStatus('Password reset email sent.', 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(friendlyError(error), 'error');
+    }
+  }
+
+  async function signOutCloud() {
+    if (!auth) return;
+    try {
+      await modules.signOut(auth);
+      setStatus('Signed out. Local bowling history remains on this device.', 'success');
+    } catch (error) {
+      setStatus(friendlyError(error), 'error');
+    }
+  }
+
+  async function handleLocalDataChanged(event) {
+    if (!currentUser) return;
+    updateProfileBowlerOptions();
+    if (!navigator.onLine) {
+      setSyncBadge('Needs sync', 'pending');
+      setStatus('Saved locally. Cloud sync will resume when you are online.');
+      return;
+    }
+    try {
+      const detail = event.detail || {};
+      if (detail.type === 'upsert' && detail.game) {
+        setSyncBadge('Syncing…', 'working');
+        await saveSingleGame(detail.game);
+        await publishAllSummaries();
+        setSyncBadge('Synced', 'success');
+        setStatus('Game saved locally and synced to Firebase.', 'success');
+        await loadLeaderboard();
+      } else if (detail.type === 'delete' && detail.tombstone) {
+        setSyncBadge('Syncing…', 'working');
+        await saveSingleDeletion(detail.tombstone);
+        await publishAllSummaries();
+        setSyncBadge('Synced', 'success');
+        await loadLeaderboard();
+      } else {
+        await syncAll('Local changes');
+      }
+    } catch (error) {
+      console.error(error);
+      setSyncBadge('Needs sync', 'error');
+      setStatus(`Saved locally; cloud sync will retry later. ${friendlyError(error)}`, 'error');
+    }
+  }
+
+  function wireEvents() {
+    dom.openCloudBtn?.addEventListener('click', async () => {
+      dom.cloudDialog.showModal();
+      renderConnectionState();
+      if (configReady() && navigator.onLine) await initFirebase();
+    });
+    dom.closeCloudBtn?.addEventListener('click', () => dom.cloudDialog.close());
+    dom.cloudDialog?.addEventListener('click', (event) => {
+      if (event.target === dom.cloudDialog) dom.cloudDialog.close();
+    });
+    dom.leaderboardConnectBtn?.addEventListener('click', async () => {
+      dom.cloudDialog.showModal();
+      if (configReady() && navigator.onLine) await initFirebase();
+    });
+    dom.leaderboardManageGroupsBtn?.addEventListener('click', () => dom.cloudDialog.showModal());
+    dom.signInBtn?.addEventListener('click', signIn);
+    dom.createAccountBtn?.addEventListener('click', createAccount);
+    dom.resetPasswordBtn?.addEventListener('click', resetPassword);
+    dom.signOutBtn?.addEventListener('click', signOutCloud);
+    dom.saveProfileBtn?.addEventListener('click', saveProfile);
+    dom.syncNowBtn?.addEventListener('click', () => syncAll('Manual sync'));
+    dom.createGroupBtn?.addEventListener('click', createGroup);
+    dom.joinGroupBtn?.addEventListener('click', joinGroup);
+    dom.groupSelect?.addEventListener('change', () => selectGroup(dom.groupSelect.value));
+    dom.metricSelect?.addEventListener('change', loadLeaderboard);
+    dom.refreshLeaderboardBtn?.addEventListener('click', loadLeaderboard);
+
+    [dom.email, dom.password].forEach((input) => {
+      input?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') signIn();
+      });
+    });
+    dom.joinGroupCode?.addEventListener('input', () => {
+      dom.joinGroupCode.value = dom.joinGroupCode.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+    });
+
+    window.addEventListener('bowling:data-changed', handleLocalDataChanged);
+    window.addEventListener('bowling:profile-options-changed', updateProfileBowlerOptions);
+    window.addEventListener('bowling:rendered', updateProfileBowlerOptions);
+    window.addEventListener('online', async () => {
+      renderConnectionState();
+      if (configReady()) {
+        const ok = await initFirebase();
+        if (ok && currentUser) await syncAll('Back online');
+      }
+    });
+    window.addEventListener('offline', () => {
+      renderConnectionState();
+      if (currentUser) setSyncBadge('Needs sync', 'pending');
+    });
+    window.addEventListener('focus', () => {
+      if (!currentUser || !navigator.onLine) return;
+      if (Date.now() - lastSyncAt > 15000) syncAll('App resumed');
+      else if (selectedGroupId) loadLeaderboard();
+    });
+  }
+
+  async function init() {
+    wireEvents();
+    renderConnectionState();
+    await waitForBowlingApp();
+    updateProfileBowlerOptions();
+    if (configReady() && navigator.onLine) await initFirebase();
+  }
+
+  window.BowlingCloud = {
+    isSignedIn: () => Boolean(currentUser),
+    syncNow: () => syncAll('Manual sync')
+  };
+
+  init();
+})();
