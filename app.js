@@ -1,14 +1,19 @@
 (() => {
   'use strict';
 
-  const DB_NAME = 'bowling-tracker-db';
+  const LEGACY_DB_NAME = 'bowling-tracker-db';
+  const GUEST_DB_NAME = 'bowling-tracker-db-guest';
+  const USER_DB_PREFIX = 'bowling-tracker-db-user-';
+  const LAST_ACCOUNT_STORAGE_KEY = 'bowling-tracker-last-account-uid';
+  const LEGACY_CLAIM_KEY = 'accountIsolationClaimedBy';
   const DB_VERSION = 2;
   const GAME_STORE = 'games';
   const SETTINGS_STORE = 'settings';
   const TOMBSTONE_STORE = 'tombstones';
-  const APP_VERSION = 2;
+  const APP_VERSION = 3;
 
   let db;
+  let activeLocalScope = { kind: 'guest', uid: '', dbName: GUEST_DB_NAME };
   let games = [];
   let editingGameId = null;
   let deferredInstallPrompt = null;
@@ -127,9 +132,24 @@
     window.dispatchEvent(new CustomEvent('bowling:data-changed', { detail }));
   }
 
-  function openDatabase() {
+  function userDbName(uid) {
+    return `${USER_DB_PREFIX}${String(uid || '').replace(/[^A-Za-z0-9_-]/g, '_')}`;
+  }
+
+  function safeLocalStorageGet(key) {
+    try { return localStorage.getItem(key); } catch (_) { return null; }
+  }
+
+  function safeLocalStorageSet(key, value) {
+    try {
+      if (value) localStorage.setItem(key, value);
+      else localStorage.removeItem(key);
+    } catch (_) {}
+  }
+
+  function openDatabase(dbName) {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = indexedDB.open(dbName, DB_VERSION);
       request.onupgradeneeded = (event) => {
         const database = event.target.result;
         if (!database.objectStoreNames.contains(GAME_STORE)) {
@@ -149,14 +169,18 @@
     });
   }
 
-  function idbRequest(storeName, mode, action) {
+  function idbRequestOn(database, storeName, mode, action) {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, mode);
+      const tx = database.transaction(storeName, mode);
       const store = tx.objectStore(storeName);
       const request = action(store);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
+  }
+
+  function idbRequest(storeName, mode, action) {
+    return idbRequestOn(db, storeName, mode, action);
   }
 
   async function getAllGames() {
@@ -198,6 +222,181 @@
 
   async function setSetting(key, value) {
     return idbRequest(SETTINGS_STORE, 'readwrite', (store) => store.put({ key, value }));
+  }
+
+  async function getAllFromDb(database, storeName) {
+    return idbRequestOn(database, storeName, 'readonly', (store) => store.getAll());
+  }
+
+  async function getSettingFromDb(database, key) {
+    const result = await idbRequestOn(database, SETTINGS_STORE, 'readonly', (store) => store.get(key));
+    return result ? result.value : null;
+  }
+
+  async function setSettingOnDb(database, key, value) {
+    return idbRequestOn(database, SETTINGS_STORE, 'readwrite', (store) => store.put({ key, value }));
+  }
+
+  async function copyDatabaseContents(sourceDb, targetDb) {
+    if (!sourceDb || !targetDb || sourceDb === targetDb) return;
+    const [sourceGames, sourceTombstones, defaultBowler] = await Promise.all([
+      getAllFromDb(sourceDb, GAME_STORE),
+      getAllFromDb(sourceDb, TOMBSTONE_STORE),
+      getSettingFromDb(sourceDb, 'defaultBowler')
+    ]);
+
+    for (const sourceGame of sourceGames) {
+      const existingGame = await idbRequestOn(targetDb, GAME_STORE, 'readonly', (store) => store.get(sourceGame.id));
+      const existingTombstone = await idbRequestOn(targetDb, TOMBSTONE_STORE, 'readonly', (store) => store.get(sourceGame.id));
+      const gameAt = Number(sourceGame.updatedAt || sourceGame.createdAt || 0);
+      const existingGameAt = Number(existingGame?.updatedAt || existingGame?.createdAt || 0);
+      const deleteAt = Number(existingTombstone?.updatedAt || 0);
+      if (gameAt >= existingGameAt && gameAt > deleteAt) {
+        await idbRequestOn(targetDb, GAME_STORE, 'readwrite', (store) => store.put(sourceGame));
+        if (existingTombstone) await idbRequestOn(targetDb, TOMBSTONE_STORE, 'readwrite', (store) => store.delete(sourceGame.id));
+      }
+    }
+
+    for (const tombstone of sourceTombstones) {
+      const existingGame = await idbRequestOn(targetDb, GAME_STORE, 'readonly', (store) => store.get(tombstone.id));
+      const existingTombstone = await idbRequestOn(targetDb, TOMBSTONE_STORE, 'readonly', (store) => store.get(tombstone.id));
+      const deleteAt = Number(tombstone.updatedAt || 0);
+      const existingGameAt = Number(existingGame?.updatedAt || existingGame?.createdAt || 0);
+      const existingDeleteAt = Number(existingTombstone?.updatedAt || 0);
+      if (deleteAt >= existingGameAt && deleteAt >= existingDeleteAt) {
+        await idbRequestOn(targetDb, TOMBSTONE_STORE, 'readwrite', (store) => store.put(tombstone));
+        if (existingGame) await idbRequestOn(targetDb, GAME_STORE, 'readwrite', (store) => store.delete(tombstone.id));
+      }
+    }
+
+    if (defaultBowler && !await getSettingFromDb(targetDb, 'defaultBowler')) {
+      await setSettingOnDb(targetDb, 'defaultBowler', defaultBowler);
+    }
+  }
+
+  async function refreshFromActiveDatabase() {
+    games = await getAllGames();
+    editingGameId = null;
+    dom.bowlerFilter.value = 'all';
+    await loadDefaultBowler(true);
+    resetEntryForm({ preserveBowler: true, preserveDate: false, preserveSession: false });
+    renderAll();
+    window.dispatchEvent(new CustomEvent('bowling:profile-options-changed'));
+    window.dispatchEvent(new CustomEvent('bowling:local-account-changed', { detail: getLocalScopeInfo() }));
+  }
+
+  function getLocalScopeInfo() {
+    return {
+      kind: activeLocalScope.kind,
+      uid: activeLocalScope.uid || '',
+      dbName: activeLocalScope.dbName,
+      gameCount: games.length
+    };
+  }
+
+  async function getAccountLocalGameCount(uid) {
+    const dbName = userDbName(uid);
+    if (activeLocalScope.dbName === dbName) return games.length;
+    const targetDb = await openDatabase(dbName);
+    try {
+      return (await getAllFromDb(targetDb, GAME_STORE)).length;
+    } finally {
+      targetDb.close();
+    }
+  }
+
+  async function activateAccount(uid, { importCurrent = false } = {}) {
+    if (!uid) throw new Error('A Firebase user ID is required for account-local storage.');
+    const dbName = userDbName(uid);
+    if (activeLocalScope.dbName === dbName) {
+      safeLocalStorageSet(LAST_ACCOUNT_STORAGE_KEY, uid);
+      return getLocalScopeInfo();
+    }
+
+    const previousDb = db;
+    const previousScope = { ...activeLocalScope };
+    const targetDb = await openDatabase(dbName);
+
+    try {
+      if (previousScope.kind === 'legacy') {
+        const claimedBy = await getSettingFromDb(previousDb, LEGACY_CLAIM_KEY);
+        if (!claimedBy || claimedBy === uid) {
+          await copyDatabaseContents(previousDb, targetDb);
+          await setSettingOnDb(previousDb, LEGACY_CLAIM_KEY, uid);
+        }
+      } else if (previousScope.kind === 'guest' && importCurrent) {
+        await copyDatabaseContents(previousDb, targetDb);
+      }
+    } catch (error) {
+      targetDb.close();
+      throw error;
+    }
+
+    if (previousDb) previousDb.close();
+    db = targetDb;
+    activeLocalScope = { kind: 'user', uid, dbName };
+    safeLocalStorageSet(LAST_ACCOUNT_STORAGE_KEY, uid);
+    await refreshFromActiveDatabase();
+    return getLocalScopeInfo();
+  }
+
+  async function activateGuest() {
+    if (activeLocalScope.kind === 'guest' && activeLocalScope.dbName === GUEST_DB_NAME) {
+      safeLocalStorageSet(LAST_ACCOUNT_STORAGE_KEY, '');
+      return getLocalScopeInfo();
+    }
+    const targetDb = await openDatabase(GUEST_DB_NAME);
+    if (db) db.close();
+    db = targetDb;
+    activeLocalScope = { kind: 'guest', uid: '', dbName: GUEST_DB_NAME };
+    safeLocalStorageSet(LAST_ACCOUNT_STORAGE_KEY, '');
+    await refreshFromActiveDatabase();
+    return getLocalScopeInfo();
+  }
+
+  async function copyAccountDataToGuest(uid) {
+    if (!uid) return;
+    const sourceName = userDbName(uid);
+    let sourceDb = null;
+    let closeSource = false;
+    if (activeLocalScope.dbName === sourceName) {
+      sourceDb = db;
+    } else {
+      sourceDb = await openDatabase(sourceName);
+      closeSource = true;
+    }
+    const guestDb = activeLocalScope.dbName === GUEST_DB_NAME ? db : await openDatabase(GUEST_DB_NAME);
+    const closeGuest = guestDb !== db;
+    try {
+      await copyDatabaseContents(sourceDb, guestDb);
+    } finally {
+      if (closeSource) sourceDb.close();
+      if (closeGuest) guestDb.close();
+    }
+  }
+
+  async function openInitialDatabase() {
+    const lastUid = safeLocalStorageGet(LAST_ACCOUNT_STORAGE_KEY);
+    if (lastUid) {
+      const dbName = userDbName(lastUid);
+      activeLocalScope = { kind: 'user', uid: lastUid, dbName };
+      return openDatabase(dbName);
+    }
+
+    const legacyDb = await openDatabase(LEGACY_DB_NAME);
+    const [legacyGames, legacyTombstones, legacyDefault, claimedBy] = await Promise.all([
+      getAllFromDb(legacyDb, GAME_STORE),
+      getAllFromDb(legacyDb, TOMBSTONE_STORE),
+      getSettingFromDb(legacyDb, 'defaultBowler'),
+      getSettingFromDb(legacyDb, LEGACY_CLAIM_KEY)
+    ]);
+    if (!claimedBy && (legacyGames.length || legacyTombstones.length || legacyDefault)) {
+      activeLocalScope = { kind: 'legacy', uid: '', dbName: LEGACY_DB_NAME };
+      return legacyDb;
+    }
+    legacyDb.close();
+    activeLocalScope = { kind: 'guest', uid: '', dbName: GUEST_DB_NAME };
+    return openDatabase(GUEST_DB_NAME);
   }
 
   function buildSessions(sourceGames) {
@@ -589,11 +788,13 @@
     if (resetInput) dom.scoreboardPhoto.value = '';
   }
 
-  async function loadDefaultBowler() {
+  async function loadDefaultBowler(resetWhenMissing = false) {
     const defaultBowler = await getSetting('defaultBowler');
+    dom.defaultBowlerInput.value = defaultBowler || '';
     if (defaultBowler) {
       dom.bowler.value = defaultBowler;
-      dom.defaultBowlerInput.value = defaultBowler;
+    } else if (resetWhenMissing) {
+      dom.bowler.value = '';
     }
   }
 
@@ -810,6 +1011,11 @@
     getBowlerNames: () => [...new Set(games.map((g) => g.bowler).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     getDefaultBowler: () => getSetting('defaultBowler'),
     getLeaderboardSummary: (bowlerName) => clone(leaderboardSummaryForBowler(bowlerName)),
+    getLocalScopeInfo,
+    getAccountLocalGameCount,
+    activateAccount,
+    activateGuest,
+    copyAccountDataToGuest,
     applyRemoteChanges,
     renderAll,
     formatDate: fmtDate
@@ -829,7 +1035,7 @@
     }
 
     try {
-      db = await openDatabase();
+      db = await openInitialDatabase();
       games = await getAllGames();
       await loadDefaultBowler();
       renderAll();

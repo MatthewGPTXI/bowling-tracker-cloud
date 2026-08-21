@@ -299,7 +299,7 @@
 
       <div class="settings-section danger-zone">
         <h3>Reset</h3>
-        <p>Deletes all bowling history from this device. When signed in, those deletions also sync to your cloud account.</p>
+        <p>Deletes all bowling history in the currently active local profile. When signed in, those deletions also sync to that cloud account.</p>
         <button id="clearAllBtn" class="btn danger" type="button">Delete all data</button>
       </div>
       <div id="settingsStatus" class="status-text" aria-live="polite"></div>
@@ -328,7 +328,7 @@
 
       <div id="cloudSignedOut" class="settings-section hidden">
         <h3>Sign in or create an account</h3>
-        <p>Use the same account on another phone or computer to pull down your bowling history.</p>
+        <p>Use the same account on another phone or computer to pull down your bowling history. Each signed-in account gets its own isolated offline history on this browser.</p>
         <div class="cloud-auth-grid">
           <label>
             <span>Leaderboard name</span>
@@ -361,7 +361,7 @@
 
         <div class="settings-section">
           <h3>Leaderboard profile</h3>
-          <p>Your cloud account can sync every locally saved game, while the leaderboard uses one selected bowler name for your public stats.</p>
+          <p>Your cloud account syncs only its own isolated offline game library. The leaderboard uses one selected bowler name for your public stats.</p>
           <div class="cloud-profile-grid">
             <label>
               <span>Display name</span>
@@ -375,6 +375,16 @@
           <div class="button-row">
             <button id="saveCloudProfileBtn" class="btn secondary" type="button">Save profile</button>
             <button id="syncNowBtn" class="btn secondary" type="button">Sync now</button>
+          </div>
+        </div>
+
+        <div id="syncReviewSection" class="settings-section hidden">
+          <h3>Sync review needed</h3>
+          <p id="syncReviewSummary">The device and cloud copies contain changes that need your choice before syncing.</p>
+          <div id="syncReviewList" class="sync-review-list"></div>
+          <div class="button-row">
+            <button id="applySyncReviewBtn" class="btn primary" type="button">Apply choices &amp; sync</button>
+            <button id="cancelSyncReviewBtn" class="btn secondary" type="button">Not now</button>
           </div>
         </div>
 
@@ -398,6 +408,26 @@
             </div>
           </div>
           <div id="myGroupsList" class="my-groups-list"></div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Cloud backup</h3>
+          <p>Download a JSON backup directly from Firebase. The games and deletion history in this file are compatible with the regular Import backup tool.</p>
+          <div class="button-row">
+            <button id="downloadCloudBackupBtn" class="btn secondary" type="button">Download cloud backup</button>
+          </div>
+        </div>
+
+        <div class="settings-section danger-zone">
+          <h3>Delete cloud account</h3>
+          <p>Permanently deletes your Firebase login, private cloud games, cloud profile, and your own leaderboard entries. Your local bowling history stays on this device. Shared groups remain available to other members.</p>
+          <label>
+            <span>Current password</span>
+            <input id="deleteAccountPasswordInput" type="password" autocomplete="current-password" placeholder="Required to confirm deletion">
+          </label>
+          <div class="button-row">
+            <button id="deleteCloudAccountBtn" class="btn danger" type="button">Delete my account &amp; cloud data</button>
+          </div>
         </div>
 
         <div class="settings-section">

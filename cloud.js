@@ -28,6 +28,14 @@
     profileBowler: $('profileBowlerSelect'),
     saveProfileBtn: $('saveCloudProfileBtn'),
     syncNowBtn: $('syncNowBtn'),
+    downloadCloudBackupBtn: $('downloadCloudBackupBtn'),
+    deleteAccountPassword: $('deleteAccountPasswordInput'),
+    deleteCloudAccountBtn: $('deleteCloudAccountBtn'),
+    syncReviewSection: $('syncReviewSection'),
+    syncReviewSummary: $('syncReviewSummary'),
+    syncReviewList: $('syncReviewList'),
+    applySyncReviewBtn: $('applySyncReviewBtn'),
+    cancelSyncReviewBtn: $('cancelSyncReviewBtn'),
     signOutBtn: $('cloudSignOutBtn'),
     newGroupName: $('newGroupNameInput'),
     createGroupBtn: $('createGroupBtn'),
@@ -60,6 +68,7 @@
   let initializing = null;
   let syncing = false;
   let lastSyncAt = 0;
+  let pendingSyncReview = null;
 
   const metricInfo = {
     average: { label: 'Average', format: (v) => Number(v || 0).toFixed(1), provisional: true },
@@ -119,6 +128,8 @@
       'auth/invalid-email': 'Enter a valid email address.',
       'auth/too-many-requests': 'Too many attempts. Try again later.',
       'auth/network-request-failed': 'Network unavailable. Your local bowling data is still safe.',
+      'auth/requires-recent-login': 'For security, sign in again and retry this account change.',
+      'auth/wrong-password': 'The current password was not accepted.',
       'permission-denied': 'Firebase blocked this request. Check that the provided Firestore rules are published.'
     };
     return map[code] || error?.message || 'Something went wrong with cloud sync.';
@@ -263,7 +274,14 @@
     selectedGroupId = '';
     renderConnectionState();
 
+    const app = await waitForBowlingApp();
+
     if (!currentUser) {
+      // A persisted Firebase session may expire in another tab. If this browser
+      // was showing an account-specific local database, return to the isolated
+      // signed-out/guest database instead of leaving another user's games visible.
+      if (app.getLocalScopeInfo?.().kind === 'user') await app.activateGuest?.();
+      if (dom.deleteAccountPassword) dom.deleteAccountPassword.value = '';
       setSyncBadge('Signed out');
       renderGroups();
       renderLeaderboardShell();
@@ -272,10 +290,24 @@
 
     try {
       setCloudButton('working', 'Cloud…');
+
+      const localScope = app.getLocalScopeInfo?.() || { kind: 'guest', gameCount: 0 };
+      let importCurrent = false;
+      if (localScope.kind === 'guest' && Number(localScope.gameCount || 0) > 0) {
+        const accountLocalCount = await app.getAccountLocalGameCount?.(currentUser.uid) || 0;
+        if (accountLocalCount === 0) {
+          importCurrent = window.confirm(
+            `This browser has ${localScope.gameCount} game${localScope.gameCount === 1 ? '' : 's'} saved while signed out. Add ${localScope.gameCount === 1 ? 'it' : 'them'} to ${currentUser.email || 'this account'}?\n\nChoose Cancel to keep the signed-out history separate.`
+          );
+        }
+      }
+
+      await app.activateAccount?.(currentUser.uid, { importCurrent });
       await loadOrCreateProfile();
       await renderAccount();
       await syncAll('Signed in');
       setCloudButton('on', 'Cloud ✓');
+      if (importCurrent) setStatus('Signed-out games were copied into this account and synced.', 'success');
     } catch (error) {
       console.error(error);
       setStatus(friendlyError(error), 'error');
@@ -314,6 +346,216 @@
     };
   }
 
+  function normalizedSessionName(game) {
+    return String(game?.sessionName || '').trim().toLowerCase();
+  }
+
+  function comparableGame(game) {
+    return {
+      bowler: String(game?.bowler || '').trim().toLowerCase(),
+      date: String(game?.date || ''),
+      sessionName: normalizedSessionName(game),
+      score: Number(game?.score || 0),
+      openFrames: Number(game?.openFrames || 0),
+      strikes: Number(game?.strikes || 0),
+      strikeOpportunities: Number(game?.strikeOpportunities || 10),
+      notes: String(game?.notes || '').trim()
+    };
+  }
+
+  function sameGameContent(a, b) {
+    return JSON.stringify(comparableGame(a)) === JSON.stringify(comparableGame(b));
+  }
+
+  function duplicateSignature(game) {
+    const value = comparableGame(game);
+    // Notes are intentionally excluded. Two independently entered copies of the
+    // same game often have different notes, while the bowling result is identical.
+    return [
+      value.bowler,
+      value.date,
+      value.sessionName,
+      value.score,
+      value.openFrames,
+      value.strikes,
+      value.strikeOpportunities
+    ].join('|');
+  }
+
+  function gameReviewHtml(label, game) {
+    if (!game) return `<div class="sync-review-game"><strong>${escapeHtml(label)}</strong>Deleted</div>`;
+    return `<div class="sync-review-game">
+      <strong>${escapeHtml(label)}</strong>
+      ${escapeHtml(game.date)} · ${escapeHtml(game.sessionName || 'Bowling Session')}<br>
+      Score ${Number(game.score)} · ${Number(game.openFrames)} open · ${Number(game.strikes)}/${Number(game.strikeOpportunities || 10)} strikes
+      ${game.notes ? `<br>${escapeHtml(game.notes)}` : ''}
+    </div>`;
+  }
+
+  function detectSyncIssues(localGameMap, tombstoneMap, remoteMap) {
+    const issues = [];
+
+    for (const [id, remote] of remoteMap.entries()) {
+      const local = localGameMap.get(id);
+      const tombstone = tombstoneMap.get(id);
+
+      if (remote.deleted && local) {
+        issues.push({
+          key: `delete:${id}:cloud`,
+          type: 'delete-conflict',
+          id,
+          liveSide: 'local',
+          local,
+          remote
+        });
+        continue;
+      }
+
+      if (!remote.deleted && tombstone) {
+        issues.push({
+          key: `delete:${id}:local`,
+          type: 'delete-conflict',
+          id,
+          liveSide: 'cloud',
+          tombstone,
+          remote
+        });
+        continue;
+      }
+
+      if (!remote.deleted && local && !sameGameContent(local, remote)) {
+        issues.push({
+          key: `version:${id}`,
+          type: 'version-conflict',
+          id,
+          local,
+          remote
+        });
+      }
+    }
+
+    // Duplicate protection only compares records that exist exclusively on one
+    // side. After a user chooses "keep both" and the records sync, they will no
+    // longer be flagged every time.
+    const localOnly = [...localGameMap.entries()]
+      .filter(([id]) => !remoteMap.has(id) && !tombstoneMap.has(id))
+      .map(([, game]) => game);
+    const remoteOnly = [...remoteMap.entries()]
+      .filter(([id, game]) => !game.deleted && !localGameMap.has(id) && !tombstoneMap.has(id))
+      .map(([, game]) => game);
+
+    const remoteBySignature = new Map();
+    for (const game of remoteOnly) {
+      const sig = duplicateSignature(game);
+      if (!remoteBySignature.has(sig)) remoteBySignature.set(sig, []);
+      remoteBySignature.get(sig).push(game);
+    }
+
+    const usedRemoteIds = new Set();
+    for (const local of localOnly) {
+      const matches = remoteBySignature.get(duplicateSignature(local)) || [];
+      const remote = matches.find((candidate) => !usedRemoteIds.has(Number(candidate.id)));
+      if (!remote) continue;
+      usedRemoteIds.add(Number(remote.id));
+      const localId = Number(local.id);
+      const remoteId = Number(remote.id);
+      issues.push({
+        key: `duplicate:${Math.min(localId, remoteId)}:${Math.max(localId, remoteId)}`,
+        type: 'duplicate',
+        localId,
+        remoteId,
+        local,
+        remote
+      });
+    }
+
+    return issues;
+  }
+
+  function renderSyncReview(issues, localCount, cloudCount) {
+    pendingSyncReview = { issues };
+    if (!dom.syncReviewSection || !dom.syncReviewList) return;
+
+    dom.syncReviewSection.classList.remove('hidden');
+    dom.syncReviewSummary.textContent = `${localCount} game${localCount === 1 ? '' : 's'} on this device · ${cloudCount} live game${cloudCount === 1 ? '' : 's'} in the cloud · ${issues.length} item${issues.length === 1 ? '' : 's'} need review.`;
+
+    dom.syncReviewList.innerHTML = issues.map((issue) => {
+      if (issue.type === 'version-conflict') {
+        return `<div class="sync-review-item" data-sync-issue="${escapeHtml(issue.key)}">
+          <div class="sync-review-title">Same saved game has different details</div>
+          <div class="sync-review-copy">This game has the same internal ID on both sides, but at least one bowling value or note differs. Choose which copy is correct.</div>
+          <div class="sync-review-compare">
+            ${gameReviewHtml('This device', issue.local)}
+            ${gameReviewHtml('Cloud', issue.remote)}
+          </div>
+          <label>Keep
+            <select data-sync-choice>
+              <option value="">Choose…</option>
+              <option value="local">This device copy</option>
+              <option value="cloud">Cloud copy</option>
+            </select>
+          </label>
+        </div>`;
+      }
+
+      if (issue.type === 'delete-conflict') {
+        const live = issue.liveSide === 'local' ? issue.local : issue.remote;
+        const deletedWhere = issue.liveSide === 'local' ? 'cloud' : 'this device';
+        return `<div class="sync-review-item" data-sync-issue="${escapeHtml(issue.key)}">
+          <div class="sync-review-title">Edit vs. deletion conflict</div>
+          <div class="sync-review-copy">A copy of this game exists, but it was deleted on ${escapeHtml(deletedWhere)}. Nothing will be erased until you choose.</div>
+          <div class="sync-review-compare">
+            ${gameReviewHtml('Game copy', live)}
+            ${gameReviewHtml(`Deleted on ${deletedWhere}`, null)}
+          </div>
+          <label>Resolve as
+            <select data-sync-choice>
+              <option value="">Choose…</option>
+              <option value="keep-game">Keep the game</option>
+              <option value="keep-deleted">Keep it deleted</option>
+            </select>
+          </label>
+        </div>`;
+      }
+
+      return `<div class="sync-review-item" data-sync-issue="${escapeHtml(issue.key)}">
+        <div class="sync-review-title">Possible duplicate game</div>
+        <div class="sync-review-copy">These have different internal IDs but the same bowler, date, session, score, open frames and strike totals. They may be two copies of the same real game.</div>
+        <div class="sync-review-compare">
+          ${gameReviewHtml('This device', issue.local)}
+          ${gameReviewHtml('Cloud', issue.remote)}
+        </div>
+        <label>Keep
+          <select data-sync-choice>
+            <option value="">Choose…</option>
+            <option value="local">This device copy only</option>
+            <option value="cloud">Cloud copy only</option>
+            <option value="both">Both games are real — keep both</option>
+          </select>
+        </label>
+      </div>`;
+    }).join('');
+  }
+
+  function hideSyncReview() {
+    dom.syncReviewSection?.classList.add('hidden');
+    if (dom.syncReviewList) dom.syncReviewList.innerHTML = '';
+    pendingSyncReview = null;
+  }
+
+  function collectSyncReviewChoices() {
+    if (!pendingSyncReview || !dom.syncReviewList) return null;
+    const choices = {};
+    for (const issue of pendingSyncReview.issues) {
+      const item = [...dom.syncReviewList.querySelectorAll('[data-sync-issue]')]
+        .find((node) => node.dataset.syncIssue === issue.key);
+      const value = item?.querySelector('[data-sync-choice]')?.value || '';
+      if (!value) return null;
+      choices[issue.key] = value;
+    }
+    return choices;
+  }
+
   async function writeInChunks(operations) {
     const chunkSize = 30;
     for (let i = 0; i < operations.length; i += chunkSize) {
@@ -322,7 +564,7 @@
     }
   }
 
-  async function syncAll(reason = 'Sync') {
+  async function syncAll(reason = 'Sync', reviewChoices = null) {
     if (!currentUser || !firestore || syncing) return;
     if (!navigator.onLine) {
       setSyncBadge('Local only', 'pending');
@@ -332,7 +574,7 @@
 
     syncing = true;
     setSyncBadge('Syncing…', 'working');
-    setStatus(`${reason}: syncing local and cloud bowling history…`);
+    setStatus(`${reason}: comparing local and cloud bowling history…`);
 
     try {
       const app = await waitForBowlingApp();
@@ -344,11 +586,84 @@
       const remoteMap = new Map();
       remoteSnap.forEach((item) => remoteMap.set(Number(item.id), item.data()));
 
+      const issues = detectSyncIssues(localGameMap, tombstoneMap, remoteMap);
+      const unresolved = issues.filter((issue) => !reviewChoices?.[issue.key]);
+      if (unresolved.length) {
+        const liveRemoteCount = [...remoteMap.values()].filter((game) => !game.deleted).length;
+        renderSyncReview(issues, localGames.length, liveRemoteCount);
+        setSyncBadge('Review needed', 'pending');
+        setStatus(`${issues.length} sync item${issues.length === 1 ? '' : 's'} need your review before anything conflicting is changed.`);
+        return;
+      }
+
+      hideSyncReview();
+
       const cloudWrites = [];
       const localUpserts = [];
       const localDeletes = [];
+      const handledIds = new Set();
+      const resolutionTime = Date.now();
+
+      // Apply explicit user choices first. Standard reconciliation below skips
+      // these IDs so the choices cannot be overwritten by timestamp rules.
+      for (const issue of issues) {
+        const choice = reviewChoices?.[issue.key];
+        if (!choice) continue;
+
+        if (issue.type === 'version-conflict') {
+          handledIds.add(issue.id);
+          if (choice === 'local') {
+            cloudWrites.push({ ref: cloudGameRef(issue.id), data: cloudGamePayload({ ...issue.local, updatedAt: resolutionTime }) });
+          } else {
+            localUpserts.push({ ...issue.remote, updatedAt: resolutionTime });
+            cloudWrites.push({ ref: cloudGameRef(issue.id), data: cloudGamePayload({ ...issue.remote, updatedAt: resolutionTime }) });
+          }
+          continue;
+        }
+
+        if (issue.type === 'delete-conflict') {
+          handledIds.add(issue.id);
+          if (choice === 'keep-game') {
+            const live = issue.liveSide === 'local' ? issue.local : issue.remote;
+            const resolved = { ...live, updatedAt: resolutionTime };
+            localUpserts.push(resolved);
+            cloudWrites.push({ ref: cloudGameRef(issue.id), data: cloudGamePayload(resolved) });
+          } else {
+            const deletion = { id: issue.id, updatedAt: resolutionTime };
+            localDeletes.push(deletion);
+            cloudWrites.push({ ref: cloudGameRef(issue.id), data: cloudDeletePayload(deletion) });
+          }
+          continue;
+        }
+
+        if (issue.type === 'duplicate') {
+          handledIds.add(issue.localId);
+          handledIds.add(issue.remoteId);
+          if (choice === 'local') {
+            const resolvedLocal = { ...issue.local, updatedAt: resolutionTime };
+            const deleteRemote = { id: issue.remoteId, updatedAt: resolutionTime };
+            cloudWrites.push({ ref: cloudGameRef(issue.localId), data: cloudGamePayload(resolvedLocal) });
+            cloudWrites.push({ ref: cloudGameRef(issue.remoteId), data: cloudDeletePayload(deleteRemote) });
+            localDeletes.push(deleteRemote);
+          } else if (choice === 'cloud') {
+            const deleteLocal = { id: issue.localId, updatedAt: resolutionTime };
+            const resolvedRemote = { ...issue.remote, updatedAt: resolutionTime };
+            localDeletes.push(deleteLocal);
+            localUpserts.push(resolvedRemote);
+            cloudWrites.push({ ref: cloudGameRef(issue.localId), data: cloudDeletePayload(deleteLocal) });
+            cloudWrites.push({ ref: cloudGameRef(issue.remoteId), data: cloudGamePayload(resolvedRemote) });
+          } else {
+            const resolvedLocal = { ...issue.local, updatedAt: resolutionTime };
+            const resolvedRemote = { ...issue.remote, updatedAt: resolutionTime };
+            localUpserts.push(resolvedRemote);
+            cloudWrites.push({ ref: cloudGameRef(issue.localId), data: cloudGamePayload(resolvedLocal) });
+            cloudWrites.push({ ref: cloudGameRef(issue.remoteId), data: cloudGamePayload(resolvedRemote) });
+          }
+        }
+      }
 
       for (const [id, remote] of remoteMap.entries()) {
+        if (handledIds.has(id)) continue;
         const local = localGameMap.get(id);
         const tombstone = tombstoneMap.get(id);
         const remoteAt = Number(remote.updatedAt || 0);
@@ -376,9 +691,11 @@
       }
 
       for (const [id, local] of localGameMap.entries()) {
+        if (handledIds.has(id)) continue;
         if (!remoteMap.has(id)) cloudWrites.push({ ref: cloudGameRef(id), data: cloudGamePayload(local) });
       }
       for (const [id, tombstone] of tombstoneMap.entries()) {
+        if (handledIds.has(id)) continue;
         if (!remoteMap.has(id)) cloudWrites.push({ ref: cloudGameRef(id), data: cloudDeletePayload(tombstone) });
       }
 
@@ -757,11 +1074,206 @@
     }
   }
 
+  function downloadJson(filename, payload) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function localDateStamp() {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+
+  async function downloadCloudBackup() {
+    if (!currentUser || !firestore) {
+      setStatus('Sign in before downloading a cloud backup.', 'error');
+      return;
+    }
+    if (!navigator.onLine) {
+      setStatus('Cloud backup needs an internet connection. Your local Export backup still works offline.', 'error');
+      return;
+    }
+
+    try {
+      dom.downloadCloudBackupBtn.disabled = true;
+      setStatus('Reading your Firebase bowling history…');
+
+      const gameSnap = await modules.getDocs(modules.collection(firestore, 'users', currentUser.uid, 'games'));
+      const games = [];
+      const tombstones = [];
+      gameSnap.forEach((item) => {
+        const value = item.data();
+        if (value.deleted) {
+          tombstones.push({
+            id: Number(value.id ?? item.id),
+            updatedAt: Number(value.updatedAt || 0)
+          });
+        } else {
+          games.push(value);
+        }
+      });
+
+      const memberships = [];
+      for (const groupId of [...new Set(profile?.groupIds || [])]) {
+        try {
+          const groupRef = modules.doc(firestore, 'groups', groupId);
+          const memberRef = modules.doc(firestore, 'groups', groupId, 'members', currentUser.uid);
+          const [groupSnap, memberSnap] = await Promise.all([
+            modules.getDoc(groupRef),
+            modules.getDoc(memberRef)
+          ]);
+          if (groupSnap.exists() || memberSnap.exists()) {
+            const groupData = groupSnap.exists() ? groupSnap.data() : {};
+            memberships.push({
+              id: groupId,
+              name: groupData.name || groupId,
+              code: groupData.code || groupId,
+              ownedByAccount: groupData.ownerUid === currentUser.uid,
+              member: memberSnap.exists() ? memberSnap.data() : null
+            });
+          }
+        } catch (error) {
+          console.warn('Could not include group in cloud backup', groupId, error);
+        }
+      }
+
+      const payload = {
+        app: 'Bowling Tracker',
+        version: window.BowlingApp?.version || 'unknown',
+        backupType: 'firebase-cloud',
+        exportedAt: new Date().toISOString(),
+        account: {
+          email: currentUser.email || '',
+          displayName: profile?.displayName || currentUser.displayName || ''
+        },
+        profile: profile ? { ...profile } : null,
+        games: games.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
+        tombstones: tombstones.sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0)),
+        groupMemberships: memberships
+      };
+
+      downloadJson(`bowling-cloud-backup-${localDateStamp()}.json`, payload);
+      setStatus(`Cloud backup downloaded: ${games.length} live game${games.length === 1 ? '' : 's'} plus ${tombstones.length} deletion record${tombstones.length === 1 ? '' : 's'}.`, 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(`Cloud backup failed. ${friendlyError(error)}`, 'error');
+    } finally {
+      if (dom.downloadCloudBackupBtn) dom.downloadCloudBackupBtn.disabled = false;
+    }
+  }
+
+  async function deleteRefsInChunks(refs) {
+    const chunkSize = 30;
+    for (let i = 0; i < refs.length; i += chunkSize) {
+      await Promise.all(refs.slice(i, i + chunkSize).map((ref) => modules.deleteDoc(ref)));
+    }
+  }
+
+  async function detachAccountFromGroups(uid) {
+    const groupIds = [...new Set(profile?.groupIds || [])];
+    const now = Date.now();
+
+    for (const groupId of groupIds) {
+      const groupRef = modules.doc(firestore, 'groups', groupId);
+      const memberRef = modules.doc(firestore, 'groups', groupId, 'members', uid);
+      const groupSnap = await modules.getDoc(groupRef);
+
+      if (groupSnap.exists() && groupSnap.data().ownerUid === uid) {
+        // A shared group belongs to everyone using it, so account deletion does
+        // not erase other bowlers' rows. Remove the deleted UID from ownership
+        // and leave the group usable as an ownerless shared leaderboard.
+        await modules.updateDoc(groupRef, {
+          ownerUid: '',
+          ownerDeletedAt: now,
+          updatedAt: now
+        });
+      }
+
+      // Security rules allow every signed-in user to remove their own member row.
+      await modules.deleteDoc(memberRef);
+    }
+  }
+
+  async function deleteCloudAccountAndData() {
+    if (!currentUser || !firestore || !auth) {
+      setStatus('Sign in before deleting a cloud account.', 'error');
+      return;
+    }
+    if (!navigator.onLine) {
+      setStatus('Account deletion requires an internet connection.', 'error');
+      return;
+    }
+
+    const password = dom.deleteAccountPassword?.value || '';
+    if (!password) {
+      setStatus('Enter your current password to confirm account deletion.', 'error');
+      dom.deleteAccountPassword?.focus();
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Permanently delete your Firebase account and cloud bowling data? Your local games on this device will remain. This cannot be undone unless you downloaded a backup.'
+    );
+    if (!confirmed) return;
+
+    const user = currentUser;
+    const uid = user.uid;
+
+    try {
+      dom.deleteCloudAccountBtn.disabled = true;
+      if (dom.downloadCloudBackupBtn) dom.downloadCloudBackupBtn.disabled = true;
+      setStatus('Verifying your password…');
+
+      const credential = modules.EmailAuthProvider.credential(user.email || '', password);
+      await modules.reauthenticateWithCredential(user, credential);
+
+      setStatus('Deleting private cloud bowling history…');
+      const gameSnap = await modules.getDocs(modules.collection(firestore, 'users', uid, 'games'));
+      const gameRefs = [];
+      gameSnap.forEach((item) => gameRefs.push(item.ref));
+      await deleteRefsInChunks(gameRefs);
+
+      setStatus('Removing your leaderboard entries…');
+      await detachAccountFromGroups(uid);
+
+      setStatus('Deleting your cloud profile…');
+      await modules.deleteDoc(modules.doc(firestore, 'users', uid));
+
+      // Keep the promised offline escape hatch even with account-isolated local
+      // databases: copy this account's device history into the signed-out store
+      // before the Firebase login itself disappears.
+      const app = await waitForBowlingApp();
+      await app.copyAccountDataToGuest?.(uid);
+
+      setStatus('Deleting Firebase login…');
+      await modules.deleteUser(user);
+
+      if (dom.deleteAccountPassword) dom.deleteAccountPassword.value = '';
+      hideSyncReview();
+      setStatus('Cloud account and cloud data deleted. Your local bowling history is still on this device.', 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(`Account deletion stopped. ${friendlyError(error)} Your local bowling history was not deleted.`, 'error');
+    } finally {
+      if (dom.deleteCloudAccountBtn) dom.deleteCloudAccountBtn.disabled = false;
+      if (dom.downloadCloudBackupBtn) dom.downloadCloudBackupBtn.disabled = false;
+    }
+  }
+
   async function signOutCloud() {
     if (!auth) return;
     try {
       await modules.signOut(auth);
-      setStatus('Signed out. Local bowling history remains on this device.', 'success');
+      const app = await waitForBowlingApp();
+      await app.activateGuest?.();
+      setStatus("Signed out. This account's offline history stays isolated on this device.", 'success');
     } catch (error) {
       setStatus(friendlyError(error), 'error');
     }
@@ -818,9 +1330,24 @@
     dom.signInBtn?.addEventListener('click', signIn);
     dom.createAccountBtn?.addEventListener('click', createAccount);
     dom.resetPasswordBtn?.addEventListener('click', resetPassword);
+    dom.downloadCloudBackupBtn?.addEventListener('click', downloadCloudBackup);
+    dom.deleteCloudAccountBtn?.addEventListener('click', deleteCloudAccountAndData);
     dom.signOutBtn?.addEventListener('click', signOutCloud);
     dom.saveProfileBtn?.addEventListener('click', saveProfile);
     dom.syncNowBtn?.addEventListener('click', () => syncAll('Manual sync'));
+    dom.applySyncReviewBtn?.addEventListener('click', () => {
+      const choices = collectSyncReviewChoices();
+      if (!choices) {
+        setStatus('Choose a resolution for every sync item before applying.', 'error');
+        return;
+      }
+      syncAll('Reviewed sync', choices);
+    });
+    dom.cancelSyncReviewBtn?.addEventListener('click', () => {
+      hideSyncReview();
+      setSyncBadge('Review needed', 'pending');
+      setStatus('Sync review postponed. No conflicting games were changed.');
+    });
     dom.createGroupBtn?.addEventListener('click', createGroup);
     dom.joinGroupBtn?.addEventListener('click', joinGroup);
     dom.groupSelect?.addEventListener('change', () => selectGroup(dom.groupSelect.value));

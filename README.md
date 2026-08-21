@@ -11,7 +11,8 @@ An offline-first bowling PWA for iPhone and desktop. Games are saved locally in 
 - Offline PWA support
 - Optional Firebase email/password account
 - Cross-device cloud sync
-- Conflict-safe sync using `updatedAt` timestamps and deletion tombstones
+- Account-isolated local storage: each Firebase account has its own IndexedDB game library on the same browser/device
+- Conflict-safe sync with an explicit review screen for divergent edits, edit-vs-delete conflicts, and likely duplicate games
 - Private bowling groups with 8-character invite codes
 - Sortable leaderboards: average, high game, high series, strike %, clean games, total strikes, best session average
 - Full game history remains private to its owner; group members see only leaderboard summary stats
@@ -83,7 +84,7 @@ const firebaseConfig = {
 };
 ```
 
-7. Open `firebase-config.js` from this package and replace each `PASTE_...` placeholder with the matching Firebase value.
+7. This packaged build is already connected to the Bowling Tracker Firebase project (`bowling-tracker-aad74`), so no configuration edit is needed for the current deployment. Only replace `firebase-config.js` if the app is intentionally moved to a different Firebase project.
 
 The Firebase Web App API key is designed to be present in browser code. Your data security comes from Firebase Authentication and the Firestore Security Rules, not from hiding this configuration file.
 
@@ -97,7 +98,7 @@ open **Authentication / Settings / Authorized domains**, choose **Add domain**, 
 
 ## 7. Upload this edition to GitHub
 
-Upload/replace the contents of this folder at the root of your existing `bowling-tracker` repository. In particular, the repo root should include:
+Upload/replace the contents of this folder at the root of your GitHub Pages repository (for this setup, `bowling-tracker-cloud`). In particular, the repo root should include:
 
 ```text
 index.html
@@ -119,7 +120,7 @@ GitHub Pages should continue publishing from the `main` branch and `/(root)`.
 1. Open the GitHub Pages site while online.
 2. Open **Cloud**.
 3. Create an account with your email/password and leaderboard display name.
-4. The app uploads existing local games and merges any cloud history into the device.
+4. The app activates that account's isolated local database, migrates the pre-isolation legacy database to the first matching account when needed, then uploads/merges cloud history. If games were entered while signed out and the account has no local history yet, the app asks whether to copy those signed-out games into the account.
 5. Under **Leaderboard profile**, choose which local bowler name should supply your public leaderboard stats.
 6. Tap **Sync now** if you want to force a reconciliation.
 
@@ -135,13 +136,17 @@ The group's leaderboard stores summary statistics only. Other group members cann
 
 # How sync works
 
-The local IndexedDB database remains the primary offline copy:
+Each Firebase account now has a separate local IndexedDB database on the same browser/device. A separate signed-out/guest database is used when no account is active. The account-specific IndexedDB database remains the primary offline copy:
 
 1. A new or edited game saves to the phone immediately.
 2. When online and signed in, the change is also written to Firestore.
 3. If the device is offline, the app keeps the local change and performs a full reconciliation when connectivity returns.
-4. Each record has an `updatedAt` timestamp. Newer edits win when two devices contain different versions of the same game.
-5. Deletions create small local/cloud **tombstones** so a stale second device cannot accidentally resurrect a game you intentionally deleted.
+4. If the same game has different bowling details on the device and in the cloud, sync pauses and asks which copy to keep instead of silently overwriting either copy.
+5. If one side deleted a game while the other side still has it, sync pauses and asks whether to keep the game or keep it deleted.
+6. If a local-only game and cloud-only game have different IDs but the same bowler, date, session, score, open frames, strikes and strike opportunities, the app flags a **possible duplicate**. You can keep the device copy, keep the cloud copy, or keep both.
+7. Deletions create small local/cloud **tombstones** so a stale second device cannot accidentally resurrect a game you intentionally deleted.
+8. Signing out switches the app to the separate guest database. Signing into another Firebase account switches to that account's own local database, so one user's offline games are not uploaded into another user's account.
+9. Existing pre-isolation local history is claimed/migrated once to the first account that signs in after this upgrade; later account switches remain isolated.
 
 # Backups
 
@@ -156,3 +161,22 @@ After replacing files in GitHub, open the web app while online. The service work
 - Firebase cloud features require an internet connection; the bowling tracker itself does not.
 - Scoreboard photos are currently used as a visual reference and are not uploaded to Firebase.
 - Automatic scoreboard OCR can be added later without changing the game data model.
+
+## Cloud account tools
+
+The Cloud Sync panel now includes **Download cloud backup** and **Delete my account & cloud data**.
+
+- **Download cloud backup** reads the signed-in user's Firebase data directly and downloads a JSON file. Its `games` and `tombstones` fields are compatible with the app's normal **Import backup** flow. It also includes a copy of the cloud profile and the user's group memberships for reference.
+- **Delete my account & cloud data** re-authenticates with the user's current password, deletes all documents in that user's private `games` subcollection, removes the user's own leaderboard member rows, removes the user UID from ownership of shared groups, deletes the user's cloud profile, and finally deletes the Firebase Authentication account.
+- Local IndexedDB bowling history is intentionally **not** erased by deleting the cloud account. Use **Settings → Delete all data** separately if the local copy should also be removed.
+- Shared groups are not destroyed when their creator deletes an account, because that would delete/strand other bowlers' shared context. The deleted account is removed from the group membership and ownership metadata instead.
+
+## Account isolation
+
+The app stores each signed-in Firebase user's offline data in a separate IndexedDB database keyed by that user's Firebase UID. This is specifically designed for shared browsers/devices where multiple real users may sign in and out.
+
+- Signing out does not delete that account's offline data; it simply switches the visible app to the signed-out/guest database.
+- Signing back into the same account restores that account's local history and then reconciles it with Firestore.
+- Signing into a different account switches to a different local database. Data is not copied between accounts.
+- If there are games in the guest database and a newly signed-in account has no existing account-local history, the app asks before copying those guest games into the account.
+- When a cloud account is permanently deleted, the app copies that account's current device history into the signed-out store before the Firebase login disappears, so the promised local escape copy remains accessible.

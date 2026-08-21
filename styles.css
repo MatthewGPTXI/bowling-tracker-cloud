@@ -314,3 +314,16 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monos
   .cloud-auth-grid label:last-child { grid-column: auto; }
   .account-summary { align-items: flex-start; }
 }
+
+/* Sync conflict / duplicate review */
+.sync-review-list { display: grid; gap: 12px; margin: 12px 0 16px; }
+.sync-review-item { border: 1px solid var(--line); border-radius: 14px; padding: 13px; background: rgba(255,255,255,.015); }
+.sync-review-title { font-weight: 800; margin-bottom: 5px; }
+.sync-review-copy { color: var(--muted); font-size: .84rem; line-height: 1.45; margin-bottom: 10px; }
+.sync-review-compare { display: grid; gap: 8px; margin: 10px 0; }
+.sync-review-game { border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px; font-size: .82rem; line-height: 1.45; }
+.sync-review-game strong { display: block; color: var(--text); margin-bottom: 2px; }
+.sync-review-item label { display: block; margin-top: 9px; font-size: .82rem; font-weight: 700; }
+.sync-review-item select { width: 100%; margin-top: 5px; }
+.sync-review-warning { color: #f8dea2; }
+@media (min-width: 560px) { .sync-review-compare { grid-template-columns: 1fr 1fr; } }
