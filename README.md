@@ -180,3 +180,19 @@ The app stores each signed-in Firebase user's offline data in a separate Indexed
 - Signing into a different account switches to a different local database. Data is not copied between accounts.
 - If there are games in the guest database and a newly signed-in account has no existing account-local history, the app asks before copying those guest games into the account.
 - When a cloud account is permanently deleted, the app copies that account's current device history into the signed-out store before the Firebase login disappears, so the promised local escape copy remains accessible.
+
+
+## Stable v1 polish update
+
+This build keeps Strike Opportunities visible as a standard 10-12 field and adds:
+
+- Account/profile-driven game ownership (no per-game bowler field)
+- Personal-history view without a bowler filter
+- Visible current profile and sync status
+- Session-name suggestions based on prior games on the selected date
+- Personal records panel
+- Leave Group controls
+- Local duplicate-entry warnings and lightweight unusual-result warnings
+- Account-isolated IndexedDB storage, conflict review, cloud backup, and account deletion from prior builds
+
+No Firebase reconnection is required for this update. The existing Firebase project, web app config, Firestore paths/rules, Authentication setup, and GitHub Pages authorized domain remain compatible.

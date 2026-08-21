@@ -327,3 +327,39 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monos
 .sync-review-item select { width: 100%; margin-top: 5px; }
 .sync-review-warning { color: #f8dea2; }
 @media (min-width: 560px) { .sync-review-compare { grid-template-columns: 1fr 1fr; } }
+
+
+/* Stable v1 profile, sync, and personal-record polish */
+.identity-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 14px;
+  margin: -10px 2px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(18,27,45,.72);
+}
+.identity-person { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.identity-person span { color: var(--muted); font-size: .78rem; }
+.identity-person strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.identity-sync { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--muted); font-size: .78rem; text-align: right; }
+.identity-sync .text-btn { margin-left: 4px; white-space: nowrap; }
+.records-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+.record-stat { border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: #0e1727; display: grid; gap: 6px; }
+.record-stat > span { color: var(--muted); font-size: .78rem; }
+.record-stat > strong { font-size: 1.45rem; letter-spacing: -.02em; }
+.record-stat > small { color: var(--muted); font-size: .72rem; line-height: 1.35; }
+.group-row-actions { display: flex !important; grid-template-columns: none !important; align-items: center; gap: 10px !important; }
+.history-filters { min-width: min(100%, 190px); }
+.cloud-profile-grid { grid-template-columns: 1fr; }
+
+@media (max-width: 900px) {
+  .records-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 620px) {
+  .identity-strip { align-items: flex-start; flex-direction: column; }
+  .identity-sync { width: 100%; justify-content: flex-start; flex-wrap: wrap; text-align: left; }
+  .records-grid { grid-template-columns: 1fr 1fr; }
+}

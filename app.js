@@ -10,7 +10,7 @@
   const GAME_STORE = 'games';
   const SETTINGS_STORE = 'settings';
   const TOMBSTONE_STORE = 'tombstones';
-  const APP_VERSION = 3;
+  const APP_VERSION = 4;
 
   let db;
   let activeLocalScope = { kind: 'guest', uid: '', dbName: GUEST_DB_NAME };
@@ -18,6 +18,7 @@
   let editingGameId = null;
   let deferredInstallPrompt = null;
   let selectedPhotoUrl = null;
+  let activeProfileName = 'Bowler';
 
   const $ = (id) => document.getElementById(id);
 
@@ -46,9 +47,25 @@
     moreCleanRate: $('moreCleanRate'),
     moreLast5: $('moreLast5'),
     moreBestSessionAvg: $('moreBestSessionAvg'),
-    bowler: $('bowlerInput'),
+    recordHighGame: $('recordHighGame'),
+    recordHighGameDetail: $('recordHighGameDetail'),
+    recordHighSeries: $('recordHighSeries'),
+    recordHighSeriesDetail: $('recordHighSeriesDetail'),
+    recordBestSession: $('recordBestSession'),
+    recordBestSessionDetail: $('recordBestSessionDetail'),
+    recordMostStrikes: $('recordMostStrikes'),
+    recordMostStrikesDetail: $('recordMostStrikesDetail'),
+    recordBestStrikePct: $('recordBestStrikePct'),
+    recordBestStrikePctDetail: $('recordBestStrikePctDetail'),
+    recordRecent200: $('recordRecent200'),
+    recordRecent200Detail: $('recordRecent200Detail'),
+    currentProfileName: $('currentProfileName'),
+    globalSyncStatus: $('globalSyncStatus'),
+    globalSyncDot: $('globalSyncDot'),
+    editProfileBtn: $('editProfileBtn'),
     date: $('dateInput'),
     sessionName: $('sessionNameInput'),
+    sessionSuggestions: $('sessionSuggestions'),
     score: $('scoreInput'),
     openFrames: $('openFramesInput'),
     strikes: $('strikesInput'),
@@ -68,7 +85,6 @@
     clearPhotoBtn: $('clearPhotoBtn'),
     emptyHistory: $('emptyHistory'),
     sessionsList: $('sessionsList'),
-    bowlerFilter: $('bowlerFilter'),
     sortFilter: $('sortFilter'),
     settingsDialog: $('settingsDialog'),
     openSettingsBtn: $('openSettingsBtn'),
@@ -120,7 +136,7 @@
   }
 
   function sessionKey(game) {
-    return `${game.bowler}|||${game.date}|||${sessionLabel(game).toLowerCase()}`;
+    return `${game.date}|||${sessionLabel(game).toLowerCase()}`;
   }
 
   function clone(value) {
@@ -239,10 +255,11 @@
 
   async function copyDatabaseContents(sourceDb, targetDb) {
     if (!sourceDb || !targetDb || sourceDb === targetDb) return;
-    const [sourceGames, sourceTombstones, defaultBowler] = await Promise.all([
+    const [sourceGames, sourceTombstones, defaultBowler, profileName] = await Promise.all([
       getAllFromDb(sourceDb, GAME_STORE),
       getAllFromDb(sourceDb, TOMBSTONE_STORE),
-      getSettingFromDb(sourceDb, 'defaultBowler')
+      getSettingFromDb(sourceDb, 'defaultBowler'),
+      getSettingFromDb(sourceDb, 'profileName')
     ]);
 
     for (const sourceGame of sourceGames) {
@@ -272,14 +289,17 @@
     if (defaultBowler && !await getSettingFromDb(targetDb, 'defaultBowler')) {
       await setSettingOnDb(targetDb, 'defaultBowler', defaultBowler);
     }
+    const sourceProfileName = profileName || defaultBowler;
+    if (sourceProfileName && !await getSettingFromDb(targetDb, 'profileName')) {
+      await setSettingOnDb(targetDb, 'profileName', sourceProfileName);
+    }
   }
 
   async function refreshFromActiveDatabase() {
     games = await getAllGames();
     editingGameId = null;
-    dom.bowlerFilter.value = 'all';
-    await loadDefaultBowler(true);
-    resetEntryForm({ preserveBowler: true, preserveDate: false, preserveSession: false });
+    await loadProfileName(true);
+    resetEntryForm({ preserveDate: false, preserveSession: false });
     renderAll();
     window.dispatchEvent(new CustomEvent('bowling:profile-options-changed'));
     window.dispatchEvent(new CustomEvent('bowling:local-account-changed', { detail: getLocalScopeInfo() }));
@@ -384,13 +404,14 @@
     }
 
     const legacyDb = await openDatabase(LEGACY_DB_NAME);
-    const [legacyGames, legacyTombstones, legacyDefault, claimedBy] = await Promise.all([
+    const [legacyGames, legacyTombstones, legacyDefault, legacyProfileName, claimedBy] = await Promise.all([
       getAllFromDb(legacyDb, GAME_STORE),
       getAllFromDb(legacyDb, TOMBSTONE_STORE),
       getSettingFromDb(legacyDb, 'defaultBowler'),
+      getSettingFromDb(legacyDb, 'profileName'),
       getSettingFromDb(legacyDb, LEGACY_CLAIM_KEY)
     ]);
-    if (!claimedBy && (legacyGames.length || legacyTombstones.length || legacyDefault)) {
+    if (!claimedBy && (legacyGames.length || legacyTombstones.length || legacyDefault || legacyProfileName)) {
       activeLocalScope = { kind: 'legacy', uid: '', dbName: LEGACY_DB_NAME };
       return legacyDb;
     }
@@ -444,8 +465,20 @@
   }
 
   function filteredGames() {
-    const filter = dom.bowlerFilter.value;
-    return filter === 'all' ? [...games] : games.filter((g) => g.bowler === filter);
+    return [...games];
+  }
+
+  function updateSessionSuggestions({ chooseRecent = false } = {}) {
+    if (!dom.sessionSuggestions || !dom.date) return;
+    const date = dom.date.value;
+    const sameDate = games
+      .filter((g) => g.date === date)
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    const names = [...new Set(sameDate.map((g) => String(g.sessionName || '').trim()).filter(Boolean))];
+    dom.sessionSuggestions.innerHTML = names.map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
+    if (chooseRecent && !editingGameId) {
+      dom.sessionName.value = sameDate[0]?.sessionName || '';
+    }
   }
 
   function calculateStats(sourceGames) {
@@ -460,6 +493,23 @@
     const bestSession = sessions.length ? sessions.reduce((best, s) => s.average > best.average ? s : best) : null;
     const bestSeries = bestThreeGameSeries(sessions);
     const highGameObj = sourceGames.length ? sourceGames.reduce((best, g) => g.score > best.score ? g : best) : null;
+    const mostStrikesGame = sourceGames.length ? sourceGames.reduce((best, g) => {
+      if (g.strikes > best.strikes) return g;
+      if (g.strikes === best.strikes && Number(g.createdAt || 0) > Number(best.createdAt || 0)) return g;
+      return best;
+    }) : null;
+    const bestStrikePctGame = sourceGames.length ? sourceGames.reduce((best, g) => {
+      const pct = g.strikeOpportunities ? g.strikes / g.strikeOpportunities : 0;
+      const bestPct = best.strikeOpportunities ? best.strikes / best.strikeOpportunities : 0;
+      if (pct > bestPct) return g;
+      if (pct === bestPct && g.strikes > best.strikes) return g;
+      if (pct === bestPct && g.strikes === best.strikes && Number(g.createdAt || 0) > Number(best.createdAt || 0)) return g;
+      return best;
+    }) : null;
+    const recent200 = [...sourceGames].filter((g) => g.score >= 200).sort((a, b) => {
+      const dateCmp = String(b.date).localeCompare(String(a.date));
+      return dateCmp || Number(b.createdAt || 0) - Number(a.createdAt || 0);
+    })[0] || null;
 
     return {
       count,
@@ -478,13 +528,15 @@
       games250: sourceGames.filter((g) => g.score >= 250).length,
       games300: sourceGames.filter((g) => g.score === 300).length,
       last5: sortedRecent.length ? avg(sortedRecent.slice(0, 5).map((g) => g.score)) : 0,
-      bestSession
+      bestSession,
+      mostStrikesGame,
+      bestStrikePctGame,
+      recent200
     };
   }
 
-  function leaderboardSummaryForBowler(bowlerName) {
-    const source = games.filter((g) => g.bowler === bowlerName);
-    const stats = calculateStats(source);
+  function leaderboardSummaryForBowler(_bowlerName) {
+    const stats = calculateStats(games);
     return {
       games: stats.count,
       average: stats.average,
@@ -505,7 +557,7 @@
 
     dom.highGame.textContent = stats.highGameObj ? stats.highGameObj.score : '—';
     dom.highGameDetail.textContent = stats.highGameObj
-      ? `${fmtDate(stats.highGameObj.date)} · ${stats.highGameObj.bowler}`
+      ? fmtDate(stats.highGameObj.date)
       : 'No games yet';
 
     dom.highSeries.textContent = stats.bestSeries ? stats.bestSeries.total : '—';
@@ -536,14 +588,19 @@
     dom.moreCleanRate.textContent = stats.count ? `${stats.cleanRate.toFixed(1)}%` : '—';
     dom.moreLast5.textContent = stats.count ? stats.last5.toFixed(1) : '—';
     dom.moreBestSessionAvg.textContent = stats.bestSession ? stats.bestSession.average.toFixed(1) : '—';
-  }
 
-  function updateBowlerFilter() {
-    const previous = dom.bowlerFilter.value;
-    const names = [...new Set(games.map((g) => g.bowler).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    dom.bowlerFilter.innerHTML = '<option value="all">All bowlers</option>' + names
-      .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
-    if (names.includes(previous)) dom.bowlerFilter.value = previous;
+    dom.recordHighGame.textContent = stats.highGameObj ? stats.highGameObj.score : '—';
+    dom.recordHighGameDetail.textContent = stats.highGameObj ? fmtDate(stats.highGameObj.date) : 'No games yet';
+    dom.recordHighSeries.textContent = stats.bestSeries ? stats.bestSeries.total : '—';
+    dom.recordHighSeriesDetail.textContent = stats.bestSeries ? `${fmtDate(stats.bestSeries.session.date)} · ${stats.bestSeries.session.name}` : 'Need 3 games';
+    dom.recordBestSession.textContent = stats.bestSession ? stats.bestSession.average.toFixed(1) : '—';
+    dom.recordBestSessionDetail.textContent = stats.bestSession ? `${fmtDate(stats.bestSession.date)} · ${stats.bestSession.name}` : 'No sessions yet';
+    dom.recordMostStrikes.textContent = stats.mostStrikesGame ? stats.mostStrikesGame.strikes : '—';
+    dom.recordMostStrikesDetail.textContent = stats.mostStrikesGame ? `${stats.mostStrikesGame.score} game · ${fmtDate(stats.mostStrikesGame.date)}` : 'No games yet';
+    dom.recordBestStrikePct.textContent = stats.bestStrikePctGame ? `${((stats.bestStrikePctGame.strikes / stats.bestStrikePctGame.strikeOpportunities) * 100).toFixed(1)}%` : '—';
+    dom.recordBestStrikePctDetail.textContent = stats.bestStrikePctGame ? `${stats.bestStrikePctGame.strikes}/${stats.bestStrikePctGame.strikeOpportunities} · ${fmtDate(stats.bestStrikePctGame.date)}` : 'No games yet';
+    dom.recordRecent200.textContent = stats.recent200 ? stats.recent200.score : '—';
+    dom.recordRecent200Detail.textContent = stats.recent200 ? fmtDate(stats.recent200.date) : 'No 200+ games yet';
   }
 
   function renderHistory() {
@@ -571,7 +628,7 @@
         <article class="session-card">
           <div class="session-header">
             <div>
-              <div class="session-title">${escapeHtml(session.bowler)} · ${escapeHtml(fmtDate(session.date))}</div>
+              <div class="session-title">${escapeHtml(fmtDate(session.date))}</div>
               <div class="session-meta">${escapeHtml(session.name)} · ${session.games.length} game${session.games.length === 1 ? '' : 's'}</div>
             </div>
             <div class="session-badges">
@@ -618,14 +675,15 @@
   }
 
   function renderAll() {
-    updateBowlerFilter();
     renderStats();
     renderHistory();
+    updateSessionSuggestions();
+    updateIdentityBar();
     window.dispatchEvent(new CustomEvent('bowling:rendered'));
   }
 
   function validateGameForm() {
-    const bowler = dom.bowler.value.trim();
+    const bowler = activeProfileName || 'Bowler';
     const date = dom.date.value;
     const sessionName = dom.sessionName.value.trim();
     const score = Number(dom.score.value);
@@ -634,19 +692,38 @@
     const strikeOpportunities = Number(dom.strikeOpp.value);
     const notes = dom.notes.value.trim();
 
-    if (!bowler || !date || dom.score.value === '' || dom.openFrames.value === '' || dom.strikes.value === '' || dom.strikeOpp.value === '') {
-      return { error: 'Please fill in bowler, date, score, open frames, strikes, and strike opportunities.' };
+    if (!date || dom.score.value === '' || dom.openFrames.value === '' || dom.strikes.value === '' || dom.strikeOpp.value === '') {
+      return { error: 'Please fill in date, score, open frames, strikes, and strike opportunities.' };
     }
     if (!Number.isInteger(score) || score < 0 || score > 300) return { error: 'Score must be a whole number from 0 to 300.' };
     if (!Number.isInteger(openFrames) || openFrames < 0 || openFrames > 10) return { error: 'Open frames must be a whole number from 0 to 10.' };
     if (!Number.isInteger(strikes) || strikes < 0 || strikes > 12) return { error: 'Strikes must be a whole number from 0 to 12.' };
-    if (!Number.isInteger(strikeOpportunities) || strikeOpportunities < 1 || strikeOpportunities > 12) return { error: 'Strike opportunities must be a whole number from 1 to 12.' };
+    if (!Number.isInteger(strikeOpportunities) || strikeOpportunities < 10 || strikeOpportunities > 12) return { error: 'Strike opportunities must be a whole number from 10 to 12.' };
     if (strikes > strikeOpportunities) return { error: 'Strikes cannot exceed strike opportunities.' };
     if (score === 300 && strikes !== 12) return { error: 'A 300 game should be recorded as 12 strikes.' };
 
     return {
       value: { bowler, date, sessionName, score, openFrames, strikes, strikeOpportunities, notes }
     };
+  }
+
+  function possibleDuplicate(candidate) {
+    const session = String(candidate.sessionName || '').trim().toLowerCase();
+    return games.find((g) => Number(g.id) !== Number(editingGameId)
+      && g.date === candidate.date
+      && String(g.sessionName || '').trim().toLowerCase() === session
+      && Number(g.score) === candidate.score
+      && Number(g.openFrames) === candidate.openFrames
+      && Number(g.strikes) === candidate.strikes
+      && Number(g.strikeOpportunities || 10) === candidate.strikeOpportunities);
+  }
+
+  function unusualGameWarnings(candidate) {
+    const warnings = [];
+    if (candidate.strikes > 0 && candidate.score < 10) warnings.push('the score is under 10 but strikes are recorded');
+    if (candidate.strikes === 12 && candidate.score !== 300) warnings.push('12 strikes are recorded but the score is not 300');
+    if (candidate.openFrames === 0 && candidate.score < 100) warnings.push('the game is marked clean with a score under 100');
+    return warnings;
   }
 
   function isValidGame(game) {
@@ -670,7 +747,7 @@
       score: Number(game.score),
       openFrames: Number(game.openFrames),
       strikes,
-      strikeOpportunities: Math.max(Number(game.strikeOpportunities || 10), strikes, 1),
+      strikeOpportunities: Math.min(12, Math.max(Number(game.strikeOpportunities || 10), strikes, 10)),
       notes: String(game.notes || ''),
       createdAt: Number(game.createdAt || Date.now()),
       updatedAt: Number(game.updatedAt || game.createdAt || Date.now())
@@ -681,6 +758,17 @@
     const validated = validateGameForm();
     if (validated.error) {
       setStatus(dom.entryStatus, validated.error, 'error');
+      return;
+    }
+
+    const duplicate = possibleDuplicate(validated.value);
+    if (duplicate && !window.confirm(`Possible duplicate detected: a ${duplicate.score} game is already saved for ${fmtDate(duplicate.date)} in ${sessionLabel(duplicate)}. Save another copy anyway?`)) {
+      setStatus(dom.entryStatus, 'Duplicate save cancelled.');
+      return;
+    }
+    const warnings = unusualGameWarnings(validated.value);
+    if (warnings.length && !window.confirm(`This game looks unusual because ${warnings.join(' and ')}. Save it anyway?`)) {
+      setStatus(dom.entryStatus, 'Save cancelled so you can review the game details.');
       return;
     }
 
@@ -702,7 +790,7 @@
       } else {
         setStatus(dom.entryStatus, 'Game saved and added to this session.', 'success');
       }
-      resetEntryForm({ preserveBowler: true, preserveDate: true, preserveSession: true });
+      resetEntryForm({ preserveDate: true, preserveSession: true });
       renderAll();
       emitDataChanged({ type: 'upsert', game: clone(game) });
     } catch (error) {
@@ -711,11 +799,9 @@
     }
   }
 
-  function resetEntryForm({ preserveBowler = false, preserveDate = false, preserveSession = false } = {}) {
-    const bowler = preserveBowler ? dom.bowler.value : '';
+  function resetEntryForm({ preserveDate = false, preserveSession = false } = {}) {
     const date = preserveDate ? dom.date.value : todayLocal();
     const sessionName = preserveSession ? dom.sessionName.value : '';
-    dom.bowler.value = bowler;
     dom.date.value = date;
     dom.sessionName.value = sessionName;
     dom.score.value = '';
@@ -729,13 +815,13 @@
     dom.entryHeading.textContent = 'Add game';
     dom.entrySubheading.textContent = 'Enter the numbers directly or use a scoreboard photo as a reference.';
     clearPhoto();
+    updateSessionSuggestions();
   }
 
   function startEdit(id) {
     const game = games.find((g) => g.id === id);
     if (!game) return;
     editingGameId = id;
-    dom.bowler.value = game.bowler;
     dom.date.value = game.date;
     dom.sessionName.value = game.sessionName || '';
     dom.score.value = game.score;
@@ -788,14 +874,41 @@
     if (resetInput) dom.scoreboardPhoto.value = '';
   }
 
-  async function loadDefaultBowler(resetWhenMissing = false) {
-    const defaultBowler = await getSetting('defaultBowler');
-    dom.defaultBowlerInput.value = defaultBowler || '';
-    if (defaultBowler) {
-      dom.bowler.value = defaultBowler;
-    } else if (resetWhenMissing) {
-      dom.bowler.value = '';
+  function updateIdentityBar() {
+    if (dom.currentProfileName) dom.currentProfileName.textContent = activeProfileName || 'Bowler';
+    const signedIn = Boolean(window.BowlingCloud?.isSignedIn?.());
+    if (dom.defaultBowlerInput) {
+      dom.defaultBowlerInput.value = activeProfileName || 'Bowler';
+      dom.defaultBowlerInput.disabled = activeLocalScope.kind === 'user';
     }
+    if (dom.saveDefaultBowlerBtn) dom.saveDefaultBowlerBtn.disabled = activeLocalScope.kind === 'user';
+    if (!signedIn && dom.globalSyncStatus && !dom.globalSyncStatus.textContent) dom.globalSyncStatus.textContent = 'Local only';
+  }
+
+  async function loadProfileName(resetWhenMissing = false) {
+    let profileName = await getSetting('profileName');
+    const legacyDefault = await getSetting('defaultBowler');
+    const firstGameName = games.find((g) => String(g.bowler || '').trim())?.bowler || '';
+    profileName = String(profileName || legacyDefault || firstGameName || 'Bowler').trim() || 'Bowler';
+    if (!await getSetting('profileName')) await setSetting('profileName', profileName);
+    activeProfileName = profileName;
+    if (resetWhenMissing && !profileName) activeProfileName = 'Bowler';
+    updateIdentityBar();
+    return activeProfileName;
+  }
+
+  async function setProfileName(name, { persist = true } = {}) {
+    const next = String(name || '').trim() || 'Bowler';
+    activeProfileName = next;
+    if (persist) await setSetting('profileName', next);
+    updateIdentityBar();
+    window.dispatchEvent(new CustomEvent('bowling:profile-options-changed'));
+    return next;
+  }
+
+  function setSyncStatus(text, state = '') {
+    if (dom.globalSyncStatus) dom.globalSyncStatus.textContent = text || 'Local only';
+    if (dom.globalSyncDot) dom.globalSyncDot.className = `status-dot ${state || 'off'}`.trim();
   }
 
   function downloadFile(filename, contents, mime) {
@@ -816,6 +929,7 @@
       app: 'Bowling Tracker',
       version: APP_VERSION,
       exportedAt: new Date().toISOString(),
+      profileName: activeProfileName,
       games: [...games].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       tombstones
     };
@@ -875,6 +989,7 @@
         }
       }
 
+      if (payload.profileName && activeLocalScope.kind !== 'user') await setProfileName(payload.profileName);
       games = await getAllGames();
       renderAll();
       emitDataChanged({ type: 'bulk' });
@@ -926,11 +1041,11 @@
     dom.clearPhotoBtn.addEventListener('click', () => clearPhoto());
     dom.saveGameBtn.addEventListener('click', saveGameFromForm);
     dom.cancelEditBtn.addEventListener('click', () => {
-      resetEntryForm({ preserveBowler: true, preserveDate: true, preserveSession: true });
+      resetEntryForm({ preserveDate: true, preserveSession: true });
       setStatus(dom.entryStatus, 'Edit cancelled.');
     });
-    dom.bowlerFilter.addEventListener('change', () => { renderStats(); renderHistory(); });
     dom.sortFilter.addEventListener('change', renderHistory);
+    dom.date.addEventListener('change', () => updateSessionSuggestions({ chooseRecent: true }));
 
     dom.score.addEventListener('input', () => {
       if (Number(dom.score.value) === 300) {
@@ -941,7 +1056,7 @@
     });
     dom.strikes.addEventListener('input', () => {
       const strikes = Number(dom.strikes.value || 0);
-      if (strikes > Number(dom.strikeOpp.value || 0)) dom.strikeOpp.value = String(Math.min(12, strikes));
+      if (strikes > Number(dom.strikeOpp.value || 10)) dom.strikeOpp.value = String(Math.min(12, Math.max(10, strikes)));
     });
 
     [dom.score, dom.openFrames, dom.strikes, dom.strikeOpp, dom.notes].forEach((input) => {
@@ -950,17 +1065,29 @@
       });
     });
 
+    dom.editProfileBtn?.addEventListener('click', () => {
+      if (activeLocalScope.kind === 'user' || window.BowlingCloud?.isSignedIn?.()) {
+        document.getElementById('openCloudBtn')?.click();
+        setTimeout(() => document.getElementById('profileDisplayNameInput')?.focus(), 50);
+      } else {
+        dom.settingsDialog.showModal();
+        setTimeout(() => dom.defaultBowlerInput?.focus(), 50);
+      }
+    });
     dom.openSettingsBtn.addEventListener('click', () => dom.settingsDialog.showModal());
     dom.closeSettingsBtn.addEventListener('click', () => dom.settingsDialog.close());
     dom.settingsDialog.addEventListener('click', (event) => {
       if (event.target === dom.settingsDialog) dom.settingsDialog.close();
     });
     dom.saveDefaultBowlerBtn.addEventListener('click', async () => {
-      const name = dom.defaultBowlerInput.value.trim();
+      if (activeLocalScope.kind === 'user') {
+        setStatus(dom.settingsStatus, 'While signed in, change your name under Cloud Sync → Leaderboard profile.', 'error');
+        return;
+      }
+      const name = dom.defaultBowlerInput.value.trim() || 'Bowler';
+      await setProfileName(name);
       await setSetting('defaultBowler', name);
-      if (name) dom.bowler.value = name;
-      setStatus(dom.settingsStatus, name ? 'Default bowler saved.' : 'Default bowler cleared.', 'success');
-      window.dispatchEvent(new CustomEvent('bowling:profile-options-changed'));
+      setStatus(dom.settingsStatus, 'Local profile saved.', 'success');
     });
     dom.exportJsonBtn.addEventListener('click', exportBackup);
     dom.exportCsvBtn.addEventListener('click', exportCsv);
@@ -1008,8 +1135,11 @@
     ready: false,
     getGames: () => clone(games),
     getTombstones: async () => clone(await getAllTombstones()),
-    getBowlerNames: () => [...new Set(games.map((g) => g.bowler).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    getDefaultBowler: () => getSetting('defaultBowler'),
+    getBowlerNames: () => [activeProfileName || 'Bowler'],
+    getDefaultBowler: async () => activeProfileName || await getSetting('profileName') || await getSetting('defaultBowler') || 'Bowler',
+    getProfileName: () => activeProfileName || 'Bowler',
+    setProfileName,
+    setSyncStatus,
     getLeaderboardSummary: (bowlerName) => clone(leaderboardSummaryForBowler(bowlerName)),
     getLocalScopeInfo,
     getAccountLocalGameCount,
@@ -1037,7 +1167,7 @@
     try {
       db = await openInitialDatabase();
       games = await getAllGames();
-      await loadDefaultBowler();
+      await loadProfileName();
       renderAll();
       api.ready = true;
       window.dispatchEvent(new CustomEvent('bowling:ready', { detail: { ok: true } }));

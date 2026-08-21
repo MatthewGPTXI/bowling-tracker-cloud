@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bowling-tracker-v3-cloud-r4-account-isolation';
+const CACHE_NAME = 'bowling-tracker-v8-cloud-r4-account-isolation';
 const APP_ASSETS = [
   './',
   './index.html',

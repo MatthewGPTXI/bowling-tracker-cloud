@@ -25,7 +25,6 @@
     accountEmail: $('cloudAccountEmail'),
     syncBadge: $('cloudSyncBadge'),
     profileDisplayName: $('profileDisplayNameInput'),
-    profileBowler: $('profileBowlerSelect'),
     saveProfileBtn: $('saveCloudProfileBtn'),
     syncNowBtn: $('syncNowBtn'),
     downloadCloudBackupBtn: $('downloadCloudBackupBtn'),
@@ -69,6 +68,7 @@
   let syncing = false;
   let lastSyncAt = 0;
   let pendingSyncReview = null;
+  let pendingLocalChanges = 0;
 
   const metricInfo = {
     average: { label: 'Average', format: (v) => Number(v || 0).toFixed(1), provisional: true },
@@ -109,9 +109,11 @@
   }
 
   function setSyncBadge(text, state = '') {
-    if (!dom.syncBadge) return;
-    dom.syncBadge.textContent = text;
-    dom.syncBadge.className = `sync-badge ${state}`.trim();
+    if (dom.syncBadge) {
+      dom.syncBadge.textContent = text;
+      dom.syncBadge.className = `sync-badge ${state}`.trim();
+    }
+    window.BowlingApp?.setSyncStatus?.(text, state === 'success' ? 'on' : state === 'working' || state === 'pending' ? 'working' : state === 'error' ? 'error' : 'off');
   }
 
   function setCloudButton(state, label) {
@@ -196,6 +198,7 @@
 
     if (!configured) {
       setCloudButton('off', 'Cloud setup');
+      window.BowlingApp?.setSyncStatus?.('Local only', 'off');
       dom.signedOut?.classList.add('hidden');
       dom.signedIn?.classList.add('hidden');
       dom.leaderboardSignedOut?.classList.remove('hidden');
@@ -206,10 +209,12 @@
 
     if (!navigator.onLine && !currentUser) {
       setCloudButton('off', 'Cloud offline');
+      window.BowlingApp?.setSyncStatus?.('Offline — saved on device', 'working');
     } else if (currentUser) {
       setCloudButton('on', 'Cloud ✓');
     } else {
       setCloudButton('off', 'Cloud');
+      window.BowlingApp?.setSyncStatus?.('Local only', 'off');
     }
 
     dom.signedOut?.classList.toggle('hidden', Boolean(currentUser));
@@ -249,13 +254,8 @@
   }
 
   function updateProfileBowlerOptions() {
-    if (!dom.profileBowler || !window.BowlingApp) return;
-    const bowlers = window.BowlingApp.getBowlerNames();
-    const selected = profile?.statsBowler || bowlers[0] || '';
-    dom.profileBowler.innerHTML = bowlers.length
-      ? bowlers.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')
-      : '<option value="">No local bowlers yet</option>';
-    if (bowlers.includes(selected)) dom.profileBowler.value = selected;
+    if (!window.BowlingApp || !profile) return;
+    profile.statsBowler = profile.displayName || currentUser?.displayName || window.BowlingApp.getProfileName?.() || 'Bowler';
   }
 
   async function renderAccount() {
@@ -263,6 +263,7 @@
     if (!currentUser || !profile) return;
     dom.accountEmail.textContent = currentUser.email || 'Signed in';
     dom.profileDisplayName.value = profile.displayName || currentUser.displayName || '';
+    await window.BowlingApp?.setProfileName?.(profile.displayName || currentUser.displayName || 'Bowler');
     updateProfileBowlerOptions();
     await loadGroups();
   }
@@ -282,7 +283,7 @@
       // signed-out/guest database instead of leaving another user's games visible.
       if (app.getLocalScopeInfo?.().kind === 'user') await app.activateGuest?.();
       if (dom.deleteAccountPassword) dom.deleteAccountPassword.value = '';
-      setSyncBadge('Signed out');
+      setSyncBadge('Local only');
       renderGroups();
       renderLeaderboardShell();
       return;
@@ -352,7 +353,6 @@
 
   function comparableGame(game) {
     return {
-      bowler: String(game?.bowler || '').trim().toLowerCase(),
       date: String(game?.date || ''),
       sessionName: normalizedSessionName(game),
       score: Number(game?.score || 0),
@@ -372,7 +372,6 @@
     // Notes are intentionally excluded. Two independently entered copies of the
     // same game often have different notes, while the bowling result is identical.
     return [
-      value.bowler,
       value.date,
       value.sessionName,
       value.score,
@@ -520,7 +519,7 @@
 
       return `<div class="sync-review-item" data-sync-issue="${escapeHtml(issue.key)}">
         <div class="sync-review-title">Possible duplicate game</div>
-        <div class="sync-review-copy">These have different internal IDs but the same bowler, date, session, score, open frames and strike totals. They may be two copies of the same real game.</div>
+        <div class="sync-review-copy">These have different internal IDs but the same date, session, score, open frames and strike totals. They may be two copies of the same real game.</div>
         <div class="sync-review-compare">
           ${gameReviewHtml('This device', issue.local)}
           ${gameReviewHtml('Cloud', issue.remote)}
@@ -567,7 +566,8 @@
   async function syncAll(reason = 'Sync', reviewChoices = null) {
     if (!currentUser || !firestore || syncing) return;
     if (!navigator.onLine) {
-      setSyncBadge('Local only', 'pending');
+      const waiting = pendingLocalChanges ? `${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting` : 'Offline — saved on device';
+      setSyncBadge(waiting, 'pending');
       setStatus('Offline: changes are saved locally and will sync when you reconnect.');
       return;
     }
@@ -705,9 +705,10 @@
       if (cloudWrites.length) await writeInChunks(cloudWrites);
 
       await publishAllSummaries();
-      setSyncBadge('Synced', 'success');
-      setStatus(`Synced ${app.getGames().length} local game${app.getGames().length === 1 ? '' : 's'} with Firebase.`, 'success');
+      pendingLocalChanges = 0;
       lastSyncAt = Date.now();
+      setSyncBadge('Synced just now', 'success');
+      setStatus(`Synced ${app.getGames().length} local game${app.getGames().length === 1 ? '' : 's'} with Firebase.`, 'success');
       await loadLeaderboard();
     } catch (error) {
       console.error(error);
@@ -749,12 +750,12 @@
 
   async function memberPayload() {
     const app = await waitForBowlingApp();
-    const statsBowler = profile.statsBowler || app.getBowlerNames()[0] || profile.displayName || 'Bowler';
-    const summary = app.getLeaderboardSummary(statsBowler);
+    const displayName = profile.displayName || currentUser.displayName || app.getProfileName?.() || 'Bowler';
+    const summary = app.getLeaderboardSummary(displayName);
     return {
       uid: currentUser.uid,
-      displayName: profile.displayName || currentUser.displayName || statsBowler || 'Bowler',
-      statsBowler,
+      displayName,
+      statsBowler: displayName,
       ...summary,
       updatedAt: Date.now()
     };
@@ -844,6 +845,36 @@
     }
   }
 
+  async function leaveGroup(groupId) {
+    if (!currentUser || !profile || !groupId) return;
+    const group = groups.find((item) => item.id === groupId);
+    const label = group?.name || groupId;
+    if (!window.confirm(`Leave ${label}? Your bowling account and private game history will not be deleted.`)) return;
+
+    try {
+      setStatus(`Leaving ${label}…`);
+      const groupRef = modules.doc(firestore, 'groups', groupId);
+      const memberRef = modules.doc(firestore, 'groups', groupId, 'members', currentUser.uid);
+      const snap = await modules.getDoc(groupRef);
+      if (snap.exists() && snap.data().ownerUid === currentUser.uid) {
+        await modules.updateDoc(groupRef, {
+          ownerUid: '',
+          ownerLeftAt: Date.now(),
+          updatedAt: Date.now()
+        });
+      }
+      await modules.deleteDoc(memberRef);
+      const remaining = (profile.groupIds || []).filter((id) => id !== groupId);
+      await setProfileGroupIds(remaining, remaining.includes(selectedGroupId) ? selectedGroupId : (remaining[0] || ''));
+      selectedGroupId = profile.activeGroupId || '';
+      await loadGroups();
+      setStatus(`Left ${label}.`, 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(friendlyError(error), 'error');
+    }
+  }
+
   async function loadGroups() {
     if (!currentUser || !profile) {
       groups = [];
@@ -889,12 +920,18 @@
       ? groups.map((g) => `
         <div class="my-group-row ${g.id === selectedGroupId ? 'active' : ''}">
           <div><strong>${escapeHtml(g.name || 'Bowling Group')}</strong><span>${escapeHtml(g.id)}</span></div>
-          <button class="text-btn choose-group" data-group="${escapeHtml(g.id)}" type="button">View</button>
+          <div class="group-row-actions">
+            <button class="text-btn choose-group" data-group="${escapeHtml(g.id)}" type="button">View</button>
+            <button class="text-btn danger-text leave-group" data-group="${escapeHtml(g.id)}" type="button">Leave</button>
+          </div>
         </div>`).join('')
       : '<p class="small-note">You have not joined any groups yet.</p>';
 
     dom.myGroupsList.querySelectorAll('.choose-group').forEach((button) => {
       button.addEventListener('click', async () => selectGroup(button.dataset.group));
+    });
+    dom.myGroupsList.querySelectorAll('.leave-group').forEach((button) => {
+      button.addEventListener('click', async () => leaveGroup(button.dataset.group));
     });
   }
 
@@ -975,26 +1012,23 @@
   async function saveProfile() {
     if (!currentUser || !profile) return;
     const displayName = dom.profileDisplayName.value.trim();
-    const statsBowler = dom.profileBowler.value;
     if (!displayName) {
       setStatus('Enter a leaderboard display name.', 'error');
       return;
     }
-    if (!statsBowler) {
-      setStatus('Add at least one local game so there is a bowler to publish.', 'error');
-      return;
-    }
     try {
       profile.displayName = displayName;
-      profile.statsBowler = statsBowler;
+      profile.statsBowler = displayName;
       profile.updatedAt = Date.now();
       await modules.updateProfile(currentUser, { displayName });
       await modules.setDoc(await userProfileRef(), {
         displayName,
-        statsBowler,
+        statsBowler: displayName,
         email: currentUser.email || '',
         updatedAt: profile.updatedAt
       }, { merge: true });
+      const app = await waitForBowlingApp();
+      await app.setProfileName?.(displayName);
       await publishAllSummaries();
       await loadLeaderboard();
       setStatus('Cloud profile saved.', 'success');
@@ -1021,12 +1055,10 @@
       setStatus('Creating account…');
       const credential = await modules.createUserWithEmailAndPassword(auth, email, password);
       await modules.updateProfile(credential.user, { displayName });
-      const app = await waitForBowlingApp();
-      const statsBowler = (await app.getDefaultBowler()) || app.getBowlerNames()[0] || displayName;
       await modules.setDoc(modules.doc(firestore, 'users', credential.user.uid), {
         email,
         displayName,
-        statsBowler,
+        statsBowler: displayName,
         groupIds: [],
         activeGroupId: '',
         createdAt: Date.now(),
@@ -1149,6 +1181,7 @@
         version: window.BowlingApp?.version || 'unknown',
         backupType: 'firebase-cloud',
         exportedAt: new Date().toISOString(),
+        profileName: profile?.displayName || currentUser.displayName || 'Bowler',
         account: {
           email: currentUser.email || '',
           displayName: profile?.displayName || currentUser.displayName || ''
@@ -1281,9 +1314,10 @@
 
   async function handleLocalDataChanged(event) {
     if (!currentUser) return;
+    pendingLocalChanges += 1;
     updateProfileBowlerOptions();
     if (!navigator.onLine) {
-      setSyncBadge('Needs sync', 'pending');
+      setSyncBadge(`${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting`, 'pending');
       setStatus('Saved locally. Cloud sync will resume when you are online.');
       return;
     }
@@ -1293,14 +1327,16 @@
         setSyncBadge('Syncing…', 'working');
         await saveSingleGame(detail.game);
         await publishAllSummaries();
-        setSyncBadge('Synced', 'success');
+        pendingLocalChanges = Math.max(0, pendingLocalChanges - 1);
+        setSyncBadge(pendingLocalChanges ? `${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting` : 'Synced just now', pendingLocalChanges ? 'pending' : 'success');
         setStatus('Game saved locally and synced to Firebase.', 'success');
         await loadLeaderboard();
       } else if (detail.type === 'delete' && detail.tombstone) {
         setSyncBadge('Syncing…', 'working');
         await saveSingleDeletion(detail.tombstone);
         await publishAllSummaries();
-        setSyncBadge('Synced', 'success');
+        pendingLocalChanges = Math.max(0, pendingLocalChanges - 1);
+        setSyncBadge(pendingLocalChanges ? `${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting` : 'Synced just now', pendingLocalChanges ? 'pending' : 'success');
         await loadLeaderboard();
       } else {
         await syncAll('Local changes');
@@ -1375,7 +1411,7 @@
     });
     window.addEventListener('offline', () => {
       renderConnectionState();
-      if (currentUser) setSyncBadge('Needs sync', 'pending');
+      if (currentUser) setSyncBadge(pendingLocalChanges ? `${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting` : 'Offline — saved on device', 'pending');
     });
     window.addEventListener('focus', () => {
       if (!currentUser || !navigator.onLine) return;

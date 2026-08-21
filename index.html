@@ -29,6 +29,18 @@
       </div>
     </header>
 
+    <section class="identity-strip" aria-label="Current profile and sync status">
+      <div class="identity-person">
+        <span>Current bowler</span>
+        <strong id="currentProfileName">Bowler</strong>
+      </div>
+      <div class="identity-sync">
+        <span id="globalSyncDot" class="status-dot off" aria-hidden="true"></span>
+        <span id="globalSyncStatus">Local only</span>
+        <button id="editProfileBtn" class="text-btn" type="button">Edit profile</button>
+      </div>
+    </section>
+
     <main>
       <section class="stats-grid" aria-label="Career statistics">
         <article class="stat-card primary-stat">
@@ -104,16 +116,14 @@
 
         <div class="form-grid">
           <label>
-            <span>Bowler</span>
-            <input id="bowlerInput" type="text" autocomplete="name" placeholder="Your name">
-          </label>
-          <label>
             <span>Date</span>
             <input id="dateInput" type="date">
           </label>
           <label>
             <span>Session name <small>optional</small></span>
-            <input id="sessionNameInput" type="text" placeholder="League night, Practice…">
+            <input id="sessionNameInput" type="text" list="sessionSuggestions" placeholder="League night, Practice…">
+            <datalist id="sessionSuggestions"></datalist>
+            <small class="field-help">If you already bowled on this date, the most recent session is suggested automatically.</small>
           </label>
           <label>
             <span>Game score</span>
@@ -129,7 +139,7 @@
           </label>
           <label>
             <span>Strike opportunities <small>10–12</small></span>
-            <input id="strikeOppInput" type="number" min="1" max="12" inputmode="numeric" value="10">
+            <input id="strikeOppInput" type="number" min="10" max="12" inputmode="numeric" value="10">
             <small class="field-help">Use 11 or 12 when tenth-frame fill shots created extra strike chances.</small>
           </label>
           <label>
@@ -153,12 +163,6 @@
             <p class="section-copy">Games on the same date with the same session name are grouped together automatically.</p>
           </div>
           <div class="history-filters">
-            <label>
-              <span>Bowler</span>
-              <select id="bowlerFilter">
-                <option value="all">All bowlers</option>
-              </select>
-            </label>
             <label>
               <span>Sort</span>
               <select id="sortFilter">
@@ -196,6 +200,25 @@
           <div class="mini-stat"><span>Best session avg</span><strong id="moreBestSessionAvg">—</strong></div>
         </div>
       </section>
+
+      <section class="panel records-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">PERSONAL RECORDS</p>
+            <h2>Best performances</h2>
+            <p class="section-copy">A quick look at your strongest games and sessions.</p>
+          </div>
+        </div>
+        <div class="records-grid">
+          <div class="record-stat"><span>High game</span><strong id="recordHighGame">—</strong><small id="recordHighGameDetail">No games yet</small></div>
+          <div class="record-stat"><span>High 3-game series</span><strong id="recordHighSeries">—</strong><small id="recordHighSeriesDetail">Need 3 games</small></div>
+          <div class="record-stat"><span>Best session average</span><strong id="recordBestSession">—</strong><small id="recordBestSessionDetail">No sessions yet</small></div>
+          <div class="record-stat"><span>Most strikes in a game</span><strong id="recordMostStrikes">—</strong><small id="recordMostStrikesDetail">No games yet</small></div>
+          <div class="record-stat"><span>Best strike % game</span><strong id="recordBestStrikePct">—</strong><small id="recordBestStrikePctDetail">No games yet</small></div>
+          <div class="record-stat"><span>Most recent 200+</span><strong id="recordRecent200">—</strong><small id="recordRecent200Detail">No 200+ games yet</small></div>
+        </div>
+      </section>
+
       <section class="panel leaderboard-panel" id="leaderboardPanel">
         <div class="section-heading leaderboard-heading">
           <div>
@@ -277,12 +300,13 @@
       </div>
 
       <div class="settings-section">
-        <h3>Default bowler</h3>
+        <h3>Local profile</h3>
+        <p>Used when you are signed out. When signed in, your Cloud Sync display name identifies every new game automatically.</p>
         <label>
-          <span>Name</span>
-          <input id="defaultBowlerInput" type="text" placeholder="Your name">
+          <span>Local display name</span>
+          <input id="defaultBowlerInput" type="text" placeholder="Bowler">
         </label>
-        <button id="saveDefaultBowlerBtn" class="btn secondary" type="button">Save default</button>
+        <button id="saveDefaultBowlerBtn" class="btn secondary" type="button">Save local profile</button>
       </div>
 
       <div class="settings-section">
@@ -361,15 +385,11 @@
 
         <div class="settings-section">
           <h3>Leaderboard profile</h3>
-          <p>Your cloud account syncs only its own isolated offline game library. The leaderboard uses one selected bowler name for your public stats.</p>
+          <p>Your display name identifies you in the app and on leaderboards. All games in this account's isolated history are included in your stats.</p>
           <div class="cloud-profile-grid">
             <label>
               <span>Display name</span>
               <input id="profileDisplayNameInput" type="text" placeholder="Matthew">
-            </label>
-            <label>
-              <span>Stats bowler</span>
-              <select id="profileBowlerSelect"></select>
             </label>
           </div>
           <div class="button-row">
