@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bowling-tracker-v2-cloud';
+const CACHE_NAME = 'bowling-tracker-v2-cloud-r1';
 const APP_ASSETS = [
   './',
   './index.html',
