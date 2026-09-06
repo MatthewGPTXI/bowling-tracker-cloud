@@ -473,3 +473,11 @@ footer { font-size: .72rem; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
 
 .app-nav svg { width: 22px; height: 22px; flex-shrink: 0; }
+
+/* Session tools and import review */
+.import-row { padding: 1rem 0; border-bottom: 1px solid #dce3ee; }
+#importPreviewDialog { padding: 1.5rem; max-height: 85vh; overflow-y: auto; }
+#periodComparison { margin-top: 1rem; }
+.game-actions { flex-wrap: wrap; }
+button:disabled { opacity: .45; cursor: default; }
+[hidden] { display: none !important; }

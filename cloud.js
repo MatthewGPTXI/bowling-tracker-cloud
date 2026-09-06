@@ -331,6 +331,8 @@
       bowler: String(game.bowler),
       date: String(game.date),
       sessionName: String(game.sessionName || ''),
+      sessionType: ['League','Practice','Tournament'].includes(game.sessionType) ? game.sessionType : 'League',
+      ...(game.gameOrder !== undefined ? {gameOrder:Number(game.gameOrder)} : {}),
       score: Number(game.score),
       openFrames: Number(game.openFrames),
       strikes: Number(game.strikes),
@@ -360,6 +362,8 @@
     return {
       date: String(game?.date || ''),
       sessionName: normalizedSessionName(game),
+      sessionType: game?.sessionType || 'League',
+      gameOrder: Number(game?.gameOrder ?? game?.createdAt ?? game?.id ?? 0),
       score: Number(game?.score || 0),
       openFrames: Number(game?.openFrames || 0),
       strikes: Number(game?.strikes || 0),
@@ -390,7 +394,7 @@
     if (!game) return `<div class="sync-review-game"><strong>${escapeHtml(label)}</strong>Deleted</div>`;
     return `<div class="sync-review-game">
       <strong>${escapeHtml(label)}</strong>
-      ${escapeHtml(game.date)} · ${escapeHtml(game.sessionName || 'Bowling Session')}<br>
+      ${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
       Score ${Number(game.score)} · ${Number(game.openFrames)} open · ${Number(game.strikes)}/${Number(game.strikeOpportunities || 10)} strikes
       ${game.notes ? `<br>${escapeHtml(game.notes)}` : ''}
     </div>`;
@@ -560,11 +564,28 @@
     return choices;
   }
 
-  async function writeInChunks(operations) {
-    const chunkSize = 30;
-    for (let i = 0; i < operations.length; i += chunkSize) {
-      const chunk = operations.slice(i, i + chunkSize);
-      await Promise.all(chunk.map((op) => modules.setDoc(op.ref, op.data)));
+  function sameCloudVersion(a, b) {
+    if (!a || !b) return !a && !b;
+    return !!a.deleted === !!b.deleted && Number(a.updatedAt || 0) === Number(b.updatedAt || 0)
+      && (a.deleted || sameGameContent(a,b));
+  }
+  async function guardedWrites(operations, expected, isCurrent) {
+    if (!operations.length) return;
+    // Bound each transaction to stay below Firestore's request limits.
+    for (let i=0; i<operations.length; i+=100) {
+      const chunk = operations.slice(i,i+100);
+      await modules.runTransaction(firestore, async transaction => {
+        if (!isCurrent()) throw new Error('Account or local history changed. Sync again.');
+        const snapshots = await Promise.all(chunk.map(op => transaction.get(op.ref)));
+        if (!isCurrent()) throw new Error('Account or local history changed. Sync again.');
+        snapshots.forEach((snap,j) => {
+          const id = Number(chunk[j].data.id), remote = snap.exists() ? snap.data() : null;
+          if (!sameCloudVersion(remote,expected.get(id) || null)) {
+            const error = new Error('Cloud history changed during sync. Sync again to review the latest versions.'); error.code='bowling/conflict'; throw error;
+          }
+        });
+        chunk.forEach(op => transaction.set(op.ref,op.data));
+      });
     }
   }
 
@@ -606,6 +627,7 @@
       remoteSnap.forEach((item) => remoteMap.set(Number(item.id), item.data()));
 
       const issues = detectSyncIssues(localGameMap, tombstoneMap, remoteMap);
+      if (reviewChoices && pendingSyncReview?.issues && JSON.stringify(issues) !== JSON.stringify(pendingSyncReview.issues)) reviewChoices = null;
       const unresolved = issues.filter((issue) => !reviewChoices?.[issue.key]);
       if (unresolved.length) {
         const liveRemoteCount = [...remoteMap.values()].filter((game) => !game.deleted).length;
@@ -632,6 +654,7 @@
         if (issue.type === 'version-conflict') {
           handledIds.add(issue.id);
           if (choice === 'local') {
+            localUpserts.push({...issue.local,updatedAt:resolutionTime});
             cloudWrites.push({ ref: cloudGameRef(issue.id), data: cloudGamePayload({ ...issue.local, updatedAt: resolutionTime }) });
           } else {
             localUpserts.push({ ...issue.remote, updatedAt: resolutionTime });
@@ -719,11 +742,13 @@
       }
 
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
+      if (cloudWrites.length) await guardedWrites(cloudWrites,remoteMap,() => isCurrentAccount() && revision === localChangeRevision);
+      if (!isCurrentAccount() || revision !== localChangeRevision) return;
       if (localUpserts.length || localDeletes.length) {
         await app.applyRemoteChanges({ upserts: localUpserts, deletes: localDeletes, expectedUid: uid });
       }
       if (!isCurrentAccount()) return;
-      if (cloudWrites.length) await writeInChunks(cloudWrites);
+
       if (!isCurrentAccount()) return;
       await publishAllSummaries();
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
@@ -740,16 +765,6 @@
     } finally {
       syncing = false;
     }
-  }
-
-  async function saveSingleGame(game) {
-    if (!currentUser || !navigator.onLine) return;
-    await modules.setDoc(cloudGameRef(game.id), cloudGamePayload(game));
-  }
-
-  async function saveSingleDeletion(tombstone) {
-    if (!currentUser || !navigator.onLine) return;
-    await modules.setDoc(cloudGameRef(tombstone.id), cloudDeletePayload(tombstone));
   }
 
   function randomGroupCode() {
@@ -989,7 +1004,10 @@
     dom.leaderboardGroupCode.textContent = `Invite code ${selectedGroupId}`;
   }
 
+  let leaderboardRequest = 0;
   async function loadLeaderboard() {
+    const request = ++leaderboardRequest, uid = currentUser?.uid, groupId = selectedGroupId, revision = authRevision;
+    const current = () => request === leaderboardRequest && uid === currentUser?.uid && groupId === selectedGroupId && revision === authRevision;
     if (!currentUser || !selectedGroupId || !navigator.onLine) {
       if (currentUser && selectedGroupId) setLeaderboardStatus('Offline · showing the last loaded leaderboard');
       return;
@@ -997,13 +1015,14 @@
     try {
       setLeaderboardStatus('Refreshing…');
       const snap = await modules.getDocs(modules.collection(firestore, 'groups', selectedGroupId, 'members'));
+      if (!current()) return;
       const members = [];
       snap.forEach((item) => members.push(item.data()));
       renderLeaderboardRows(members);
       setLeaderboardStatus(`Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`, 'success');
     } catch (error) {
       console.error(error);
-      setLeaderboardStatus(friendlyError(error), 'error');
+      if (current()) setLeaderboardStatus(friendlyError(error), 'error');
     }
   }
 
@@ -1365,11 +1384,15 @@
       else if (detail.type === 'delete' && detail.tombstone) changes = [{ id: detail.tombstone.id, data: cloudDeletePayload(detail.tombstone) }];
       else { await performSyncAll('Local changes'); return; }
       setSyncBadge('Syncing…', 'working');
-      for (const change of changes) {
-        if (currentUser?.uid !== uid) return;
-        // Use the originating account even if authentication changes during the request.
-        const ref = modules.doc(firestore, 'users', uid, 'games', String(change.id));
-        await modules.setDoc(ref, change.data);
+      if (pendingSyncReview || !Array.isArray(detail.bases)) { await performSyncAll('Review local changes'); return; }
+      const revision = authRevision;
+      const operations = changes.map(change => ({ref:modules.doc(firestore,'users',uid,'games',String(change.id)),data:change.data}));
+      const expected = new Map(changes.map((change,i) => [Number(change.id),detail.bases[i] || null]));
+      try {
+        await guardedWrites(operations,expected,() => currentUser?.uid === uid && revision === authRevision);
+      } catch (error) {
+        if (error.code === 'bowling/conflict' && currentUser?.uid === uid && revision === authRevision) { await performSyncAll('Conflicting edit'); return; }
+        throw error;
       }
       if (currentUser?.uid !== uid) return;
       await publishAllSummaries();

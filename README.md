@@ -23,7 +23,7 @@ Updated September 6, 2026. Built on the pre-journal version with the session too
 4. Allow GitHub Pages to publish. Open the app online, close it, and reopen it to load the new offline version.
 5. Confirm your games appear and check a saved game on a second signed-in device.
 
-Firebase configuration, security rules, cloud-sync code, database names, and saved-game layout match the preceding bug-fixed build. Existing Firebase setup and accounts are reused; no data migration is required.
+ Firebase configuration, security rules, cloud-sync code, database names, and saved-game layout match the preceding bug-fixed build. Existing Firebase setup and accounts are reused; no data migration is required.
 
 ## Everyday use
 
@@ -38,3 +38,16 @@ Strike opportunities stays visible in game entry and defaults to 10, with 11–1
 ## Validation
 
 Run `node tests/ui-regression.cjs` from this folder. Tests execute the application logic with simulated DOM and storage interfaces. See BUG-TEST-REPORT.md for scope and limitations. Browser visual verification and live Firebase testing remain outstanding because a browser runtime is not available in this environment.
+
+
+## Session tools update (v13)
+
+- Game and series drafts are saved locally per account. Use Recover game or Recover series on Home after reopening. Photos are reference-only and are not included in drafts.
+- League, Practice, and Tournament replace the free-text session name. Legacy games default to League without rewriting their grouping identifiers. Editing a session or its game type updates the session type.
+- Start new session always creates a separate grouping; Existing session explicitly chooses the destination.
+- Stats supports inclusive date ranges, type filters, and the immediately preceding equally long date period. Home and friend leaderboards remain all-history summaries.
+- Earlier/Later controls correct game order; best consecutive three-game series respects the corrected order. CSV exports include type, session ID and game order.
+- Backup import shows additions, skipped duplicates and explicit per-conflict choices. No import writes occur before confirmation.
+- Cloud game writes use Firestore transactions to compare the remote version against the version being edited. Concurrent changes trigger review. Stale leaderboard requests are ignored.
+
+Checks: `node tests/ui-regression.cjs`, `node tests/session-tools.cjs`, `node tests/cloud-concurrency.cjs`.

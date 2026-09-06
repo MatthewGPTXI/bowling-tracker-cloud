@@ -75,24 +75,21 @@
           <p class="field-help">Use the photo to read your scores, then enter the numbers below.</p>
         </div>
 
-        <p id="entrySessionSummary" class="session-context" aria-live="polite"></p>
+        <div id="draftNotice" class="session-context" hidden><span>Unfinished entries saved on this device.</span> <button id="recoverEntry" class="text-btn" type="button">Recover game</button><button id="recoverSeries" class="text-btn" type="button">Recover series</button><button id="discardDrafts" class="text-btn" type="button">Discard saved drafts</button></div><p id="entrySessionSummary" class="session-context" aria-live="polite"></p>
         <div class="form-grid entry-grid">
-          <label>
-            <span>Session</span>
+          <label>Session choice<select id="sessionMode"><option value="new">Start new session</option><option value="existing">Existing session</option></select></label>
+          <label id="existingSessionField" hidden>
+            <span>Existing session</span>
             <select id="sessionSelect" aria-describedby="sessionSelectHelp">
               <option value="">＋ New session</option>
             </select>
-            <small id="sessionSelectHelp" class="field-help">Choose a saved session to fill in its date and name, or start a new one.</small>
+            <small id="sessionSelectHelp" class="field-help">Choose which session these games belong to.</small>
           </label>
           <label>
             <span>Date</span>
             <input id="dateInput" type="date">
           </label>
-          <label>
-            <span>Session name <small>optional</small></span>
-            <input id="sessionNameInput" type="text" placeholder="League night, Practice…">
-            <small class="field-help">Use a different name for separate sessions on the same date.</small>
-          </label>
+          <input id="sessionNameInput" type="hidden"><label>Session type<select id="sessionTypeInput"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select><small class="field-help">Changing the type updates all games in the selected session.</small></label>
           <label>
             <span>Game score</span>
             <input id="scoreInput" type="number" min="0" max="300" inputmode="numeric" placeholder="0–300">
@@ -128,7 +125,7 @@
           <div>
             <p class="eyebrow">HISTORY</p>
             <h2>Sessions</h2>
-            <p class="section-copy">Games on the same date with the same session name are grouped together automatically.</p>
+            <p class="section-copy">Choose an existing session to add games, or start a separate session—even on the same date.</p>
           </div>
           <div class="history-filters">
             <label>
@@ -158,7 +155,7 @@
         <div id="sessionsList" class="sessions-list"></div>
         <button id="showMoreSessions" class="btn secondary hidden" type="button">Show more sessions</button>
       </section></div>
-      <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>      <section class="stats-grid" aria-label="Career statistics">
+      <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>      <section class="panel"><h2>Statistics</h2><div class="form-grid"><label>Session type<select id="statsType"><option value="">All types</option><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label><label>From<input id="statsFrom" type="date"></label><label>Through<input id="statsTo" type="date"></label></div><button id="clearStatsFilters" class="text-btn" type="button">Clear filters</button><p id="statsRangeStatus" role="status"></p><div id="periodComparison"></div></section><section class="stats-grid" aria-label="Selected statistics">
         <article class="stat-card primary-stat">
           <span class="stat-label">Average</span>
           <strong id="statAverage" class="stat-value">—</strong>
@@ -222,7 +219,7 @@
       </section>
       <section class="panel">
         <div class="section-heading"><div><p class="eyebrow">PROGRESS</p><h2>Average over time</h2>
-          <p class="section-copy">Your running career average by bowling date. Every game counts equally.</p></div></div>
+          <p class="section-copy">Your running average for the selected dates and session type. Every game counts equally.</p></div></div>
         <div id="averageChart"></div>
       </section>
       <section class="panel records-panel">
@@ -485,7 +482,7 @@
     <form id="seriesForm" class="dialog-inner">
       <div class="dialog-header"><h2 id="seriesHeading">Enter a series</h2><button class="text-btn" type="button" data-close="seriesDialog">Close</button></div>
       <p class="section-copy">Save multiple games to one session. Add or remove rows as needed.</p>
-      <div class="form-grid"><label>Date<input id="seriesDate" type="date" required></label><label>Session name<input id="seriesName" type="text" placeholder="League night, Practice…"></label></div>
+      <div class="form-grid"><label>Date<input id="seriesDate" type="date" required></label><input id="seriesName" type="hidden"><label>Session type<select id="seriesType"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label></div>
       <p id="seriesPreview" class="session-context" aria-live="polite"></p>
       <div id="seriesRows"></div>
       <button id="addSeriesRow" class="btn secondary" type="button">＋ Add another game</button>
@@ -496,7 +493,7 @@
     <form id="editSessionForm" class="dialog-inner">
       <div class="dialog-header"><h2 id="editSessionHeading">Edit session</h2><button class="text-btn" type="button" data-close="editSessionDialog">Close</button></div>
       <p id="editSessionCount" class="section-copy"></p>
-      <div class="form-grid"><label>Date<input id="editSessionDate" type="date" required></label><label>Session name<input id="editSessionName" type="text"></label></div>
+      <div class="form-grid"><label>Date<input id="editSessionDate" type="date" required></label><input id="editSessionName" type="hidden"><label>Session type<select id="editSessionType"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label></div>
       <div class="entry-actions"><button id="saveSessionBtn" class="btn primary" type="submit">Save session</button><span id="sessionEditStatus" class="status-text" role="status"></span></div>
     </form>
   </dialog>
@@ -505,5 +502,5 @@
   <script src="./app.js" defer></script>
   <script src="./firebase-config.js" defer></script>
   <script src="./cloud.js" defer></script>
-</body>
+<dialog id="importPreviewDialog"><div class="dialog-header"><h2>Review backup import</h2></div><p id="importPreviewSummary"></p><p>Duplicates are skipped. Conflicts keep your current data unless you choose the backup version.</p><div id="importPreviewRows"></div><p id="importPreviewStatus" role="status"></p><div class="button-row"><button id="cancelImportBtn" class="btn secondary" type="button">Cancel</button><button id="confirmImportBtn" class="btn primary" type="button">Import selected changes</button></div></dialog></body>
 </html>
