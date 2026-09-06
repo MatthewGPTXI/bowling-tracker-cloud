@@ -282,6 +282,7 @@
     lastSyncAt = 0;
     hideSyncReview();
     currentUser = user || null;
+    resetLeaderboardView();
     profile = null;
     groups = [];
     selectedGroupId = '';
@@ -856,22 +857,25 @@
   }
 
   async function memberPayload() {
+    const uid = currentUser?.uid, revision = authRevision;
     const app = await waitForBowlingApp();
+    if (!uid || currentUser?.uid !== uid || revision !== authRevision || app.getLocalScopeInfo().uid !== uid) throw new Error('Account changed while preparing leaderboard stats.');
     const displayName = profile.displayName || currentUser.displayName || app.getProfileName?.() || 'Bowler';
     const summary = app.getLeaderboardSummary(displayName);
     return {
-      uid: currentUser.uid,
+      uid,
       displayName,
       statsBowler: displayName,
-      ...summary,
-      updatedAt: Date.now()
+      ...summary
     };
   }
 
   async function publishSummaryToGroup(groupId) {
     if (!currentUser || !groupId) return;
+    const uid = currentUser.uid, revision = authRevision;
     const payload = await memberPayload();
-    const ref = modules.doc(firestore, 'groups', groupId, 'members', currentUser.uid);
+    if (currentUser?.uid !== uid || revision !== authRevision) return;
+    const ref = modules.doc(firestore, 'groups', groupId, 'members', uid);
     await modules.setDoc(ref, payload, { merge: true });
   }
 
@@ -916,6 +920,7 @@
       if (!createdCode) throw new Error('Could not create a unique group code. Try again.');
 
       await setProfileGroupIds([...profile.groupIds, createdCode], createdCode);
+      resetLeaderboardView();
       selectedGroupId = createdCode;
       await publishSummaryToGroup(createdCode);
       dom.newGroupName.value = '';
@@ -942,6 +947,7 @@
       if (!snap.exists()) throw new Error('No group was found with that invite code.');
       await publishSummaryToGroup(code);
       await setProfileGroupIds([...profile.groupIds, code], code);
+      resetLeaderboardView();
       selectedGroupId = code;
       dom.joinGroupCode.value = '';
       await loadGroups();
@@ -973,6 +979,7 @@
       await modules.deleteDoc(memberRef);
       const remaining = (profile.groupIds || []).filter((id) => id !== groupId);
       await setProfileGroupIds(remaining, remaining.includes(selectedGroupId) ? selectedGroupId : (remaining[0] || ''));
+      if (selectedGroupId !== (profile.activeGroupId || '')) resetLeaderboardView();
       selectedGroupId = profile.activeGroupId || '';
       await loadGroups();
       setStatus(`Left ${label}.`, 'success');
@@ -1008,7 +1015,9 @@
     if (validIds.length !== (profile.groupIds || []).length) {
       await setProfileGroupIds(validIds, profile.activeGroupId);
     }
-    selectedGroupId = validIds.includes(profile.activeGroupId) ? profile.activeGroupId : (validIds[0] || '');
+    const nextGroupId = validIds.includes(profile.activeGroupId) ? profile.activeGroupId : (validIds[0] || '');
+    if (nextGroupId !== selectedGroupId) resetLeaderboardView();
+    selectedGroupId = nextGroupId;
     profile.activeGroupId = selectedGroupId;
     renderGroups();
     renderLeaderboardShell();
@@ -1044,6 +1053,7 @@
 
   async function selectGroup(groupId) {
     if (!groupId || !groups.some((g) => g.id === groupId)) return;
+    if (groupId !== selectedGroupId) resetLeaderboardView();
     selectedGroupId = groupId;
     profile.activeGroupId = groupId;
     await modules.setDoc(await userProfileRef(), { activeGroupId: groupId, updatedAt: Date.now() }, { merge: true });
@@ -1052,14 +1062,21 @@
     await loadLeaderboard();
   }
 
+  function resetLeaderboardView() {
+    window.BowlingFriends?.clear();
+    dom.leaderboardBody.innerHTML = '';
+  }
+
   function renderLeaderboardShell() {
     if (!currentUser) {
+      resetLeaderboardView();
       dom.leaderboardSignedOut.classList.remove('hidden');
       dom.leaderboardNoGroup.classList.add('hidden');
       dom.leaderboardContent.classList.add('hidden');
       return;
     }
     if (!groups.length || !selectedGroupId) {
+      resetLeaderboardView();
       dom.leaderboardSignedOut.classList.add('hidden');
       dom.leaderboardNoGroup.classList.remove('hidden');
       dom.leaderboardContent.classList.add('hidden');
@@ -1086,16 +1103,20 @@
       const snap = await modules.getDocs(modules.collection(firestore, 'groups', selectedGroupId, 'members'));
       if (!current()) return;
       const members = [];
-      snap.forEach((item) => members.push(item.data()));
+      snap.forEach((item) => { const data = item.data(); members.push({ ...data, uid: item.id || data.uid }); });
       renderLeaderboardRows(members);
       setLeaderboardStatus(`Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`, 'success');
     } catch (error) {
       console.error(error);
-      if (current()) setLeaderboardStatus(friendlyError(error), 'error');
+      if (current()) {
+        if (error.code === 'permission-denied') renderLeaderboardRows([]);
+        setLeaderboardStatus(friendlyError(error), 'error');
+      }
     }
   }
 
   function renderLeaderboardRows(members) {
+    window.BowlingFriends?.setMembers(members, { uid: currentUser?.uid, groupId: selectedGroupId, revision: authRevision });
     const metric = dom.metricSelect.value || 'average';
     const info = metricInfo[metric] || metricInfo.average;
     dom.leaderboardMetricHeading.textContent = info.label;
@@ -1113,7 +1134,7 @@
       return `
         <tr class="${you ? 'you-row' : ''}">
           <td><span class="rank-badge">${index + 1}</span></td>
-          <td><strong>${escapeHtml(member.displayName || 'Bowler')}${you ? ' · You' : ''}</strong>${provisional ? '<span class="provisional">Provisional</span>' : ''}</td>
+          <td><button class="leaderboard-bowler" type="button" data-member-uid="${escapeHtml(member.uid)}" aria-haspopup="dialog" aria-controls="friendStatsDialog"><strong>${escapeHtml(member.displayName || 'Bowler')}${you ? ' · You' : ''}</strong><span class="bowler-stats-link">View stats ›</span></button>${provisional ? '<span class="provisional">Provisional</span>' : ''}</td>
           <td class="leader-value">${escapeHtml(info.format(member[metric]))}</td>
           <td>${Number(member.games || 0)}</td>
         </tr>`;

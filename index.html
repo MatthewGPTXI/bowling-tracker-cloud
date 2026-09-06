@@ -148,6 +148,7 @@
           <button id="clearSessionFilters" class="text-btn" type="button">Clear filters</button>
         </div>
         <p id="historyResultCount" class="section-copy" aria-live="polite"></p>
+        <p id="historyActionStatus" class="status-text" role="status"></p>
         <p id="noSessionMatches" class="empty-state hidden">No sessions match. Try another name or date range.</p>
         <div id="emptyHistory" class="empty-state">
           <div class="empty-icon">🎳</div>
@@ -157,7 +158,23 @@
         <div id="sessionsList" class="sessions-list"></div>
         <button id="showMoreSessions" class="btn secondary hidden" type="button">Show more sessions</button>
       </section></div>
-      <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>      <section class="panel"><h2>Statistics</h2><div class="form-grid"><label>Session type<select id="statsType"><option value="">All types</option><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label><label>Ball<select id="statsBall"><option value="">All balls</option><option value="none">No ball recorded</option></select></label><label>From<input id="statsFrom" type="date"></label><label>Through<input id="statsTo" type="date"></label></div><button id="clearStatsFilters" class="text-btn" type="button">Clear filters</button><p id="statsRangeStatus" role="status"></p><div id="periodComparison"></div></section><section class="stats-grid" aria-label="Selected statistics">
+      <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>
+      <section class="panel stats-toolbar" aria-labelledby="statsHeading">
+        <div class="section-heading"><div><p class="eyebrow">YOUR PROGRESS</p><h2 id="statsHeading">Statistics</h2></div><button id="clearStatsFilters" class="text-btn" type="button">Reset filters</button></div>
+        <div class="stats-presets" role="group" aria-label="Statistics date range">
+          <button class="range-chip" type="button" data-stats-preset="all" aria-pressed="true">All time</button>
+          <button class="range-chip" type="button" data-stats-preset="month" aria-pressed="false">This month</button>
+          <button class="range-chip" type="button" data-stats-preset="90" aria-pressed="false">Last 90 days</button>
+          <button class="range-chip" type="button" data-stats-preset="year" aria-pressed="false">This year</button>
+        </div>
+        <div class="form-grid stats-filter-grid">
+          <label>Session type<select id="statsType"><option value="">All types</option><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label>
+          <label>Ball<select id="statsBall"><option value="">All balls</option><option value="none">No ball recorded</option></select></label>
+        </div>
+        <details id="statsCustomDates" class="filter-disclosure"><summary>Custom dates</summary><div class="form-grid stats-filter-grid"><label>From<input id="statsFrom" type="date"></label><label>Through<input id="statsTo" type="date"></label></div></details>
+        <p id="statsRangeStatus" class="section-copy" role="status"></p>
+      </section>
+      <section class="stats-grid stats-overview" aria-label="At a glance">
         <article class="stat-card primary-stat">
           <span class="stat-label">Average</span>
           <strong id="statAverage" class="stat-value">—</strong>
@@ -178,6 +195,21 @@
           <strong id="statStrikePct" class="stat-value">—</strong>
           <span id="statStrikePctDetail" class="stat-detail">0 strikes</span>
         </article>
+      </section>
+      <section class="panel recent-form" aria-labelledby="recentFormHeading">
+        <div class="section-heading"><div><h2 id="recentFormHeading">Recent form</h2><p class="section-copy">Your latest games within the selected filters.</p></div></div>
+        <div class="recent-form-grid">
+          <div class="mini-stat"><span>Last 5 average</span><strong id="moreLast5">—</strong><small id="last5Count"></small></div>
+          <div class="mini-stat"><span>Last 10 average</span><strong id="moreLast10">—</strong><small id="last10Count"></small></div>
+          <div class="mini-stat"><span>Last 30 average</span><strong id="moreLast30">—</strong><small id="last30Count"></small></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><div><h2>Average over time</h2><p class="section-copy">Your running average for the selected dates, session type, and ball.</p></div></div>
+        <div id="averageChart"></div>
+      </section>
+      <details id="statsPeriodPanel" class="panel stats-disclosure" hidden><summary>Compare with the previous period</summary><div id="periodComparison"></div></details>
+      <details class="panel stats-disclosure"><summary>Accuracy &amp; milestones</summary><div class="stats-grid stats-breakdown">
         <article class="stat-card">
           <span class="stat-label">Open frames / game</span>
           <strong id="statOpenAvg" class="stat-value">—</strong>
@@ -188,59 +220,27 @@
           <strong id="statCleanGames" class="stat-value">0</strong>
           <span id="statCleanGamesDetail" class="stat-detail">0% of games</span>
         </article>
-        <article class="stat-card">
-          <span class="stat-label">Total strikes</span>
-          <strong id="statTotalStrikes" class="stat-value">0</strong>
-          <span id="statStrikesPerGame" class="stat-detail">0 per game</span>
-        </article>
+        <article class="stat-card"><span class="stat-label">Strikes / game</span><strong id="moreStrikeAvg" class="stat-value">—</strong><span class="stat-detail">Across the selected games</span></article>
         <article class="stat-card">
           <span class="stat-label">Sessions</span>
           <strong id="statSessions" class="stat-value">0</strong>
-          <span id="statGamesAndMilestones" class="stat-detail">0 games · 0 scores of 200+</span>
+          <span id="statGamesAndMilestones" class="stat-detail">0 games in the selected filters</span>
         </article>
-      </section>
-      <section class="panel milestones-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">MORE STATS</p>
-            <h2>Milestones & form</h2>
-          </div>
-        </div>
+      </div>
         <div class="milestone-grid">
-          <div class="mini-stat"><span>Games</span><strong id="moreGames">0</strong></div>
           <div class="mini-stat"><span>200+ games</span><strong id="more200">0</strong></div>
           <div class="mini-stat"><span>250+ games</span><strong id="more250">0</strong></div>
           <div class="mini-stat"><span>Perfect games</span><strong id="more300">0</strong></div>
-          <div class="mini-stat"><span>Avg strikes / game</span><strong id="moreStrikeAvg">—</strong></div>
-          <div class="mini-stat"><span>Clean-game rate</span><strong id="moreCleanRate">—</strong></div>
-          <div class="mini-stat"><span>Last 5 average</span><strong id="moreLast5">—</strong></div>
-          <div class="mini-stat"><span>Last 10 average</span><strong id="moreLast10">—</strong><small id="last10Count"></small></div>
-          <div class="mini-stat"><span>Last 30 average</span><strong id="moreLast30">—</strong><small id="last30Count"></small></div>
-          <div class="mini-stat"><span>Best session avg</span><strong id="moreBestSessionAvg">—</strong></div>
         </div>
-      </section>
-      <section class="panel">
-        <div class="section-heading"><div><p class="eyebrow">PROGRESS</p><h2>Average over time</h2>
-          <p class="section-copy">Your running average for the selected dates and session type. Every game counts equally.</p></div></div>
-        <div id="averageChart"></div>
-      </section>
-      <section class="panel records-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">PERSONAL RECORDS</p>
-            <h2>Best performances</h2>
-            <p class="section-copy">A quick look at your strongest games and sessions.</p>
-          </div>
-        </div>
+      </details>
+      <details class="panel stats-disclosure records-panel"><summary>More personal records</summary>
         <div class="records-grid">
-          <div class="record-stat"><span>High game</span><strong id="recordHighGame">—</strong><small id="recordHighGameDetail">No games yet</small></div>
-          <div class="record-stat"><span>High 3-game series</span><strong id="recordHighSeries">—</strong><small id="recordHighSeriesDetail">Need 3 games</small></div>
           <div class="record-stat"><span>Best session average</span><strong id="recordBestSession">—</strong><small id="recordBestSessionDetail">No sessions yet</small></div>
           <div class="record-stat"><span>Most strikes in a game</span><strong id="recordMostStrikes">—</strong><small id="recordMostStrikesDetail">No games yet</small></div>
           <div class="record-stat"><span>Best strike % game</span><strong id="recordBestStrikePct">—</strong><small id="recordBestStrikePctDetail">No games yet</small></div>
           <div class="record-stat"><span>Most recent 200+</span><strong id="recordRecent200">—</strong><small id="recordRecent200Detail">No 200+ games yet</small></div>
         </div>
-      </section></div>
+      </details></div>
       <div id="view-friends" class="app-view" role="region" aria-label="Friends" hidden>      <section class="panel leaderboard-panel" id="leaderboardPanel">
         <div class="section-heading leaderboard-heading">
           <div>
@@ -300,16 +300,31 @@
               <tbody id="leaderboardBody"></tbody>
             </table>
           </div>
-          <p class="small-note leaderboard-note">Average and strike-rate rankings are marked provisional until a bowler has 10 games.</p>
+          <p class="small-note leaderboard-note">Select a bowler to view overall stats or compare with yours. Average and strike-rate rankings are marked provisional until a bowler has 10 games.</p>
         </div>
       </section></div>
     </main>
 
     <footer>
-      <span>Bowling Tracker · v16</span>
+      <span>Bowling Tracker · v21</span>
       <span id="offlineStatus">Checking offline support…</span>
     </footer>
   </div>
+
+  <dialog id="friendStatsDialog" aria-labelledby="friendStatsName" aria-describedby="friendStatsScope">
+    <div class="dialog-inner">
+      <div class="dialog-header"><div><p class="eyebrow">OVERALL STATS</p><h2 id="friendStatsName"></h2></div><button id="closeFriendStats" class="icon-btn" type="button" aria-label="Close bowler statistics" autofocus>×</button></div>
+      <p id="friendStatsScope" class="section-copy">All time · All session types · All balls</p>
+      <p id="friendStatsUpdated" class="section-copy"></p>
+      <div class="stats-presets friend-view-options" role="group" aria-label="Bowler statistics view">
+        <button id="friendStatsOnly" class="range-chip" type="button" aria-pressed="true">Their stats</button>
+        <button id="friendStatsCompare" class="range-chip" type="button" aria-pressed="false">Compare with me</button>
+      </div>
+      <p id="friendStatsStatus" class="section-copy" role="status"></p>
+      <div id="friendStatsContent"></div>
+      <p id="friendStatsNote" class="section-copy small-note"></p>
+    </div>
+  </dialog>
 
   <dialog id="settingsDialog">
     <div class="dialog-inner">
@@ -504,6 +519,7 @@
 
   <script src="./app.js" defer></script>
   <script src="./firebase-config.js" defer></script>
+  <script src="./friend-stats.js" defer></script>
   <script src="./cloud.js" defer></script>
 <dialog id="importPreviewDialog"><div class="dialog-header"><h2>Review backup import</h2></div><p id="importPreviewSummary"></p><p>Duplicates are skipped. Conflicts keep your current data unless you choose the backup version.</p><div id="importPreviewRows"></div><p id="importPreviewStatus" role="status"></p><div class="button-row"><button id="cancelImportBtn" class="btn secondary" type="button">Cancel</button><button id="confirmImportBtn" class="btn primary" type="button">Import selected changes</button></div></dialog></body>
 </html>

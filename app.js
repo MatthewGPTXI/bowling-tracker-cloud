@@ -17,6 +17,7 @@
   let pendingImport = null;
 
   let activeView = 'home';
+  let statsPreset = 'all';
   let historyLimit = 10;
   const expandedSessions = new Map();
   let entryBaseline = null;
@@ -50,22 +51,13 @@
     openRateDetail: $('statOpenRateDetail'),
     cleanGames: $('statCleanGames'),
     cleanGamesDetail: $('statCleanGamesDetail'),
-    totalStrikes: $('statTotalStrikes'),
-    strikesPerGame: $('statStrikesPerGame'),
     sessions: $('statSessions'),
     gamesAndMilestones: $('statGamesAndMilestones'),
-    moreGames: $('moreGames'),
     more200: $('more200'),
     more250: $('more250'),
     more300: $('more300'),
     moreStrikeAvg: $('moreStrikeAvg'),
-    moreCleanRate: $('moreCleanRate'),
     moreLast5: $('moreLast5'),
-    moreBestSessionAvg: $('moreBestSessionAvg'),
-    recordHighGame: $('recordHighGame'),
-    recordHighGameDetail: $('recordHighGameDetail'),
-    recordHighSeries: $('recordHighSeries'),
-    recordHighSeriesDetail: $('recordHighSeriesDetail'),
     recordBestSession: $('recordBestSession'),
     recordBestSessionDetail: $('recordBestSessionDetail'),
     recordMostStrikes: $('recordMostStrikes'),
@@ -361,6 +353,9 @@
     restoringDraft = false;
     pendingImport = null; $('importPreviewDialog').close();
     for (const id of ['statsFrom','statsTo','statsType','statsBall']) $(id).value = '';
+    statsPreset = 'all';
+    $('statsCustomDates').open = false;
+    $('statsPeriodPanel').open = false;
     showDraftNotice();
     renderAll();
     window.dispatchEvent(new CustomEvent('bowling:profile-options-changed'));
@@ -541,6 +536,29 @@
     const from = $('statsFrom').value, through = $('statsTo').value, type = $('statsType').value;
     return games.filter(g => (!from || g.date >= from) && (!through || g.date <= through) && (!type || sessionType(g) === type) && matchesBall(g));
   }
+  function applyStatsPreset(preset) {
+    if (!['all', 'month', '90', 'year'].includes(preset)) return;
+    const today = todayLocal();
+    let from = '';
+    if (preset === 'month') from = today.slice(0, 7) + '-01';
+    if (preset === 'year') from = today.slice(0, 4) + '-01-01';
+    if (preset === '90') {
+      const start = new Date(today + 'T00:00:00Z');
+      start.setUTCDate(start.getUTCDate() - 89);
+      from = start.toISOString().slice(0, 10);
+    }
+    statsPreset = preset;
+    $('statsFrom').value = from;
+    $('statsTo').value = preset === 'all' ? '' : today;
+    $('statsCustomDates').open = false;
+    refreshStatsView();
+  }
+
+  function refreshStatsView() {
+    renderStats();
+    renderProgress();
+    renderComparison();
+  }
   function periodComparison() {
     const from = $('statsFrom').value, through = $('statsTo').value;
     if (!isValidDate(from) || !isValidDate(through) || from > through) return null;
@@ -552,8 +570,14 @@
   }
   function renderComparison() {
     const comparison = periodComparison();
-    $('statsRangeStatus').textContent = $('statsFrom').value && $('statsTo').value && $('statsFrom').value > $('statsTo').value ? 'Start date must be on or before end date.' : `${statsGames().length} games in the selected range and type.`;
-    if (!comparison) { $('periodComparison').textContent = 'Choose both dates to compare with the preceding period of the same length.'; return; }
+    const from = $('statsFrom').value, through = $('statsTo').value;
+    const range = from || through ? `${from ? fmtDate(from) : 'First game'} – ${through ? fmtDate(through) : 'Latest game'}` : 'All time';
+    const selectedBall = $('statsBall').value;
+    const ball = selectedBall === 'none' ? 'No ball recorded' : ballNames().find(name => 'ball:' + ballKey(name) === selectedBall) || 'All balls';
+    $('statsRangeStatus').textContent = from && through && from > through ? 'Start date must be on or before end date.' : `${statsGames().length} games · ${range} · ${$('statsType').value || 'All types'} · ${ball}`;
+    document.querySelectorAll('[data-stats-preset]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.statsPreset === statsPreset)));
+    $('statsPeriodPanel').hidden = !comparison;
+    if (!comparison) { $('periodComparison').textContent = ''; return; }
     const {current,previous,previousFrom,previousTo} = comparison;
     const value = (s,key) => s.count ? s[key].toFixed(1) : '—';
     $('periodComparison').innerHTML = `<p>Previous period: ${escapeHtml(fmtDate(previousFrom))} – ${escapeHtml(fmtDate(previousTo))}</p><div class="trend-table-wrap"><table class="trend-table"><thead><tr><th>Metric</th><th>Selected</th><th>Previous</th><th>Change</th></tr></thead><tbody>${[['Average','average'],['Strike %','strikePct'],['Open frames / game','openAvg']].map(([label,key]) => `<tr><th>${label}</th><td>${value(current,key)}</td><td>${value(previous,key)}</td><td>${current.count && previous.count ? (current[key]-previous[key] >= 0 ? '+' : '')+(current[key]-previous[key]).toFixed(1) : '—'}</td></tr>`).join('')}</tbody></table></div>`;
@@ -655,6 +679,8 @@
 
   function leaderboardSummaryForBowler(_bowlerName) {
     const stats = calculateStats(games);
+    const recent = progressStats(games);
+    const updatedAt = Date.now();
     return {
       games: stats.count,
       average: stats.average,
@@ -664,7 +690,24 @@
       cleanGames: stats.cleanGames,
       totalStrikes: stats.totalStrikes,
       bestSessionAvg: stats.bestSession ? stats.bestSession.average : 0,
-      updatedAt: Date.now()
+      updatedAt,
+      // Timestamp equality prevents extended stats left by a newer app from
+      // being mixed with a basic summary subsequently written by an older app.
+      details: {
+        updatedAt,
+        sessions: stats.sessions.length,
+        hasSeries: Boolean(stats.bestSeries),
+        openAvg: stats.openAvg,
+        games200: stats.games200,
+        games250: stats.games250,
+        games300: stats.games300,
+        last5: stats.last5,
+        last10: recent.last10.average,
+        last30: recent.last30.average,
+        mostStrikes: stats.mostStrikesGame?.strikes ?? null,
+        bestStrikePct: stats.bestStrikePctGame ? stats.bestStrikePctGame.strikes / stats.bestStrikePctGame.strikeOpportunities * 100 : null,
+        recent200: stats.recent200?.score ?? null
+      }
     };
   }
 
@@ -692,25 +735,14 @@
     dom.cleanGames.textContent = stats.cleanGames;
     dom.cleanGamesDetail.textContent = `${stats.cleanRate.toFixed(1)}% of games`;
 
-    dom.totalStrikes.textContent = stats.totalStrikes;
-    dom.strikesPerGame.textContent = `${stats.strikesPerGame.toFixed(2)} per game`;
-
     dom.sessions.textContent = stats.sessions.length;
-    dom.gamesAndMilestones.textContent = `${stats.count} games · ${stats.games200} scores of 200+`;
+    dom.gamesAndMilestones.textContent = `${stats.count} games in the selected filters`;
 
-    dom.moreGames.textContent = stats.count;
     dom.more200.textContent = stats.games200;
     dom.more250.textContent = stats.games250;
     dom.more300.textContent = stats.games300;
     dom.moreStrikeAvg.textContent = stats.count ? stats.strikesPerGame.toFixed(2) : '—';
-    dom.moreCleanRate.textContent = stats.count ? `${stats.cleanRate.toFixed(1)}%` : '—';
     dom.moreLast5.textContent = stats.count ? stats.last5.toFixed(1) : '—';
-    dom.moreBestSessionAvg.textContent = stats.bestSession ? stats.bestSession.average.toFixed(1) : '—';
-
-    dom.recordHighGame.textContent = stats.highGameObj ? stats.highGameObj.score : '—';
-    dom.recordHighGameDetail.textContent = stats.highGameObj ? fmtDate(stats.highGameObj.date) : 'No games yet';
-    dom.recordHighSeries.textContent = stats.bestSeries ? stats.bestSeries.total : '—';
-    dom.recordHighSeriesDetail.textContent = stats.bestSeries ? `${fmtDate(stats.bestSeries.session.date)} · ${stats.bestSeries.session.name}` : 'Need 3 games';
     dom.recordBestSession.textContent = stats.bestSession ? stats.bestSession.average.toFixed(1) : '—';
     dom.recordBestSessionDetail.textContent = stats.bestSession ? `${fmtDate(stats.bestSession.date)} · ${stats.bestSession.name}` : 'No sessions yet';
     dom.recordMostStrikes.textContent = stats.mostStrikesGame ? stats.mostStrikesGame.strikes : '—';
@@ -741,7 +773,6 @@
     sessions = sessions.slice(0, historyLimit);
     if (!sessions.length) { dom.sessionsList.innerHTML = ''; return; }
     dom.sessionsList.innerHTML = sessions.map((session, index) => {
-      const cleanCount = session.games.filter((g) => g.openFrames === 0).length;
       return `
         <details class="session-card" data-session-key="${escapeHtml(session.key)}" ${expandedSessions.has(session.key) ? (expandedSessions.get(session.key) ? 'open' : '') : (index === 0 ? 'open' : '')}>
           <summary class="session-header">
@@ -751,10 +782,7 @@
             </div>
             <div class="session-badges">
               <span class="badge">Avg ${session.average.toFixed(1)}</span>
-              <span class="badge">Series ${session.total}</span>
-              <span class="badge">${session.strikes} strikes</span>
-              <span class="badge">${session.openFrames} opens</span>
-              ${cleanCount ? `<span class="badge">${cleanCount} clean</span>` : ''}
+              <span class="badge">Total ${session.total}</span>
             </div>
           </summary>
           <div class="session-actions">
@@ -763,28 +791,26 @@
           </div>
           <div class="games-grid">
             ${session.games.map((g, index) => `
-              <div class="game-row">
-                <div>
-                  <div class="game-row-top">
-                    <div>
-                      <div class="game-number">Game ${index + 1}</div>
-                      <div class="game-score">${g.score}</div>
-                    </div>
-                    <div class="game-actions">
+              <article class="game-row">
+                <div class="game-row-summary">
+                  <div class="game-score-block"><span class="game-number">Game ${index + 1}</span><strong class="game-score">${g.score}</strong></div>
+                  <div class="game-row-info">
+                    <p class="game-ball">${g.ball ? escapeHtml(g.ball) : 'No ball recorded'}</p>
+                    <p class="game-stats">${g.strikes} strikes · ${g.openFrames === 0 ? '✓ Clean game' : g.openFrames + ' open frames'}</p>
+                  </div>
+                  <button id="gameActionsToggle-${g.id}" class="text-btn game-actions-toggle" data-id="${g.id}" type="button" aria-expanded="false" aria-controls="gameActions-${g.id}" aria-label="Actions for game ${index + 1}">Actions</button>
+                </div>
+                ${g.notes ? `<p class="game-notes">${escapeHtml(g.notes)}</p>` : ''}
+                <div id="gameActions-${g.id}" class="game-detail-panel" hidden>
+                  <p class="game-stats">${g.strikes} / ${g.strikeOpportunities} strike opportunities · ${g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0'}% strike rate</p>
+                  <div class="game-actions" role="group" aria-label="Game ${index + 1} actions">
+                      <button class="text-btn edit-game" data-id="${g.id}" type="button">Edit game</button>
                       <button class="text-btn move-game" data-id="${g.id}" data-direction="-1" type="button" ${index === 0 ? 'disabled' : ''} aria-label="Move game ${index+1} earlier">↑ Earlier</button>
                       <button class="text-btn move-game" data-id="${g.id}" data-direction="1" type="button" ${index === session.games.length-1 ? 'disabled' : ''} aria-label="Move game ${index+1} later">↓ Later</button>
-                      <button class="text-btn edit-game" data-id="${g.id}" type="button">Edit</button>
                       <button class="text-btn danger-text delete-game" data-id="${g.id}" type="button">Delete</button>
-                    </div>
                   </div>
-                  ${g.ball ? `<div class="game-notes">Ball: ${escapeHtml(g.ball)}</div>` : ''}
-                  ${g.notes ? `<div class="game-notes">${escapeHtml(g.notes)}</div>` : ''}
                 </div>
-                <div class="game-stats">
-                  ${g.openFrames === 0 ? '✓ Clean game · ' : ''}${g.openFrames} open frame${g.openFrames === 1 ? '' : 's'}<br>
-                  ${g.strikes} strike${g.strikes === 1 ? '' : 's'} · ${g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0'}% strike rate
-                </div>
-              </div>
+              </article>
             `).join('')}
           </div>
         </details>
@@ -794,12 +820,24 @@
     dom.sessionsList.querySelectorAll('details[data-session-key]').forEach((detail) => detail.addEventListener('toggle', () => expandedSessions.set(detail.dataset.sessionKey, detail.open)));
     dom.sessionsList.querySelectorAll('.add-to-session').forEach((button) => button.addEventListener('click', () => addToSession(button.dataset.key)));
     dom.sessionsList.querySelectorAll('.edit-session').forEach((button) => button.addEventListener('click', () => openSessionEditor(button.dataset.key)));
+    dom.sessionsList.querySelectorAll('.game-actions-toggle').forEach(button => button.addEventListener('click', () => {
+      const panel = $('gameActions-' + button.dataset.id);
+      setGameActions(Number(button.dataset.id), panel.hidden);
+    }));
     dom.sessionsList.querySelectorAll('.move-game').forEach(button => button.addEventListener('click', () => moveGame(Number(button.dataset.id), Number(button.dataset.direction))));
     dom.sessionsList.querySelectorAll('.edit-game').forEach((button) => {
       button.addEventListener('click', () => startEdit(Number(button.dataset.id)));
     });
     dom.sessionsList.querySelectorAll('.delete-game').forEach((button) => {
       button.addEventListener('click', () => confirmDelete(Number(button.dataset.id)));
+    });
+  }
+
+  function setGameActions(id, open) {
+    dom.sessionsList.querySelectorAll('.game-actions-toggle').forEach(button => {
+      const show = open && Number(button.dataset.id) === id;
+      button.setAttribute('aria-expanded', String(show));
+      $('gameActions-' + button.dataset.id).hidden = !show;
     });
   }
 
@@ -817,8 +855,11 @@
       await commitGames(updated, [], targetDb);
       if (db !== targetDb) return;
       games = await getAllGames(); renderAll();
+      setGameActions(id, true);
+      $('gameActionsToggle-' + id)?.focus();
+      setStatus($('historyActionStatus'), `Moved game to position ${next + 1}.`, 'success');
       emitDataChanged({type:'batch-upsert',games:clone(updated),bases:updated.map(g => clone(session.games.find(old => old.id === g.id)))});
-    } catch (_) { setStatus(dom.entryStatus, 'Could not change game order. Please try again.', 'error'); }
+    } catch (_) { setStatus($('historyActionStatus'), 'Could not change game order. Please try again.', 'error'); }
     finally { mutationBusy = false; }
   }
 
@@ -1501,6 +1542,8 @@
 
   function renderProgress() {
     const stats = progressStats(statsGames());
+    const last5Count = Math.min(5, statsGames().length);
+    $('last5Count').textContent = last5Count < 5 ? `${last5Count} of 5 games recorded` : 'Most recent 5 games';
     for (const count of [10, 30]) {
       const stat = stats[`last${count}`];
       $(`moreLast${count}`).textContent = stat.average === null ? '—' : stat.average.toFixed(1);
@@ -1634,6 +1677,15 @@
   }
 
   function wireNavigation() {
+    dom.sessionsList.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      const row = event.target.closest('.game-row');
+      const toggle = row?.querySelector('.game-actions-toggle');
+      if (!toggle || $('gameActions-' + toggle.dataset.id).hidden) return;
+      event.preventDefault();
+      setGameActions(Number(toggle.dataset.id), false);
+      toggle.focus();
+    });
     document.querySelectorAll('[data-go-view]').forEach((button) => button.addEventListener('click', () => showView(button.dataset.goView)));
     for (const id of ['sessionSearch', 'sessionFrom', 'sessionTo']) $(id).addEventListener('input', () => { historyLimit = 10; renderHistory(); });
     $('clearSessionFilters').addEventListener('click', () => {
@@ -1673,8 +1725,14 @@
     $('recoverEntry').addEventListener('click', () => recoverDraft('entry'));
     $('recoverSeries').addEventListener('click', () => recoverDraft('series'));
     $('discardDrafts').addEventListener('click', () => { if (window.confirm('Discard saved game and series drafts?')) { clearDraft('entry'); clearDraft('series'); showDraftNotice(); } });
-    for (const id of ['statsFrom','statsTo','statsType','statsBall']) $(id).addEventListener('change', () => {renderStats();renderProgress();renderComparison();});
-    $('clearStatsFilters').addEventListener('click', () => { for (const id of ['statsFrom','statsTo','statsType','statsBall']) $(id).value = ''; renderStats();renderProgress();renderComparison(); });
+    for (const id of ['statsFrom','statsTo','statsType','statsBall']) $(id).addEventListener('change', () => {
+      if (id === 'statsFrom' || id === 'statsTo') statsPreset = 'custom';
+      refreshStatsView();
+    });
+    document.querySelectorAll('[data-stats-preset]').forEach(button => button.addEventListener('click', () => applyStatsPreset(button.dataset.statsPreset)));
+    $('clearStatsFilters').addEventListener('click', () => {
+      $('statsType').value = ''; $('statsBall').value = ''; applyStatsPreset('all');
+    });
     $('confirmImportBtn').addEventListener('click', confirmImport);
     $('cancelImportBtn').addEventListener('click', () => { pendingImport = null; $('importPreviewDialog').close(); });
     $('importPreviewDialog').addEventListener('cancel', () => { pendingImport = null; });

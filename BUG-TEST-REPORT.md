@@ -1,4 +1,16 @@
-# Bowling Tracker v13 validation
+# Bowling Tracker validation
+
+## v21 stats, session history, and friend comparisons
+
+All six Node suites pass, including the new tests/stats-friends.cjs. New coverage checks inclusive date shortcuts across year boundaries and leap day; type/ball filter retention and reset; custom-date errors; action-panel expansion, Escape and keyboard focus; visible failed reorder recovery; unfiltered overall summaries; clickable friend stats and comparisons; account/group/member changes; legacy and stale extended summaries; empty histories and genuine zero scores; offline summary labeling; escaped names, notes and ball strings; and account guards while publishing summaries.
+
+All static element references resolve, HTML IDs are unique, and the Stats overview has four primary cards. The existing startup, cloud retry/conflict, draft, ordering, import/export, navigation, and ball regression suites remain green. The service worker includes the new friend-stats.js asset with a fresh v21 cache.
+
+Friend views read existing group-member summaries. Additional aggregate fields carry the same timestamp as the basic summary, so an older client's later merge cannot present stale extended stats as current. No private game histories, notes, ball lists, email addresses, Firebase rules, or configuration are exposed or changed by this feature.
+
+Validation uses simulated DOM, IndexedDB, and Firestore interfaces. A Chromium runtime is unavailable here, so physical phone/browser rendering and authenticated live Firebase operation were not tested. No production bowling data was used for tests.
+
+## Earlier validation
 
 All three Node regression suites pass. Tests execute application functions with simulated DOM, IndexedDB and Firestore responses.
 

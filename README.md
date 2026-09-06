@@ -1,6 +1,18 @@
-# Bowling Tracker — UI v12
+# Bowling Tracker — v21
 
 Updated September 6, 2026. Built on the pre-journal version with the session tools and bug fixes.
+
+## Latest update: simpler stats, history, and friend comparisons
+
+- Stats opens with average, high game, high three-game series, and strike percentage, followed by recent form and the running-average chart. Accuracy, milestones, additional records, and previous-period comparison are expandable, with repeated statistics removed.
+- All time, This month, Last 90 days, and This year shortcuts retain the selected session type and ball. Custom dates remain available; Reset filters returns to all history.
+- Sessions use compact game rows with score, ball, strikes, open frames, and readable notes. Actions opens edit, Earlier/Later, and delete controls. Escape closes those controls, and successful reordering keeps keyboard focus on the moved game.
+- Select a bowler's name in Friends to open their overall stats. Compare with me shows both bowlers' all-time totals and differences, independently of personal Stats filters. Selecting your own row opens your latest saved overall stats.
+- Friends uses aggregate summaries shared with existing private group members. It does not read another account's private games or notes, and needs no Firebase configuration or rules update.
+- Existing basic summaries work immediately. Additional stats appear after that bowler opens v21 and syncs. Missing or stale fields display — instead of zero. The view closes when its group, membership, or account changes.
+- The confirmed startup and sync repairs, drafts, ball tracking, backup tools, and account isolation are retained. No Discord integration is included.
+
+Validation: run all six scripts in tests with Node, including tests/stats-friends.cjs. Tests simulate DOM, storage, and Firebase interfaces; live browser and production Firebase verification are separate.
 
 ## What's new
 
@@ -10,7 +22,7 @@ Updated September 6, 2026. Built on the pre-journal version with the session too
 - The entry form shows its target session and indicates unsaved changes separately from cloud sync status.
 - Sessions have collapsible game lists, name and date filters, and a Show more button after 10 sessions.
 - Series entry shows a running score total and average before saving.
-- Drafts stay in place while switching pages. Discarding a changed entry or closing a changed series/session dialog requires confirmation. Closing/reloading the browser asks about unsaved entries where the browser supports it; drafts are not stored across reloads.
+- Drafts stay in place while switching pages and are saved locally across reloads. Discarding a changed entry or closing a changed series/session dialog requires confirmation.
 - Account, sync, and settings actions are grouped under Account & settings.
 - Larger touch targets, keyboard focus indicators, a skip link, active-page labels, and safe-area spacing improve accessibility.
 - All prior bug fixes are retained. There is no journal feature.
@@ -23,14 +35,14 @@ Updated September 6, 2026. Built on the pre-journal version with the session too
 4. Allow GitHub Pages to publish. Open the app online, close it, and reopen it to load the new offline version.
 5. Confirm your games appear and check a saved game on a second signed-in device.
 
- Firebase configuration, security rules, cloud-sync code, database names, and saved-game layout match the preceding bug-fixed build. Existing Firebase setup and accounts are reused; no data migration is required.
+ Firebase configuration, security rules, database names, and saved-game layout are retained. Existing Firebase setup and accounts are reused; no data migration is required.
 
 ## Everyday use
 
-- **Home:** select an existing session or enter a date and optional name. Save one game, or open Enter a series to save multiple games together. Photo reference displays a scoreboard for manual reading.
-- **Sessions:** search by session name and/or date range. Expand a session to add a game, edit its date/name, or edit/delete individual games. Undo is available for 15 seconds after deleting a game.
+- **Home:** choose Existing session or Start new session, then select the date and session type. Save one game, or open Enter a series to save multiple games together. Photo reference displays a scoreboard for manual reading.
+- **Sessions:** search by session type and/or date range. Expand a session to add a game or edit its date/type. Use each game's Actions button to edit, reorder, or delete it. Undo is available for 15 seconds after deleting a game.
 - **Stats:** career statistics, recent averages, milestones, records, and the running-average chart.
-- **Friends:** private group leaderboards. Manage groups from Account & settings → Account & sync.
+- **Friends:** private group leaderboards and overall bowler stats with Compare with me. Manage groups from Account & settings → Account & sync.
 - **Account & settings:** account login/sync, profile, JSON backup/import, CSV export, and existing account tools.
 
 Strike opportunities stays visible in game entry and defaults to 10, with 11–12 available for tenth-frame fill shots.
