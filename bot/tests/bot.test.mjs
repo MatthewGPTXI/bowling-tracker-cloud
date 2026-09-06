@@ -17,7 +17,7 @@ test('Firestore fields decode without converting Discord identifiers to numbers'
  assert.deepEqual(decodeFields({score:{integerValue:'175'},ball:{stringValue:'Ball'},deleted:{booleanValue:false}}),{score:175,ball:'Ball',deleted:false});
 });
 test('commands include comparisons with actual Discord user options; no milestones',()=>{
- const options=commands[0].options;assert.equal(options.find(o=>o.name==='compare').options[0].type,6);assert(!JSON.stringify(commands).includes('milestone'));
+ const options=commands[0].options;assert.equal(options.find(o=>o.name==='compare').options[0].type,6);assert(!JSON.stringify(commands).includes('milestone'));assert(!options.some(o=>o.name==='sharing'));
  for(const option of options){let optional=false;for(const field of option.options){if(!field.required)optional=true;else assert(!optional,'Required options must be first');}}
 });
 test('Discord signature verification rejects tampering and old requests; real signed ping works',async()=>{
@@ -41,7 +41,7 @@ test('expired or replayed OAuth state is rejected without a token exchange',asyn
  const nonce='a'.repeat(64),request=new Request('https://bot.example/discord/callback?state=expired&code=x',{headers:{Cookie:'__Host-bowling-link='+nonce}});
  assert((await (await worker.fetch(request,{...env,DB},{})).text()).includes('expired'));assert.equal(calls,1);
 });
-test('command integration enforces sharing and group membership and returns verified user stats',async()=>{
+test('command integration allows linked users without opt-in while enforcing group membership',async()=>{
  const keys=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
  const pem='-----BEGIN PRIVATE KEY-----\n'+Buffer.from(await crypto.subtle.exportKey('pkcs8',keys.privateKey)).toString('base64')+'\n-----END PRIVATE KEY-----';
  const ids=['111111111111111111','222222222222222222'],links=[{uid:'u1',discord_id:ids[0],username:'One',share:0},{uid:'u2',discord_id:ids[1],username:'Two',share:0}];let member=true;
@@ -58,12 +58,12 @@ test('command integration enforces sharing and group membership and returns veri
  const i={guild_id:'123',member:{user:{id:ids[0]}},data:{name:'bowling',options:[{name:'stats',options:[]}]}};
  try{
   assert((await command(i,config)).includes('180.0'));
-  i.data.options[0].options=[{name:'player',value:ids[1]}];await assert.rejects(()=>command(i,config),/sharing/);
-  links[1].share=1;assert((await command(i,config)).includes('Two'));
+  i.data.options[0].options=[{name:'player',value:ids[1]}];assert((await command(i,config)).includes('Two'),'Legacy share=0 must not block stats');
+  i.data.options[0]={name:'compare',options:[{name:'opponent',value:ids[1]}]};assert((await command(i,config)).includes('Comparison'),'Comparison requires no opt-in');
   member=false;await assert.rejects(()=>command(i,config),/group/);
  }finally{globalThis.fetch=original;}
 });
-test('OAuth callback consumes browser-bound state once and stores the verified Discord ID with sharing off',async()=>{
+test('OAuth callback consumes browser-bound state once and stores the verified Discord ID',async()=>{
  const keys=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
  const pem='-----BEGIN PRIVATE KEY-----\n'+Buffer.from(await crypto.subtle.exportKey('pkcs8',keys.privateKey)).toString('base64')+'\n-----END PRIVATE KEY-----';
  let pending={uid:'u1'},inserted;
@@ -78,4 +78,16 @@ test('OAuth callback consumes browser-bound state once and stores the verified D
  const config={...env,DB,GOOGLE_CLIENT_EMAIL:'oauth-test@example.invalid',GOOGLE_PRIVATE_KEY:pem,FIREBASE_PROJECT_ID:'test',DISCORD_CLIENT_SECRET:'mock'};
  const request=()=>new Request('https://bot.example/discord/callback?state=state&code=code',{headers:{Cookie:'__Host-bowling-link='+'a'.repeat(64)}});
  try{assert((await (await worker.fetch(request(),config,{})).text()).includes('Discord connected'));assert.deepEqual(inserted.slice(0,3),['u1','333333333333333333','Verified']);assert((await (await worker.fetch(request(),config,{})).text()).includes('expired'));}finally{globalThis.fetch=original;}
+});
+test('signed commands defer publicly and edit the public response without ephemeral flags',async()=>{
+ const pair=await crypto.subtle.generateKey('Ed25519',true,['sign','verify']),hex=bytes=>Buffer.from(bytes).toString('hex');
+ const publicKey=hex(await crypto.subtle.exportKey('raw',pair.publicKey)),timestamp=String(Math.floor(Date.now()/1000));
+ const body=JSON.stringify({id:'interaction-test',type:2,application_id:env.DISCORD_APPLICATION_ID,token:'test-only',guild_id:'guild',member:{user:{id:'111111111111111111'}},data:{name:'bowling',options:[{name:'link'}]}});
+ const signature=hex(await crypto.subtle.sign('Ed25519',pair.privateKey,new TextEncoder().encode(timestamp+body)));
+ const pending=[],sent=[],original=globalThis.fetch;globalThis.fetch=async(url,options)=>{sent.push(JSON.parse(options.body));return new Response(null,{status:204});};
+ const DB={prepare:()=>({bind:()=>({run:async()=>({meta:{changes:1}})})})};
+ try{
+  const response=await worker.fetch(new Request('https://bot.example/interactions',{method:'POST',body,headers:{'X-Signature-Ed25519':signature,'X-Signature-Timestamp':timestamp}}),{...env,DISCORD_PUBLIC_KEY:publicKey,DB},{waitUntil:promise=>pending.push(promise)});
+  assert.deepEqual(await response.json(),{type:5});await Promise.all(pending);assert.equal(sent.length,1);assert.equal(sent[0].flags,undefined);assert(sent[0].content.includes('public'));assert.deepEqual(sent[0].allowed_mentions,{parse:[]});
+ }finally{globalThis.fetch=original;}
 });

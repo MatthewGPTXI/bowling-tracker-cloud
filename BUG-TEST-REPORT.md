@@ -33,3 +33,7 @@ Discord client tests pass for disabled/unconfigured behavior with no requests, F
 Nine Node bot tests pass, covering real signed Discord PINGs, signature tampering, request-origin checks, state replay rejection, stats/date/ball logic, command schema, admin checks, mocked sharing/group authorization and an OAuth callback storing verified identity. SQLite execution validates unique mapping constraints and browser-bound state consumption. The app popup-link tests and all existing app regression suites pass.
 
 Live Cloudflare execution, Discord command installation, real OAuth and Google service-account permissions have not been exercised because user-side deployment and secrets are pending. Free-tier CPU/read consumption must be monitored with real data. The initial deployment supports one configured server, 15 recap participants and 2,000 game/deletion records per user; limits return errors rather than partial totals.
+
+## v19 public Discord commands
+
+All ten bot tests pass, including an actual signed command through the HTTP handler verifying a public deferred response and public follow-up. Integration tests confirm that legacy share=0 does not block stats or comparisons, while nonmembers remain blocked. App linking tests pass. Public-link disclosure and setup instructions updated. Cloudflare deployment and live Discord testing remain pending user setup.

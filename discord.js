@@ -39,7 +39,7 @@
       if (version !== revision || account !== user) return;
       linked = result.linked === true && typeof result.discordUserId === 'string' && /^\d{17,20}$/.test(result.discordUserId);
       busy = false;
-      render(linked ? `Connected as ${String(result.username || 'Discord user')} · Discord ID ${result.discordUserId}. Group sharing ${result.sharing ? 'on' : 'off'}. Use /bowling sharing in Discord to change it.` : 'No Discord account connected.');
+      render(linked ? `Connected as ${String(result.username || 'Discord user')} · Discord ID ${result.discordUserId}. Your stats are available in public bot replies and group comparisons.` : 'No Discord account connected.');
     } catch (error) { if (version === revision) {busy = false; render(error.message);} }
   }
   function connect() {

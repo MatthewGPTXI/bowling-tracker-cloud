@@ -87,7 +87,7 @@ node upload-firebase-secrets.mjs "/full/path/to/downloaded-service-account.json"
 
 The helper checks the project and uploads only the email and private key to Cloudflare secrets. It does not copy or print the key. Keep the original key private or delete the local download after successful setup; deleting the download does not revoke the Google key.
 
-Existing Firestore security rules remain unchanged. Server service-account reads use IAM, so bot code separately checks account existence, group membership and sharing permissions. [Firestore REST authentication](https://firebase.google.com/docs/firestore/use-rest-api).
+Existing Firestore security rules remain unchanged. Server service-account reads use IAM, so bot code separately checks account existence, group membership. [Firestore REST authentication](https://firebase.google.com/docs/firestore/use-rest-api).
 
 Visit `YOUR_WORKER_URL/health`. It should return `ok: true` and `configured: true`. This checks that settings exist; the first real command verifies Google access. If authentication lookup is blocked, confirm the Firebase Authentication Viewer role. If the app's Firebase web API key has browser-referrer restrictions, supply a separate key restricted to Identity Toolkit API for `FIREBASE_API_KEY` in the Worker's configuration; do not weaken the browser key's restrictions.
 
@@ -142,13 +142,7 @@ The person doing this must have **Manage Server** in Discord and own the bowling
 
 Other players must join that same bowling group in the app.
 
-Each player who wants comparisons, leaderboard inclusion and recaps enables sharing:
-
-```text
-/bowling sharing enabled:true
-```
-
-Sharing starts off. With sharing off, your own stats still work, but other people cannot request them. Players can disable future sharing with `enabled:false` or disconnect Discord in the app. Previous Discord posts are not deleted by disabling sharing.
+Linked group members are automatically available for comparisons, leaderboards and recaps. No separate sharing opt-in is required. All command replies are public in the channel where the command is used. Disconnect Discord in the app to stop future access; previously posted messages remain in Discord.
 
 ## 10. Try the commands
 
@@ -161,11 +155,10 @@ Sharing starts off. With sharing off, your own stats still work, but other peopl
 | `/bowling leaderboard` | All-history rankings; optional metric |
 | `/bowling compare opponent:@Player` | Compare yourself with a tagged player; optional `player` changes the first person; optional dates/type |
 | `/bowling recap` | Group recap for the previous seven complete UTC dates |
-| `/bowling sharing enabled:true` | Opt in to group comparisons, leaderboards and recaps |
 | `/bowling configure` | Bind the server's bowling group and configure weekly recaps |
 | `/bowling disable` | Remove this server's group binding and stop scheduled recaps |
 
-Date format: `YYYY-MM-DD`. Date ranges are inclusive. All command responses are private to the requester. Scheduled recaps are posted to the configured channel. Notes never appear. Only Firebase-synced games are available. Untagged old games default to League, and ball matching ignores case/extra spaces.
+Date format: `YYYY-MM-DD`. Date ranges are inclusive. All command responses are public in the channel where the command is used. Scheduled recaps are posted to the configured channel. Notes never appear. Only Firebase-synced games are available. Untagged old games default to League, and ball matching ignores case/extra spaces.
 
 ## 11. Optional automatic weekly recap
 
@@ -175,11 +168,11 @@ Only enable this if you want channel posts. Use a channel restricted to your bow
 /bowling configure group:ABCDEFGH channel:#bowling weekly:true
 ```
 
-The default schedule is **Mondays at 16:00 UTC** (9 AM Pacific daylight time / 8 AM Pacific standard time). To change it, edit `[triggers].crons` in `wrangler.toml` and redeploy; Cloudflare cron uses UTC. It covers the previous seven complete UTC dates. Only sharing-enabled members are included. To stop posts, reconfigure with `weekly:false` or use `/bowling disable`.
+The default schedule is **Mondays at 16:00 UTC** (9 AM Pacific daylight time / 8 AM Pacific standard time). To change it, edit `[triggers].crons` in `wrangler.toml` and redeploy; Cloudflare cron uses UTC. It covers the previous seven complete UTC dates. Linked group members are included. To stop posts, reconfigure with `weekly:false` or use `/bowling disable`.
 
 ## Limits and verification
 
-This free-tier-oriented version supports one connected Discord server per Worker, up to 100 group members for leaderboard lookup, up to 15 sharing-enabled players in a weekly recap, 2,000 stored game/deletion records per player for all-history commands, and 500 games/player in a recap week. Larger histories return an explanation rather than silently calculating incomplete stats. Recap jobs reserve each week before posting to avoid duplicates; a failed run is not automatically resent. `/bowling recap` can still retrieve it privately.
+This free-tier-oriented version supports one connected Discord server per Worker, up to 100 group members for leaderboard lookup, up to 15 linked players in a weekly recap, 2,000 stored game/deletion records per player for all-history commands, and 500 games/player in a recap week. Larger histories return an explanation rather than silently calculating incomplete stats. Recap jobs reserve each week before posting to avoid duplicates; a failed run is not automatically resent. `/bowling recap` can still post it in the current channel.
 
 Cloudflare request/CPU/subrequest and Firebase read quotas still apply. This is designed for a small group; free-tier performance must be checked with your actual data. Google network calls and D1 are bounded, but no paid services are automatically enabled. Monitor both dashboards during initial tests. Some group commands read multiple users' histories.
 
@@ -189,7 +182,7 @@ Run tests locally:
 npm test
 ```
 
-Tests include real Ed25519 signature verification, bad/replayed OAuth state rejection, mocked Firebase/OAuth integration, sharing and group authorization, command schema and bowling calculations. They do not prove live Cloudflare, Google IAM, Discord OAuth or browser-popup behavior. After deployment test two different linked users: self stats, blocked comparison before sharing, successful comparison after sharing, a nonmember rejection, disconnect, and a real channel recap only if you chose to enable it.
+Tests include real Ed25519 signature verification, bad/replayed OAuth state rejection, mocked Firebase/OAuth integration, linked-account and group authorization, command schema and bowling calculations. They do not prove live Cloudflare, Google IAM, Discord OAuth or browser-popup behavior. After deployment test two different linked users: self stats, public comparison without a separate opt-in, a nonmember rejection, disconnect, and a real channel recap only if you chose to enable it.
 
 For logs:
 
@@ -198,3 +191,7 @@ npx wrangler@4 tail
 ```
 
 Do not paste tokens, full interaction payloads or service-account JSON into bug reports. Send the command name, sanitized error message and Worker URL.
+
+## Public reply update (v19)
+
+The sharing command has been removed. The existing D1 share column is unused and can stay in place; no migration is required. If you already deployed an earlier bot, pull the latest source, run `npx wrangler@4 deploy`, then `npm run register -- YOUR_SERVER_ID` to replace the command definitions. For a new installation, simply use the current setup steps above.

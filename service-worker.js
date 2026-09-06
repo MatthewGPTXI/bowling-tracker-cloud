@@ -1,5 +1,5 @@
 const CACHE_PREFIX = `bowling-tracker:${new URL(self.registration.scope).pathname}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v18-discord-bot`;
+const CACHE_NAME = `${CACHE_PREFIX}v19-public-bot`;
 const APP_ASSETS = [
   './',
   './index.html',

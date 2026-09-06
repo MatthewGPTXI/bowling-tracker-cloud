@@ -38,7 +38,6 @@ async function player(env,i,id) {
  const target=await linked(env,id);
  if(id!==actor(i)){
   const {config}=await server(env,i);
-  if(!target.share)throw new Error('That player has not enabled /bowling sharing.');
   if(!await document(env,'groups',config.group_id,'members',target.uid))throw new Error('Both players must belong to this server’s bowling group.');
  }
  return target;
@@ -48,7 +47,7 @@ export function optionsOf(i){return Object.fromEntries((i.data?.options?.[0]?.op
 function period(options){return [options.from||'first recorded game',options.through||'latest recorded game'].join(' to ')+(options.type?` · ${options.type}`:'');}
 async function groupRoster(env,config) {
  const members=await collection(env,['groups',config.group_id,'members'],100);
- const shared=(await env.DB.prepare('SELECT * FROM links WHERE share=1').all()).results||[];
+ const shared=(await env.DB.prepare('SELECT * FROM links').all()).results||[];
  const map=new Map(shared.map(link=>[link.uid,link]));
  const candidates=members.filter(member=>map.has(member._docId));
  const active=await activeUsers(env,candidates.map(member=>member._docId));
@@ -57,12 +56,9 @@ async function groupRoster(env,config) {
 export async function command(i,env) {
  const sub=i.data?.options?.[0]?.name,o=optionsOf(i),id=actor(i);
  if(i.data?.name!=='bowling')throw new Error('Unknown command.');
- if(sub==='link')return `Connect Discord from Account settings in ${env.APP_URL}\nYour own stats are private. Use /bowling sharing enabled:true to opt into comparisons, leaderboards and recaps.`;
+ if(sub==='link')return `Connect Discord from Account settings in ${env.APP_URL}\nBot replies are public in the channel. Linked bowling group members are automatically available for comparisons, leaderboards and recaps. Notes are excluded.`;
  if(sub==='disable'){
   if(!i.guild_id||!admin(i))throw new Error('Manage Server permission is required.');await env.DB.prepare('DELETE FROM guilds WHERE guild_id=?').bind(i.guild_id).run();return 'Server connection removed. Weekly recaps disabled.';
- }
- if(sub==='sharing'){
-  const me=await linked(env,id);await env.DB.prepare('UPDATE links SET share=? WHERE uid=?').bind(o.enabled?1:0,me.uid).run();return o.enabled?'Sharing enabled for your bowling groups: stats may appear in comparisons, leaderboards and weekly channel recaps. Notes are excluded.':'Sharing disabled. Other players cannot request your stats, and future recaps will exclude you. Previously posted messages are not deleted.';
  }
  if(sub==='configure'){
   if(!i.guild_id||!admin(i))throw new Error('Manage Server permission is required.');
@@ -72,12 +68,12 @@ export async function command(i,env) {
   if(o.weekly && !o.channel)throw new Error('Select a bowling channel when enabling weekly recaps.');
   if(o.channel){const channel=await discord('/channels/'+o.channel,env);if(channel.guild_id!==i.guild_id || ![0,5].includes(channel.type))throw new Error('Choose a text channel in this server.');}
   await env.DB.prepare('INSERT INTO guilds(guild_id,group_id,configured_by,channel_id,weekly) VALUES(?,?,?,?,?) ON CONFLICT(guild_id) DO UPDATE SET group_id=excluded.group_id,configured_by=excluded.configured_by,channel_id=excluded.channel_id,weekly=excluded.weekly').bind(i.guild_id,group,me.uid,o.channel||null,o.weekly?1:0).run();
-  return `Connected to ${safeText(record.name)||'your bowling group'}. Weekly recaps ${o.weekly?'enabled (Mondays, 16:00 UTC)':'disabled'}. Only players who enable sharing are included. Restrict the recap channel to your bowling group.`;
+  return `Connected to ${safeText(record.name)||'your bowling group'}. Weekly recaps ${o.weekly?'enabled (Mondays, 16:00 UTC)':'disabled'}. Linked group members are included. Restrict the recap channel to your bowling group.`;
  }
  if(sub==='leaderboard'){
   const {config}=await server(env,i),members=await groupRoster(env,config);const metric=['average','highGame','highSeries','strikePct','cleanGames'].includes(o.metric)?o.metric:'average';
   members.sort((a,b)=>Number(b[metric]||0)-Number(a[metric]||0));
-  return '**Group leaderboard · all recorded games**\n'+(members.slice(0,15).map((m,n)=>`${n+1}. ${safeText(m.displayName||m.link.username)} — ${Number(m[metric]||0).toFixed(1)} · ${Number(m.games||0)} games${metric==='average'&&Number(m.games||0)<10?' (provisional)':''}`).join('\n')||'No members have enabled sharing yet.')+'\nUses the latest summaries synced by the app. Only opted-in members are shown.';
+  return '**Group leaderboard · all recorded games**\n'+(members.slice(0,15).map((m,n)=>`${n+1}. ${safeText(m.displayName||m.link.username)} — ${Number(m[metric]||0).toFixed(1)} · ${Number(m.games||0)} games${metric==='average'&&Number(m.games||0)<10?' (provisional)':''}`).join('\n')||'No group members have connected Discord yet.')+'\nUses the latest summaries synced by the app. Only linked group members are shown.';
  }
  if(sub==='recap'){const {config}=await server(env,i);return recap(env,config);}
  if(sub==='compare'){
@@ -103,7 +99,7 @@ export async function command(i,env) {
 export async function recap(env,config) {
  const group=await document(env,'groups',config.group_id);
  if(!group || group.ownerUid!==config.configured_by)throw new Error('Group ownership changed. Reconfigure the server connection.');
- const roster=await groupRoster(env,config);if(roster.length>15)throw new Error('Weekly recaps support up to 15 opted-in members per group on this setup.');
+ const roster=await groupRoster(env,config);if(roster.length>15)throw new Error('Weekly recaps support up to 15 linked members per group on this setup.');
  const end=new Date();end.setUTCHours(0,0,0,0);const start=new Date(end.getTime()-7*86400000),through=new Date(end.getTime()-86400000);
  const o={from:start.toISOString().slice(0,10),through:through.toISOString().slice(0,10)},rows=[];
  for(const member of roster){
@@ -112,7 +108,7 @@ export async function recap(env,config) {
   const s=stats(selected,all);rows.push({name:safeText(member.displayName||member.link.username),...s});
  }
  rows.sort((a,b)=>b.average-a.average);
- return `**Weekly bowling recap · ${o.from} to ${o.through} (UTC dates)**\n`+(rows.map(r=>`${r.name}: ${r.games} games · avg ${r.average.toFixed(1)} · high ${r.highGame}`).join('\n')||'No synced games from sharing-enabled players in this period.')+'\nOnly opted-in members are included.';
+ return `**Weekly bowling recap · ${o.from} to ${o.through} (UTC dates)**\n`+(rows.map(r=>`${r.name}: ${r.games} games · avg ${r.average.toFixed(1)} · high ${r.highGame}`).join('\n')||'No synced games from linked players in this period.')+'\nOnly linked members are included.';
 }
 async function interaction(request,env,ctx) {
  const body=await request.text();if(body.length>65536)return new Response('Too large',{status:413});
@@ -132,7 +128,7 @@ async function interaction(request,env,ctx) {
   const response=await fetch(`${API}/webhooks/${env.DISCORD_APPLICATION_ID}/${i.token}/messages/@original`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:content.slice(0,1950),allowed_mentions:{parse:[]}}),signal:AbortSignal.timeout(10000)});
   if(!response.ok)console.error('Discord response failed',response.status);
  })().catch(()=>console.error('Interaction processing failed')));
- return json({type:5,data:{flags:64}});
+ return json({type:5});
 }
 async function route(request,env,ctx) {
  const url=new URL(request.url),origin=new URL(env.APP_URL).origin;
@@ -155,13 +151,13 @@ async function route(request,env,ctx) {
   if(!/^\d{17,20}$/.test(identity.id)||!await document(env,'users',pending.uid))throw new Error('The bowling account is unavailable.');
   try{await env.DB.prepare('INSERT INTO links(uid,discord_id,username,created_at) VALUES(?,?,?,?)').bind(pending.uid,identity.id,identity.username,now()).run();}
   catch{throw new Error('One of these accounts is already linked. Disconnect it in the app before linking again.');}
-  return page('Discord connected. Sharing is off by default. Use /bowling sharing to allow comparisons.',`if(window.opener)window.opener.postMessage({type:'bowling-discord-linked'},${js(origin)});`,`__Host-bowling-link=; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  return page('Discord connected. Your stats can now appear in public bot replies, comparisons and group recaps. Notes are excluded.',`if(window.opener)window.opener.postMessage({type:'bowling-discord-linked'},${js(origin)});`,`__Host-bowling-link=; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
  }
  if(url.pathname==='/discord/link' || url.pathname==='/discord/link/start'){
   if(request.headers.get('Origin')!==origin)return new Response('Origin not allowed',{status:403});
   const uid=await firebaseUser(request,env);
   if(url.pathname==='/discord/link' && request.method==='GET'){
-   const row=await env.DB.prepare('SELECT * FROM links WHERE uid=?').bind(uid).first();return json(row?{linked:true,discordUserId:row.discord_id,username:row.username,sharing:!!row.share}:{linked:false});
+   const row=await env.DB.prepare('SELECT * FROM links WHERE uid=?').bind(uid).first();return json(row?{linked:true,discordUserId:row.discord_id,username:row.username}:{linked:false});
   }
   if(url.pathname==='/discord/link' && request.method==='DELETE'){
    await env.DB.batch([env.DB.prepare('DELETE FROM links WHERE uid=?').bind(uid),env.DB.prepare('DELETE FROM oauth_states WHERE uid=?').bind(uid)]);return new Response(null,{status:204});

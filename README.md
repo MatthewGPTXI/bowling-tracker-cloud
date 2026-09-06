@@ -76,6 +76,10 @@ Account settings includes Discord connection controls. They remain disabled unti
 
 ## Discord bot implementation (v18)
 
-The complete Worker source and step-by-step setup guide are in [bot/README.md](bot/README.md). Commands: link, stats, session, ball, leaderboard, compare, recap, sharing, configure and disable. Weekly channel recaps are optional; milestone announcements are excluded.
+The complete Worker source and step-by-step setup guide are in [bot/README.md](bot/README.md). Commands: link, stats, session, ball, leaderboard, compare, recap, configure and disable. Weekly channel recaps are optional; milestone announcements are excluded.
 
 Your app's linking service is still disabled until the deployed Worker origin is entered in discord-config.js. The bot cannot become live until the Cloudflare/Discord secrets, D1 binding and Firebase IAM permissions are configured.
+
+## Public Discord replies (v19)
+
+All bot command replies are public in the channel. Linked bowling group members are automatically eligible for stats, comparisons, leaderboards and recaps; the sharing command and separate opt-in have been removed. Group membership and verified account-link checks remain. Notes are excluded. See bot/README.md for the current setup steps. No D1 migration is needed.
