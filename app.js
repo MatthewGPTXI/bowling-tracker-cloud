@@ -10,7 +10,7 @@
   const GAME_STORE = 'games';
   const SETTINGS_STORE = 'settings';
   const TOMBSTONE_STORE = 'tombstones';
-  const APP_VERSION = 5;
+  const APP_VERSION = 6;
   const SESSION_TYPES = ['League', 'Practice', 'Tournament'];
   let restoringDraft = false;
   let entryBaseGame = null;
@@ -81,6 +81,7 @@
     date: $('dateInput'),
     sessionName: $('sessionNameInput'),
     sessionType: $('sessionTypeInput'),
+    ball: $('ballInput'),
     sessionSelect: $('sessionSelect'),
     score: $('scoreInput'),
     openFrames: $('openFramesInput'),
@@ -156,6 +157,31 @@
   }
 
   function sessionType(game) { return SESSION_TYPES.includes(game?.sessionType) ? game.sessionType : 'League'; }
+  function cleanBall(value) { return String(value || '').trim().replace(/\s+/g,' '); }
+  function ballKey(value) { return cleanBall(value).toLowerCase(); }
+  function ballNames() {
+    const names = new Map();
+    games.forEach(g => { if (cleanBall(g.ball) && !names.has(ballKey(g.ball))) names.set(ballKey(g.ball),cleanBall(g.ball)); });
+    return [...names.values()].sort((a,b) => a.localeCompare(b));
+  }
+  function canonicalBall(value) { return ballNames().find(name => ballKey(name) === ballKey(value)) || cleanBall(value); }
+  function matchesBall(game) {
+    const selected = $('statsBall').value;
+    return !selected || (selected === 'none' ? !cleanBall(game.ball) : 'ball:'+ballKey(game.ball) === selected);
+  }
+  function renderBallOptions() {
+    const names = ballNames(), selected = $('statsBall').value;
+    $('ballOptions').innerHTML = names.map(name => `<option value="${escapeHtml(name)}"></option>`).join('');
+    $('statsBall').innerHTML = '<option value="">All balls</option><option value="none">No ball recorded</option>' + names.map(name => `<option value="ball:${escapeHtml(ballKey(name))}">${escapeHtml(name)}</option>`).join('');
+    $('statsBall').value = selected === 'none' || names.some(name => 'ball:'+ballKey(name) === selected) ? selected : '';
+  }
+  function applySeriesBall() {
+    const value = cleanBall($('seriesBall').value);
+    const inputs = [...$('seriesRows').children].map(row => row.querySelector('[data-field="ball"]'));
+    if (inputs.some(input => cleanBall(input.value) && ballKey(input.value) !== ballKey(value)) && !window.confirm('Replace the ball selections for every game in this series?')) return;
+    inputs.forEach(input => { input.value = value; }); persistDrafts();
+  }
+
   function newSessionId() { return `session-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
   function gameOrder(a, b) { return Number(a.gameOrder ?? a.createdAt ?? a.id) - Number(b.gameOrder ?? b.createdAt ?? b.id) || a.id - b.id; }
   function latestSessionOrder(a, b) { return b.date.localeCompare(a.date) || Math.max(...b.games.map(g => g.createdAt || g.id)) - Math.max(...a.games.map(g => g.createdAt || g.id)); }
@@ -336,7 +362,7 @@
     resetEntryForm({ preserveDate: false, preserveSession: false });
     restoringDraft = false;
     pendingImport = null; $('importPreviewDialog').close();
-    for (const id of ['statsFrom','statsTo','statsType']) $(id).value = '';
+    for (const id of ['statsFrom','statsTo','statsType','statsBall']) $(id).value = '';
     showDraftNotice();
     renderAll();
     window.dispatchEvent(new CustomEvent('bowling:profile-options-changed'));
@@ -491,10 +517,15 @@
 
   function bestThreeGameSeries(sessions) {
     let best = null;
+    const fullSessions = new Map(buildSessions(games).map(session => [session.key,session]));
     for (const session of sessions) {
       if (session.games.length < 3) continue;
+      const fullSession = fullSessions.get(session.key);
+      const fullPositions = new Map(fullSession?.games.map((game,index) => [game.id,index]) || []);
       for (let i = 0; i <= session.games.length - 3; i += 1) {
         const slice = session.games.slice(i, i + 3);
+        const positions = slice.map(g => fullPositions.get(g.id) ?? -1);
+        if (positions.every(index => index >= 0) && (positions[1] !== positions[0]+1 || positions[2] !== positions[1]+1)) continue;
         const total = slice.reduce((sum, g) => sum + g.score, 0);
         if (!best || total > best.total) {
           best = { total, session, startIndex: i };
@@ -510,7 +541,7 @@
 
   function statsGames() {
     const from = $('statsFrom').value, through = $('statsTo').value, type = $('statsType').value;
-    return games.filter(g => (!from || g.date >= from) && (!through || g.date <= through) && (!type || sessionType(g) === type));
+    return games.filter(g => (!from || g.date >= from) && (!through || g.date <= through) && (!type || sessionType(g) === type) && matchesBall(g));
   }
   function periodComparison() {
     const from = $('statsFrom').value, through = $('statsTo').value;
@@ -519,7 +550,7 @@
     const date = n => new Date(n).toISOString().slice(0,10);
     const previousFrom = date(start-(end-start+day)), previousTo = date(start-day);
     const type = $('statsType').value;
-    return {previousFrom,previousTo,current:calculateStats(statsGames()),previous:calculateStats(games.filter(g => g.date >= previousFrom && g.date <= previousTo && (!type || sessionType(g) === type)))};
+    return {previousFrom,previousTo,current:calculateStats(statsGames()),previous:calculateStats(games.filter(g => g.date >= previousFrom && g.date <= previousTo && (!type || sessionType(g) === type) && matchesBall(g)))};
   }
   function renderComparison() {
     const comparison = periodComparison();
@@ -748,6 +779,7 @@
                       <button class="text-btn danger-text delete-game" data-id="${g.id}" type="button">Delete</button>
                     </div>
                   </div>
+                  ${g.ball ? `<div class="game-notes">Ball: ${escapeHtml(g.ball)}</div>` : ''}
                   ${g.notes ? `<div class="game-notes">${escapeHtml(g.notes)}</div>` : ''}
                 </div>
                 <div class="game-stats">
@@ -793,6 +825,7 @@
   }
 
   function renderAll() {
+    renderBallOptions();
     renderStats();
     renderProgress();
     renderComparison();
@@ -813,6 +846,8 @@
     const strikes = Number(fields.strikes.value);
     const strikeOpportunities = Number(fields.strikeOpp.value);
     const notes = fields.notes.value.trim();
+    const ball = canonicalBall(fields.ball?.value);
+    if (ball.length > 100) return {error:'Ball name must be 100 characters or fewer.'};
 
     if (!date || fields.score.value === '' || fields.openFrames.value === '' || fields.strikes.value === '' || fields.strikeOpp.value === '') {
       return { error: 'Please fill in date, score, open frames, strikes, and strike opportunities.' };
@@ -826,7 +861,7 @@
     if (score === 300 && strikes !== 12) return { error: 'A 300 game should be recorded as 12 strikes.' };
 
     return {
-      value: { bowler, date, sessionName, sessionType: type, score, openFrames, strikes, strikeOpportunities, notes }
+      value: { bowler, date, sessionName, sessionType: type, ball, score, openFrames, strikes, strikeOpportunities, notes }
     };
   }
 
@@ -866,6 +901,7 @@
     if (game.strikeOpportunities !== undefined && (!integerIn(game.strikeOpportunities, 10, 12)
       || Number(game.strikeOpportunities) < Number(game.strikes))) return false;
     if (Number(game.score) === 300 && Number(game.strikes) !== 12) return false;
+    if (game.ball !== undefined && (typeof game.ball !== 'string' || cleanBall(game.ball).length > 100)) return false;
     if (game.sessionType !== undefined && !SESSION_TYPES.includes(game.sessionType)) return false;
     if (game.gameOrder !== undefined && !integerIn(game.gameOrder, 0, Number.MAX_SAFE_INTEGER)) return false;
     return ['createdAt', 'updatedAt'].every((key) => game[key] === undefined || integerIn(game[key], 0, Number.MAX_SAFE_INTEGER));
@@ -879,6 +915,7 @@
       date: String(game.date),
       sessionName: String(game.sessionName || ''),
       sessionType: sessionType(game),
+      ball: cleanBall(game.ball),
       ...(game.gameOrder !== undefined ? {gameOrder: Number(game.gameOrder)} : {}),
       score: Number(game.score),
       openFrames: Number(game.openFrames),
@@ -960,6 +997,8 @@
     dom.strikes.value = '';
     dom.strikeOpp.value = '10';
     dom.notes.value = '';
+    dom.ball.value = '';
+    $('gameAdvanced').open = false;
     editingGameId = null;
     entryBaseGame = null;
     clearDraft('entry');
@@ -990,6 +1029,8 @@
     dom.strikes.value = game.strikes;
     dom.strikeOpp.value = game.strikeOpportunities;
     dom.notes.value = game.notes || '';
+    dom.ball.value = game.ball || '';
+    $('gameAdvanced').open = !!dom.ball.value;
     dom.saveGameBtn.textContent = 'Update game';
     dom.cancelEditBtn.classList.remove('hidden');
     dom.entryHeading.textContent = 'Edit game';
@@ -1122,11 +1163,11 @@
 
   function exportCsv() {
     const rows = [
-      ['Date','Bowler','Session Type','Session ID','Game Order','Score','Open Frames','Strikes','Strike Opportunities','Strike %','Clean Game','Notes']
+      ['Date','Bowler','Session Type','Session ID','Game Order','Ball','Score','Open Frames','Strikes','Strike Opportunities','Strike %','Clean Game','Notes']
     ];
     buildSessions(games).sort((a,b) => a.date.localeCompare(b.date)).forEach(session => session.games.forEach((g,index) => {
       rows.push([
-        g.date, g.bowler, sessionType(g), sessionKey(g), index+1, g.score, g.openFrames, g.strikes, g.strikeOpportunities,
+        g.date, g.bowler, sessionType(g), sessionKey(g), index+1, cleanBall(g.ball), g.score, g.openFrames, g.strikes, g.strikeOpportunities,
         g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0',
         g.openFrames === 0 ? 'Yes' : 'No', g.notes || ''
       ]);
@@ -1302,7 +1343,7 @@
       <label>Strikes<input data-field="strikes" type="number" min="0" max="12" step="1" inputmode="numeric" required></label>
       <label>Strike opportunities<input data-field="strikeOpp" type="number" min="10" max="12" step="1" inputmode="numeric" value="10" required></label>
       <label class="series-notes">Notes <small>optional</small><input data-field="notes" type="text"></label>
-    </div><button class="text-btn danger-text remove-series-row" type="button">Remove game</button>`;
+    </div><details class="advanced-options"><summary>Advanced</summary><label>Ball <small>optional</small><input data-field="ball" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label></details><button class="text-btn danger-text remove-series-row" type="button">Remove game</button>`;
     row.querySelector('.remove-series-row').addEventListener('click', () => {
       if ($('seriesRows').children.length > 1) { row.remove(); numberSeriesRows(); updateSeriesPreview(); persistDrafts(); }
     });
@@ -1315,6 +1356,7 @@
       const opp = row.querySelector('[data-field="strikeOpp"]');
       if (+event.target.value > +opp.value) opp.value = Math.min(12, +event.target.value);
     });
+    row.querySelector('[data-field="ball"]').value = $('seriesBall').value;
     $('seriesRows').appendChild(row);
     numberSeriesRows();
     updateSeriesPreview();
@@ -1335,9 +1377,11 @@
     $('seriesDate').value = dom.date.value || todayLocal();
     $('seriesName').value = dom.sessionName.value;
     $('seriesType').value = dom.sessionType.value;
+    $('seriesBall').value = dom.ball.value;
+    $('seriesAdvanced').open = !!dom.ball.value;
     $('seriesRows').innerHTML = '';
     const first = addSeriesRow();
-    for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes']) first.querySelector(`[data-field="${field}"]`).value = dom[field].value;
+    for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball']) first.querySelector(`[data-field="${field}"]`).value = dom[field].value;
     addSeriesRow(); addSeriesRow();
     setStatus($('seriesStatus'), '');
     updateSeriesPreview();
@@ -1352,7 +1396,7 @@
     const values = [];
     for (const [i, row] of [...$('seriesRows').children].entries()) {
       const fields = { date: $('seriesDate'), sessionName: $('seriesName'), sessionType: $('seriesType') };
-      for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes']) fields[field] = row.querySelector(`[data-field="${field}"]`);
+      for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball']) fields[field] = row.querySelector(`[data-field="${field}"]`);
       const result = validateGameForm(fields);
       if (result.error) { setStatus($('seriesStatus'), `Game ${i + 1}: ${result.error}`, 'error'); return; }
       values.push(result.value);
@@ -1531,8 +1575,8 @@
     try {
       if (hasEntryDraft()) localStorage.setItem(draftKey('entry'), JSON.stringify({version:1, values:JSON.parse(entrySnapshot()), baseline:entryBaseline, base:entryBaseGame}));
       if ($('seriesDialog').open) {
-        const rows = [...$('seriesRows').children].map(row => Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes'].map(field => [field,row.querySelector(`[data-field="${field}"]`).value])));
-        localStorage.setItem(draftKey('series'),JSON.stringify({version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,rows}));
+        const rows = [...$('seriesRows').children].map(row => Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes','ball'].map(field => [field,row.querySelector(`[data-field="${field}"]`).value])));
+        localStorage.setItem(draftKey('series'),JSON.stringify({version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,rows}));
       }
       showDraftNotice();
     } catch (_) { setStatus(dom.entryStatus, 'Draft storage is unavailable or full. Keep this page open until you save your games.', 'error'); }
@@ -1545,8 +1589,11 @@
       showView('home');
       if (kind === 'entry' && Array.isArray(draft.values)) {
         editingGameId = draft.values[0]; entryBaseGame = draft.base || null;
-        ['date','sessionName','sessionType','score','openFrames','strikes','strikeOpp','notes'].forEach((key,i) => dom[key].value = draft.values[i+1] ?? '');
+        ['date','sessionName','sessionType','score','openFrames','strikes','strikeOpp','notes','ball'].forEach((key,i) => dom[key].value = draft.values[i+1] ?? '');
         entryBaseline = draft.baseline;
+        // v13 draft arrays did not include ball. Append an empty field to the old baseline.
+        try { const baseline = JSON.parse(entryBaseline); if (baseline.length === 9) {baseline.push('');entryBaseline=JSON.stringify(baseline);} } catch (_) {}
+        $('gameAdvanced').open = !!dom.ball.value;
         dom.saveGameBtn.textContent = editingGameId ? 'Update game' : 'Save game';
         dom.entryHeading.textContent = editingGameId ? 'Edit game' : 'Add game';
         dom.cancelEditBtn.classList.remove('hidden');
@@ -1554,8 +1601,8 @@
       } else if (kind === 'series' && Array.isArray(draft.rows)) {
         if (editingGameId) { setStatus(dom.entryStatus,'Finish or cancel your game edit before recovering a series.'); return; }
         dialogScope = db; $('seriesRows').innerHTML = '';
-        $('seriesDate').value = draft.date; $('seriesName').value = draft.name; $('seriesType').value = sessionType({sessionType:draft.type});
-        draft.rows.forEach(values => { const row = addSeriesRow(); for (const field of ['score','openFrames','strikes','strikeOpp','notes']) row.querySelector(`[data-field="${field}"]`).value = values[field] ?? ''; });
+        $('seriesDate').value = draft.date; $('seriesName').value = draft.name; $('seriesType').value = sessionType({sessionType:draft.type}); $('seriesBall').value = draft.ball || ''; $('seriesAdvanced').open = !!draft.ball;
+        draft.rows.forEach(values => { const row = addSeriesRow(); for (const field of ['score','openFrames','strikes','strikeOpp','notes','ball']) row.querySelector(`[data-field="${field}"]`).value = values[field] ?? ''; });
         dialogBaselines.set('seriesDialog',''); $('seriesDialog').showModal(); updateSeriesPreview();
         setStatus($('seriesStatus'),'Series draft recovered. Review it before saving.','success');
       }
@@ -1563,7 +1610,7 @@
   }
 
   function entrySnapshot() {
-    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes'].map((key) => dom[key].value)]);
+    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball'].map((key) => dom[key].value)]);
   }
   function rememberEntry() { entryBaseline = entrySnapshot(); renderEntrySaveState(); }
   function renderEntrySaveState() {
@@ -1623,15 +1670,17 @@
   function wireEvents() {
     wireEnhancements();
     wireNavigation();
+    $('applySeriesBall').addEventListener('click', applySeriesBall);
+    $('seriesBall').addEventListener('input', persistDrafts);
     $('recoverEntry').addEventListener('click', () => recoverDraft('entry'));
     $('recoverSeries').addEventListener('click', () => recoverDraft('series'));
     $('discardDrafts').addEventListener('click', () => { if (window.confirm('Discard saved game and series drafts?')) { clearDraft('entry'); clearDraft('series'); showDraftNotice(); } });
-    for (const id of ['statsFrom','statsTo','statsType']) $(id).addEventListener('change', () => {renderStats();renderProgress();renderComparison();});
-    $('clearStatsFilters').addEventListener('click', () => { for (const id of ['statsFrom','statsTo','statsType']) $(id).value = ''; renderStats();renderProgress();renderComparison(); });
+    for (const id of ['statsFrom','statsTo','statsType','statsBall']) $(id).addEventListener('change', () => {renderStats();renderProgress();renderComparison();});
+    $('clearStatsFilters').addEventListener('click', () => { for (const id of ['statsFrom','statsTo','statsType','statsBall']) $(id).value = ''; renderStats();renderProgress();renderComparison(); });
     $('confirmImportBtn').addEventListener('click', confirmImport);
     $('cancelImportBtn').addEventListener('click', () => { pendingImport = null; $('importPreviewDialog').close(); });
     $('importPreviewDialog').addEventListener('cancel', () => { pendingImport = null; });
-    for (const input of [dom.date,dom.sessionType,dom.score,dom.openFrames,dom.strikes,dom.strikeOpp,dom.notes]) input.addEventListener('input', () => { persistDrafts(); renderEntrySaveState(); });
+    for (const input of [dom.date,dom.sessionType,dom.score,dom.openFrames,dom.strikes,dom.strikeOpp,dom.notes,dom.ball]) input.addEventListener('input', () => { persistDrafts(); renderEntrySaveState(); });
     $('seriesForm').addEventListener('input', persistDrafts);
     $('seriesForm').addEventListener('change', persistDrafts);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persistDrafts(); });

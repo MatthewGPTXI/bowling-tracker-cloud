@@ -7,3 +7,7 @@ Covered: existing navigation/entry/series/session/undo/import guards; legacy gro
 Firebase config and security rules are unchanged. No production user records were changed during tests.
 
 Limitations: physical iPhone/Android, browser rendering, actual reload recovery, real IndexedDB and live two-device Firebase transactions were not exercised in this environment. Photos are not persisted as drafts. Large cloud batches are processed in guarded chunks of 100; interrupted operations remain locally available for another sync.
+
+## v14 ball tracking
+
+All four regression suites pass. Added coverage for reusable ball names, independent game tags and clearing, series defaults/overrides, draft recovery, combined ball/date comparisons, consecutive-series correctness, old game defaults, validation, account-scoped suggestions and ball-only cloud conflict detection. Browser/physical-device/live Firebase limitations above still apply.

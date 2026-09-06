@@ -11,6 +11,8 @@ const section=(start,end)=>source.slice(source.indexOf('  '+start),source.indexO
  }}};
  vm.createContext(c);
  vm.runInContext(section('function normalizedSessionName','function duplicateSignature')+section('function sameCloudVersion','function syncAll')+section('async function syncLocalChange','function wireEvents'),c);
+ assert(!c.sameGameContent({...base,ball:'Ball A'},{...base,ball:'Ball B'}),'Ball-only edits must participate in sync conflict detection');
+ assert(c.sameGameContent(base,{...base,ball:''}),'Legacy games have an empty ball');
  remote.set('1',{...base,score:220,updatedAt:3});
  await c.syncLocalChange({type:'upsert',game:{...base,score:180,updatedAt:2},bases:[base]},'a');
  assert.equal(remote.get('1').score,220);assert.equal(reviews,1);assert(!badges.includes('Synced just now'));

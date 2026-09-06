@@ -51,3 +51,11 @@ Run `node tests/ui-regression.cjs` from this folder. Tests execute the applicati
 - Cloud game writes use Firestore transactions to compare the remote version against the version being edited. Concurrent changes trigger review. Stale leaderboard requests are ignored.
 
 Checks: `node tests/ui-regression.cjs`, `node tests/session-tools.cjs`, `node tests/cloud-concurrency.cjs`.
+
+## Ball tracking (v14)
+
+Advanced game entry includes an optional ball name with suggestions from the active account's saved games. Edit existing games to tag or clear their ball. Ball names are matched ignoring capitalization and repeated spaces.
+
+Series entry offers a shared ball with Apply ball to all games, plus an Advanced ball field for each game. Stats offers All balls, No ball recorded, and saved balls; the filter combines with date and session type and applies to both comparison periods. Consecutive three-game records never skip a different-ball game to form a series.
+
+Ball fields are included in local drafts, JSON backups, CSV exports, Firebase payloads, and conflict review. Existing games remain untagged. Strike Opportunities remains visible. Additional regression: `node tests/ball-tracking.cjs`.

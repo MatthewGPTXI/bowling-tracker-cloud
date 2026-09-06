@@ -331,6 +331,7 @@
       bowler: String(game.bowler),
       date: String(game.date),
       sessionName: String(game.sessionName || ''),
+      ball: String(game.ball || '').trim().replace(/\s+/g,' '),
       sessionType: ['League','Practice','Tournament'].includes(game.sessionType) ? game.sessionType : 'League',
       ...(game.gameOrder !== undefined ? {gameOrder:Number(game.gameOrder)} : {}),
       score: Number(game.score),
@@ -362,6 +363,7 @@
     return {
       date: String(game?.date || ''),
       sessionName: normalizedSessionName(game),
+      ball: String(game?.ball || '').trim().replace(/\s+/g,' ').toLowerCase(),
       sessionType: game?.sessionType || 'League',
       gameOrder: Number(game?.gameOrder ?? game?.createdAt ?? game?.id ?? 0),
       score: Number(game?.score || 0),
@@ -394,7 +396,7 @@
     if (!game) return `<div class="sync-review-game"><strong>${escapeHtml(label)}</strong>Deleted</div>`;
     return `<div class="sync-review-game">
       <strong>${escapeHtml(label)}</strong>
-      ${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
+      ${game.ball ? `Ball: ${escapeHtml(game.ball)}<br>` : ''}${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
       Score ${Number(game.score)} · ${Number(game.openFrames)} open · ${Number(game.strikes)}/${Number(game.strikeOpportunities || 10)} strikes
       ${game.notes ? `<br>${escapeHtml(game.notes)}` : ''}
     </div>`;

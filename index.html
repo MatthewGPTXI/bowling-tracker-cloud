@@ -109,10 +109,12 @@
           </label>
           <label>
             <span>Notes <small>optional</small></span>
-            <input id="notesInput" type="text" placeholder="Lane, ball, tournament, oil pattern…">
+            <input id="notesInput" type="text" placeholder="Lane, tournament, oil pattern…">
           </label>
         </div>
 
+        <details id="gameAdvanced" class="advanced-options"><summary>Advanced</summary><label>Ball <small>optional</small><input id="ballInput" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label><p class="field-help">Saved ball names are reusable. Leave blank if no ball should be recorded.</p></details>
+        <datalist id="ballOptions"></datalist>
         <div class="entry-actions">
           <button id="saveGameBtn" class="btn primary" type="button">Save game</button>
           <button id="cancelEditBtn" class="btn secondary hidden" type="button">Cancel edit</button>
@@ -155,7 +157,7 @@
         <div id="sessionsList" class="sessions-list"></div>
         <button id="showMoreSessions" class="btn secondary hidden" type="button">Show more sessions</button>
       </section></div>
-      <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>      <section class="panel"><h2>Statistics</h2><div class="form-grid"><label>Session type<select id="statsType"><option value="">All types</option><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label><label>From<input id="statsFrom" type="date"></label><label>Through<input id="statsTo" type="date"></label></div><button id="clearStatsFilters" class="text-btn" type="button">Clear filters</button><p id="statsRangeStatus" role="status"></p><div id="periodComparison"></div></section><section class="stats-grid" aria-label="Selected statistics">
+      <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>      <section class="panel"><h2>Statistics</h2><div class="form-grid"><label>Session type<select id="statsType"><option value="">All types</option><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label><label>Ball<select id="statsBall"><option value="">All balls</option><option value="none">No ball recorded</option></select></label><label>From<input id="statsFrom" type="date"></label><label>Through<input id="statsTo" type="date"></label></div><button id="clearStatsFilters" class="text-btn" type="button">Clear filters</button><p id="statsRangeStatus" role="status"></p><div id="periodComparison"></div></section><section class="stats-grid" aria-label="Selected statistics">
         <article class="stat-card primary-stat">
           <span class="stat-label">Average</span>
           <strong id="statAverage" class="stat-value">—</strong>
@@ -483,6 +485,7 @@
       <div class="dialog-header"><h2 id="seriesHeading">Enter a series</h2><button class="text-btn" type="button" data-close="seriesDialog">Close</button></div>
       <p class="section-copy">Save multiple games to one session. Add or remove rows as needed.</p>
       <div class="form-grid"><label>Date<input id="seriesDate" type="date" required></label><input id="seriesName" type="hidden"><label>Session type<select id="seriesType"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label></div>
+      <details id="seriesAdvanced" class="advanced-options"><summary>Advanced</summary><label>Ball for this series <small>optional</small><input id="seriesBall" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label><button id="applySeriesBall" class="btn secondary compact" type="button">Apply ball to all games</button><p class="field-help">New rows use this ball. Each game's Advanced section lets you change or clear its ball if you switched during the series.</p></details>
       <p id="seriesPreview" class="session-context" aria-live="polite"></p>
       <div id="seriesRows"></div>
       <button id="addSeriesRow" class="btn secondary" type="button">＋ Add another game</button>
