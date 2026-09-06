@@ -229,10 +229,8 @@
           database.createObjectStore(TOMBSTONE_STORE, { keyPath: 'id' });
         }
       };
+      request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
-      tx.oncomplete = () => resolve(request.result);
-      tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted'));
-      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -1790,6 +1788,7 @@
   const api = {
     version: APP_VERSION,
     ready: false,
+    startupError: null,
     getGames: () => clone(games),
     getTombstones: async () => clone(await getAllTombstones()),
     getBowlerNames: () => [activeProfileName || 'Bowler'],
@@ -1810,6 +1809,8 @@
   window.BowlingApp = api;
 
   async function init() {
+    api.ready = false;
+    api.startupError = null;
     dom.date.value = todayLocal();
     dom.sessionName.value = newSessionId();
     dom.sessionType.value = 'League';
@@ -1818,6 +1819,7 @@
     rememberEntry();
 
     if (!('indexedDB' in window)) {
+      api.startupError = 'This browser does not provide IndexedDB.';
       setStatus(dom.entryStatus, 'This browser does not provide IndexedDB, so persistent storage is unavailable.', 'error');
       dom.saveGameBtn.disabled = true;
       window.dispatchEvent(new CustomEvent('bowling:ready', { detail: { ok: false } }));
@@ -1834,7 +1836,11 @@
       window.dispatchEvent(new CustomEvent('bowling:ready', { detail: { ok: true } }));
     } catch (error) {
       console.error(error);
-      setStatus(dom.entryStatus, 'Could not open local storage. Try opening the installed web app again.', 'error');
+      api.startupError = error?.message || 'App startup failed.';
+      dom.saveGameBtn.disabled = true;
+      $('saveSeriesBtn').disabled = true;
+      setSyncStatus('Startup failed · sync unavailable', 'error');
+      setStatus(dom.entryStatus, `Could not start the app: ${api.startupError}. Reopen the app to retry.`, 'error');
       window.dispatchEvent(new CustomEvent('bowling:ready', { detail: { ok: false } }));
     }
 

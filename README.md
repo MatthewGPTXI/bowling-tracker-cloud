@@ -65,3 +65,7 @@ Ball fields are included in local drafts, JSON backups, CSV exports, Firebase pa
 Local game changes now retain an account-specific retry record containing the original cloud comparison version. Offline/reload retries use that version and preserve newer cloud edits. Unresolved conflicts no longer block unrelated uploads or downloads. Explicit review resolutions clear their retry records. Sign-in no longer overwrites a failed/review sync message with a false success message.
 
 No Firebase configuration or security-rule changes are needed.
+
+## Startup repair (v16)
+
+Fixed an undefined variable in the IndexedDB open handler that prevented app startup since v13. Existing records, session types, ball tags, Firebase config and rules are preserved. Startup failure now stops sync with a clear message. Regression: `node tests/startup.cjs`. The footer identifies v16 so installed-app users can verify the updated cache is active.

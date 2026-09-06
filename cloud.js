@@ -139,9 +139,14 @@
   }
 
   function waitForBowlingApp() {
-    if (window.BowlingApp?.ready) return Promise.resolve(window.BowlingApp);
-    return new Promise((resolve) => {
-      window.addEventListener('bowling:ready', () => resolve(window.BowlingApp), { once: true });
+    const app = window.BowlingApp;
+    if (app?.ready) return Promise.resolve(app);
+    if (app?.startupError) return Promise.reject(new Error(`App startup failed: ${app.startupError}`));
+    return new Promise((resolve, reject) => {
+      window.addEventListener('bowling:ready', (event) => {
+        if (event.detail?.ok && window.BowlingApp?.ready) resolve(window.BowlingApp);
+        else reject(new Error(window.BowlingApp?.startupError || 'Local storage is unavailable. Reopen the app to retry.'));
+      }, { once: true });
     });
   }
 
@@ -282,7 +287,9 @@
     selectedGroupId = '';
     renderConnectionState();
 
-    const app = await waitForBowlingApp();
+    let app;
+    try { app = await waitForBowlingApp(); }
+    catch (error) { if (stillCurrent()) { setSyncBadge('Startup failed','error'); setStatus(friendlyError(error),'error'); } return; }
     if (!stillCurrent()) return;
 
     if (!currentUser) {
@@ -1513,9 +1520,11 @@
   async function init() {
     wireEvents();
     renderConnectionState();
-    await waitForBowlingApp();
-    updateProfileBowlerOptions();
-    if (configReady() && navigator.onLine) await initFirebase();
+    try {
+      await waitForBowlingApp();
+      updateProfileBowlerOptions();
+      if (configReady() && navigator.onLine) await initFirebase();
+    } catch (error) { setSyncBadge('Startup failed','error'); setStatus(friendlyError(error),'error'); }
   }
 
   window.BowlingCloud = {
