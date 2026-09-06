@@ -68,6 +68,7 @@
   let syncing = false;
   let lastSyncAt = 0;
   let pendingSyncReview = null;
+  let authRevision = 0;
   let pendingLocalChanges = 0;
 
   const metricInfo = {
@@ -269,6 +270,10 @@
   }
 
   async function handleAuthStateChanged(user) {
+    authRevision += 1;
+    pendingLocalChanges = 0;
+    lastSyncAt = 0;
+    hideSyncReview();
     currentUser = user || null;
     profile = null;
     groups = [];
@@ -563,7 +568,18 @@
     }
   }
 
-  async function syncAll(reason = 'Sync', reviewChoices = null) {
+  function syncAll(reason = 'Sync', reviewChoices = null) {
+    const uid = currentUser?.uid;
+    const task = localChangeQueue.then(() => currentUser?.uid === uid ? performSyncAll(reason, reviewChoices) : undefined);
+    localChangeQueue = task.catch(() => {});
+    return task;
+  }
+
+  async function performSyncAll(reason = 'Sync', reviewChoices = null) {
+    const revision = localChangeRevision;
+    const authVersion = authRevision;
+    const uid = currentUser?.uid;
+    const isCurrentAccount = () => currentUser?.uid === uid && authVersion === authRevision;
     if (!currentUser || !firestore || syncing) return;
     if (!navigator.onLine) {
       const waiting = pendingLocalChanges ? `${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting` : 'Offline — saved on device';
@@ -578,11 +594,14 @@
 
     try {
       const app = await waitForBowlingApp();
+      if (!isCurrentAccount()) return;
       const localGames = app.getGames();
       const localTombstones = await app.getTombstones();
+      if (!isCurrentAccount()) return;
       const localGameMap = new Map(localGames.map((game) => [Number(game.id), game]));
       const tombstoneMap = new Map(localTombstones.map((t) => [Number(t.id), t]));
-      const remoteSnap = await modules.getDocs(modules.collection(firestore, 'users', currentUser.uid, 'games'));
+      const remoteSnap = await modules.getDocs(modules.collection(firestore, 'users', uid, 'games'));
+      if (!isCurrentAccount() || revision !== localChangeRevision) return;
       const remoteMap = new Map();
       remoteSnap.forEach((item) => remoteMap.set(Number(item.id), item.data()));
 
@@ -699,12 +718,15 @@
         if (!remoteMap.has(id)) cloudWrites.push({ ref: cloudGameRef(id), data: cloudDeletePayload(tombstone) });
       }
 
+      if (!isCurrentAccount() || revision !== localChangeRevision) return;
       if (localUpserts.length || localDeletes.length) {
-        await app.applyRemoteChanges({ upserts: localUpserts, deletes: localDeletes });
+        await app.applyRemoteChanges({ upserts: localUpserts, deletes: localDeletes, expectedUid: uid });
       }
+      if (!isCurrentAccount()) return;
       if (cloudWrites.length) await writeInChunks(cloudWrites);
-
+      if (!isCurrentAccount()) return;
       await publishAllSummaries();
+      if (!isCurrentAccount() || revision !== localChangeRevision) return;
       pendingLocalChanges = 0;
       lastSyncAt = Date.now();
       setSyncBadge('Synced just now', 'success');
@@ -712,6 +734,7 @@
       await loadLeaderboard();
     } catch (error) {
       console.error(error);
+      if (!isCurrentAccount()) return;
       setSyncBadge('Needs sync', 'error');
       setStatus(`Sync paused: ${friendlyError(error)}`, 'error');
     } finally {
@@ -1312,38 +1335,53 @@
     }
   }
 
-  async function handleLocalDataChanged(event) {
-    if (!currentUser) return;
+  // Preserve local edit order, particularly a deletion immediately followed by Undo.
+  let localChangeQueue = Promise.resolve();
+  let localChangeRevision = 0;
+  function handleLocalDataChanged(event) {
+    const detail = event.detail || {};
+    const uid = currentUser?.uid;
+    if (!uid || (detail.scope !== undefined && detail.scope !== uid)) return;
     pendingLocalChanges += 1;
+    localChangeRevision += 1;
+    setSyncBadge(navigator.onLine ? 'Syncing…' : 'Saved on this device · waiting for connection', navigator.onLine ? 'working' : 'pending');
+    localChangeQueue = localChangeQueue.then(() => syncLocalChange(detail, uid)).catch((error) => {
+      console.error(error);
+      if (currentUser?.uid === uid) setSyncBadge('Saved on this device · needs sync', 'error');
+    });
+  }
+
+  async function syncLocalChange(detail, uid) {
+    if (currentUser?.uid !== uid) return;
     updateProfileBowlerOptions();
     if (!navigator.onLine) {
-      setSyncBadge(`${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting`, 'pending');
-      setStatus('Saved locally. Cloud sync will resume when you are online.');
+      setSyncBadge('Saved on this device · waiting for connection', 'pending');
       return;
     }
     try {
-      const detail = event.detail || {};
-      if (detail.type === 'upsert' && detail.game) {
-        setSyncBadge('Syncing…', 'working');
-        await saveSingleGame(detail.game);
-        await publishAllSummaries();
-        pendingLocalChanges = Math.max(0, pendingLocalChanges - 1);
-        setSyncBadge(pendingLocalChanges ? `${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting` : 'Synced just now', pendingLocalChanges ? 'pending' : 'success');
-        setStatus('Game saved locally and synced to Firebase.', 'success');
-        await loadLeaderboard();
-      } else if (detail.type === 'delete' && detail.tombstone) {
-        setSyncBadge('Syncing…', 'working');
-        await saveSingleDeletion(detail.tombstone);
-        await publishAllSummaries();
-        pendingLocalChanges = Math.max(0, pendingLocalChanges - 1);
-        setSyncBadge(pendingLocalChanges ? `${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting` : 'Synced just now', pendingLocalChanges ? 'pending' : 'success');
-        await loadLeaderboard();
-      } else {
-        await syncAll('Local changes');
+      let changes;
+      if (detail.type === 'upsert' && detail.game) changes = [{ id: detail.game.id, data: cloudGamePayload(detail.game) }];
+      else if (detail.type === 'batch-upsert' && detail.games) changes = detail.games.map((game) => ({ id: game.id, data: cloudGamePayload(game) }));
+      else if (detail.type === 'delete' && detail.tombstone) changes = [{ id: detail.tombstone.id, data: cloudDeletePayload(detail.tombstone) }];
+      else { await performSyncAll('Local changes'); return; }
+      setSyncBadge('Syncing…', 'working');
+      for (const change of changes) {
+        if (currentUser?.uid !== uid) return;
+        // Use the originating account even if authentication changes during the request.
+        const ref = modules.doc(firestore, 'users', uid, 'games', String(change.id));
+        await modules.setDoc(ref, change.data);
       }
+      if (currentUser?.uid !== uid) return;
+      await publishAllSummaries();
+      if (currentUser?.uid !== uid) return;
+      pendingLocalChanges = Math.max(0, pendingLocalChanges - 1);
+      setSyncBadge(pendingLocalChanges ? 'Saved on this device · changes waiting' : 'Synced just now', pendingLocalChanges ? 'pending' : 'success');
+      setStatus('Changes saved on this device and synced to Firebase.', 'success');
+      await loadLeaderboard();
     } catch (error) {
       console.error(error);
-      setSyncBadge('Needs sync', 'error');
+      if (currentUser?.uid !== uid) return;
+      setSyncBadge('Saved on this device · needs sync', 'error');
       setStatus(`Saved locally; cloud sync will retry later. ${friendlyError(error)}`, 'error');
     }
   }

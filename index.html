@@ -15,18 +15,21 @@
   <title>Bowling Tracker</title>
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">Skip to content</a>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">OFFLINE BOWLING LOG</p>
+        <p class="eyebrow">YOUR BOWLING COMPANION</p>
         <h1>Bowling Tracker</h1>
-        <p class="subtitle">Games, sessions, averages, strikes, clean games, personal bests, optional cloud sync, and friend leaderboards.</p>
+        <p class="subtitle">Log your games. See your progress.</p>
       </div>
+      <details class="profile-menu" id="profileMenu"><summary>Account &amp; settings</summary>
       <div class="top-actions">
         <button id="installBtn" class="btn secondary hidden" type="button">Install</button>
-        <button id="openCloudBtn" class="btn secondary cloud-button" type="button"><span id="cloudButtonDot" class="status-dot"></span><span id="cloudButtonLabel">Cloud</span></button>
+        <button id="openCloudBtn" class="btn secondary cloud-button" type="button"><span id="cloudButtonDot" class="status-dot"></span><span id="cloudButtonLabel">Account &amp; sync</span></button>
         <button id="openSettingsBtn" class="btn secondary" type="button">Settings</button>
       </div>
+      </details>
     </header>
 
     <section class="identity-strip" aria-label="Current profile and sync status">
@@ -41,8 +44,121 @@
       </div>
     </section>
 
-    <main>
-      <section class="stats-grid" aria-label="Career statistics">
+    <nav class="app-nav" aria-label="Main navigation"><button id="nav-home" type="button" data-go-view="home" aria-controls="view-home" aria-current="page"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z"/></svg>Home</button><button id="nav-sessions" type="button" data-go-view="sessions" aria-controls="view-sessions"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Sessions</button><button id="nav-stats" type="button" data-go-view="stats" aria-controls="view-stats"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v17h17M7 15l5-5 4 2 5-7"/></svg>Stats</button><button id="nav-friends" type="button" data-go-view="friends" aria-controls="view-friends"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5v1"/></svg>Friends</button></nav>
+    <main id="mainContent" tabindex="-1">
+      <div id="view-home" class="app-view" role="region" aria-label="Home"><div class="home-welcome"><div><p class="eyebrow">READY TO ROLL?</p><h2>Make every game count.</h2></div><div id="homeRecap" class="home-recap"></div></div>
+      <div id="latestSessionShortcut" class="latest-session hidden"><div><span class="eyebrow">LATEST SESSION</span><p id="latestSessionLabel"></p></div><button id="continueLatestBtn" class="btn secondary" type="button">Continue session</button></div>      <section class="panel entry-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LOG A GAME</p>
+            <h2 id="entryHeading">Add game</h2>
+            <p id="entrySubheading" class="section-copy">Enter the numbers directly or use a scoreboard photo as a reference.</p>
+          </div>
+          <div class="segmented" role="group" aria-label="Entry method">
+            <button id="manualTab" class="segment active" type="button">Single game</button>
+            <button id="openSeriesBtn" aria-haspopup="dialog" aria-controls="seriesDialog" class="segment" type="button">Enter a series</button>
+            <button id="photoTab" class="segment" type="button">Photo reference</button>
+          </div>
+        </div>
+
+        <div id="photoArea" class="photo-area hidden">
+          <label class="upload-box" for="scoreboardPhoto">
+            <span class="upload-icon">📷</span>
+            <strong>Choose or take a scoreboard photo</strong>
+            <span>The photo stays on your device and is used only as a visual reference in this version.</span>
+          </label>
+          <input id="scoreboardPhoto" class="visually-hidden" type="file" accept="image/*" capture="environment">
+          <div id="photoPreviewWrap" class="photo-preview-wrap hidden">
+            <img id="photoPreview" alt="Selected bowling scoreboard">
+            <button id="clearPhotoBtn" class="btn secondary compact" type="button">Remove photo</button>
+          </div>
+          <p class="field-help">Use the photo to read your scores, then enter the numbers below.</p>
+        </div>
+
+        <p id="entrySessionSummary" class="session-context" aria-live="polite"></p>
+        <div class="form-grid entry-grid">
+          <label>
+            <span>Session</span>
+            <select id="sessionSelect" aria-describedby="sessionSelectHelp">
+              <option value="">＋ New session</option>
+            </select>
+            <small id="sessionSelectHelp" class="field-help">Choose a saved session to fill in its date and name, or start a new one.</small>
+          </label>
+          <label>
+            <span>Date</span>
+            <input id="dateInput" type="date">
+          </label>
+          <label>
+            <span>Session name <small>optional</small></span>
+            <input id="sessionNameInput" type="text" placeholder="League night, Practice…">
+            <small class="field-help">Use a different name for separate sessions on the same date.</small>
+          </label>
+          <label>
+            <span>Game score</span>
+            <input id="scoreInput" type="number" min="0" max="300" inputmode="numeric" placeholder="0–300">
+          </label>
+          <label>
+            <span>Open frames</span>
+            <input id="openFramesInput" type="number" min="0" max="10" inputmode="numeric" placeholder="0–10">
+          </label>
+          <label>
+            <span>Strikes</span>
+            <input id="strikesInput" type="number" min="0" max="12" inputmode="numeric" placeholder="0–12">
+          </label>
+          <label>
+            <span>Strike opportunities <small>10–12</small></span>
+            <input id="strikeOppInput" type="number" min="10" max="12" inputmode="numeric" value="10">
+            <small class="field-help">Use 11 or 12 when tenth-frame fill shots created extra strike chances.</small>
+          </label>
+          <label>
+            <span>Notes <small>optional</small></span>
+            <input id="notesInput" type="text" placeholder="Lane, ball, tournament, oil pattern…">
+          </label>
+        </div>
+
+        <div class="entry-actions">
+          <button id="saveGameBtn" class="btn primary" type="button">Save game</button>
+          <button id="cancelEditBtn" class="btn secondary hidden" type="button">Cancel edit</button>
+          <span id="entrySyncStatus" class="status-text" role="status">Saved on this device · local only</span>
+          <span id="entryStatus" class="status-text" aria-live="polite"></span>
+        </div>
+      </section></div>
+      <div id="view-sessions" class="app-view" role="region" aria-label="Sessions" hidden>      <section class="panel">
+        <div class="section-heading history-heading">
+          <div>
+            <p class="eyebrow">HISTORY</p>
+            <h2>Sessions</h2>
+            <p class="section-copy">Games on the same date with the same session name are grouped together automatically.</p>
+          </div>
+          <div class="history-filters">
+            <label>
+              <span>Sort</span>
+              <select id="sortFilter">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="highscore">Highest game</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="session-filters">
+          <label><span>Find a session</span><input id="sessionSearch" type="search" placeholder="League, practice…" autocomplete="off"></label>
+          <label><span>From</span><input id="sessionFrom" type="date"></label>
+          <label><span>Through</span><input id="sessionTo" type="date"></label>
+          <button id="clearSessionFilters" class="text-btn" type="button">Clear filters</button>
+        </div>
+        <p id="historyResultCount" class="section-copy" aria-live="polite"></p>
+        <p id="noSessionMatches" class="empty-state hidden">No sessions match. Try another name or date range.</p>
+        <div id="emptyHistory" class="empty-state">
+          <div class="empty-icon">🎳</div>
+          <strong>No games yet</strong>
+          <span>Your saved sessions will appear here.</span><button class="btn primary" type="button" data-go-view="home">Add your first game</button>
+        </div>
+        <div id="sessionsList" class="sessions-list"></div>
+        <button id="showMoreSessions" class="btn secondary hidden" type="button">Show more sessions</button>
+      </section></div>
+      <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>      <section class="stats-grid" aria-label="Career statistics">
         <article class="stat-card primary-stat">
           <span class="stat-label">Average</span>
           <strong id="statAverage" class="stat-value">—</strong>
@@ -84,104 +200,6 @@
           <span id="statGamesAndMilestones" class="stat-detail">0 games · 0 scores of 200+</span>
         </article>
       </section>
-
-      <section class="panel entry-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">LOG A GAME</p>
-            <h2 id="entryHeading">Add game</h2>
-            <p id="entrySubheading" class="section-copy">Enter the numbers directly or use a scoreboard photo as a reference.</p>
-          </div>
-          <div class="segmented" role="group" aria-label="Entry method">
-            <button id="manualTab" class="segment active" type="button">Manual</button>
-            <button id="photoTab" class="segment" type="button">Photo</button>
-          </div>
-        </div>
-
-        <div id="photoArea" class="photo-area hidden">
-          <label class="upload-box" for="scoreboardPhoto">
-            <span class="upload-icon">📷</span>
-            <strong>Choose or take a scoreboard photo</strong>
-            <span>The photo stays on your device and is used only as a visual reference in this version.</span>
-          </label>
-          <input id="scoreboardPhoto" class="visually-hidden" type="file" accept="image/*" capture="environment">
-          <div id="photoPreviewWrap" class="photo-preview-wrap hidden">
-            <img id="photoPreview" alt="Selected bowling scoreboard">
-            <button id="clearPhotoBtn" class="btn secondary compact" type="button">Remove photo</button>
-          </div>
-          <div class="notice">
-            <strong>Photo workflow ready.</strong> You can take/select a photo, then confirm or edit the fields below. Automatic scoreboard OCR can be added later without changing your saved-data format.
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <label>
-            <span>Date</span>
-            <input id="dateInput" type="date">
-          </label>
-          <label>
-            <span>Session name <small>optional</small></span>
-            <input id="sessionNameInput" type="text" list="sessionSuggestions" placeholder="League night, Practice…">
-            <datalist id="sessionSuggestions"></datalist>
-            <small class="field-help">If you already bowled on this date, the most recent session is suggested automatically.</small>
-          </label>
-          <label>
-            <span>Game score</span>
-            <input id="scoreInput" type="number" min="0" max="300" inputmode="numeric" placeholder="0–300">
-          </label>
-          <label>
-            <span>Open frames</span>
-            <input id="openFramesInput" type="number" min="0" max="10" inputmode="numeric" placeholder="0–10">
-          </label>
-          <label>
-            <span>Strikes</span>
-            <input id="strikesInput" type="number" min="0" max="12" inputmode="numeric" placeholder="0–12">
-          </label>
-          <label>
-            <span>Strike opportunities <small>10–12</small></span>
-            <input id="strikeOppInput" type="number" min="10" max="12" inputmode="numeric" value="10">
-            <small class="field-help">Use 11 or 12 when tenth-frame fill shots created extra strike chances.</small>
-          </label>
-          <label>
-            <span>Notes <small>optional</small></span>
-            <input id="notesInput" type="text" placeholder="Lane, ball, tournament, oil pattern…">
-          </label>
-        </div>
-
-        <div class="entry-actions">
-          <button id="saveGameBtn" class="btn primary" type="button">Save game</button>
-          <button id="cancelEditBtn" class="btn secondary hidden" type="button">Cancel edit</button>
-          <span id="entryStatus" class="status-text" aria-live="polite"></span>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="section-heading history-heading">
-          <div>
-            <p class="eyebrow">HISTORY</p>
-            <h2>Sessions</h2>
-            <p class="section-copy">Games on the same date with the same session name are grouped together automatically.</p>
-          </div>
-          <div class="history-filters">
-            <label>
-              <span>Sort</span>
-              <select id="sortFilter">
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="highscore">Highest game</option>
-              </select>
-            </label>
-          </div>
-        </div>
-
-        <div id="emptyHistory" class="empty-state">
-          <div class="empty-icon">🎳</div>
-          <strong>No games yet</strong>
-          <span>Add your first game above. Your history will appear here.</span>
-        </div>
-        <div id="sessionsList" class="sessions-list"></div>
-      </section>
-
       <section class="panel milestones-panel">
         <div class="section-heading">
           <div>
@@ -197,10 +215,16 @@
           <div class="mini-stat"><span>Avg strikes / game</span><strong id="moreStrikeAvg">—</strong></div>
           <div class="mini-stat"><span>Clean-game rate</span><strong id="moreCleanRate">—</strong></div>
           <div class="mini-stat"><span>Last 5 average</span><strong id="moreLast5">—</strong></div>
+          <div class="mini-stat"><span>Last 10 average</span><strong id="moreLast10">—</strong><small id="last10Count"></small></div>
+          <div class="mini-stat"><span>Last 30 average</span><strong id="moreLast30">—</strong><small id="last30Count"></small></div>
           <div class="mini-stat"><span>Best session avg</span><strong id="moreBestSessionAvg">—</strong></div>
         </div>
       </section>
-
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">PROGRESS</p><h2>Average over time</h2>
+          <p class="section-copy">Your running career average by bowling date. Every game counts equally.</p></div></div>
+        <div id="averageChart"></div>
+      </section>
       <section class="panel records-panel">
         <div class="section-heading">
           <div>
@@ -217,9 +241,8 @@
           <div class="record-stat"><span>Best strike % game</span><strong id="recordBestStrikePct">—</strong><small id="recordBestStrikePctDetail">No games yet</small></div>
           <div class="record-stat"><span>Most recent 200+</span><strong id="recordRecent200">—</strong><small id="recordRecent200Detail">No 200+ games yet</small></div>
         </div>
-      </section>
-
-      <section class="panel leaderboard-panel" id="leaderboardPanel">
+      </section></div>
+      <div id="view-friends" class="app-view" role="region" aria-label="Friends" hidden>      <section class="panel leaderboard-panel" id="leaderboardPanel">
         <div class="section-heading leaderboard-heading">
           <div>
             <p class="eyebrow">FRIENDS</p>
@@ -256,7 +279,7 @@
         <div id="leaderboardNoGroup" class="empty-state hidden">
           <div class="empty-icon">🏆</div>
           <strong>No bowling group yet</strong>
-          <span>Create one or join a friend's invite code from Cloud settings.</span>
+          <span>Create a group or join with a friend’s invite code from Account &amp; sync.</span>
           <button id="leaderboardManageGroupsBtn" class="btn secondary" type="button">Manage groups</button>
         </div>
         <div id="leaderboardContent" class="hidden">
@@ -280,11 +303,11 @@
           </div>
           <p class="small-note leaderboard-note">Average and strike-rate rankings are marked provisional until a bowler has 10 games.</p>
         </div>
-      </section>
+      </section></div>
     </main>
 
     <footer>
-      <span>Offline-first · Local by default · Optional Firebase sync</span>
+      <span>Bowling Tracker · UI v12</span>
       <span id="offlineStatus">Checking offline support…</span>
     </footer>
   </div>
@@ -457,6 +480,27 @@
       <div id="cloudStatus" class="status-text" aria-live="polite"></div>
     </div>
   </dialog>
+
+  <dialog id="seriesDialog" aria-labelledby="seriesHeading">
+    <form id="seriesForm" class="dialog-inner">
+      <div class="dialog-header"><h2 id="seriesHeading">Enter a series</h2><button class="text-btn" type="button" data-close="seriesDialog">Close</button></div>
+      <p class="section-copy">Save multiple games to one session. Add or remove rows as needed.</p>
+      <div class="form-grid"><label>Date<input id="seriesDate" type="date" required></label><label>Session name<input id="seriesName" type="text" placeholder="League night, Practice…"></label></div>
+      <p id="seriesPreview" class="session-context" aria-live="polite"></p>
+      <div id="seriesRows"></div>
+      <button id="addSeriesRow" class="btn secondary" type="button">＋ Add another game</button>
+      <div class="entry-actions"><button id="saveSeriesBtn" class="btn primary" type="submit">Save series</button><span id="seriesStatus" class="status-text" role="status"></span></div>
+    </form>
+  </dialog>
+  <dialog id="editSessionDialog" aria-labelledby="editSessionHeading">
+    <form id="editSessionForm" class="dialog-inner">
+      <div class="dialog-header"><h2 id="editSessionHeading">Edit session</h2><button class="text-btn" type="button" data-close="editSessionDialog">Close</button></div>
+      <p id="editSessionCount" class="section-copy"></p>
+      <div class="form-grid"><label>Date<input id="editSessionDate" type="date" required></label><label>Session name<input id="editSessionName" type="text"></label></div>
+      <div class="entry-actions"><button id="saveSessionBtn" class="btn primary" type="submit">Save session</button><span id="sessionEditStatus" class="status-text" role="status"></span></div>
+    </form>
+  </dialog>
+  <div id="undoToast" class="undo-toast hidden" role="status"><span id="undoMessage">Game deleted.</span><button id="undoDeleteBtn" class="btn secondary compact" type="button">Undo</button></div>
 
   <script src="./app.js" defer></script>
   <script src="./firebase-config.js" defer></script>
