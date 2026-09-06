@@ -27,3 +27,9 @@ New tests/startup.cjs fails on the previous code and passes after the fix. It ex
 ## v17 Discord preparation
 
 Discord client tests pass for disabled/unconfigured behavior with no requests, Firebase-token authentication, allowed authorization URLs, connection/disconnection states and stale-account responses. Existing startup and sync tests pass. Live OAuth cannot be tested until the backend and Discord application are configured.
+
+## v18 Discord bot
+
+Nine Node bot tests pass, covering real signed Discord PINGs, signature tampering, request-origin checks, state replay rejection, stats/date/ball logic, command schema, admin checks, mocked sharing/group authorization and an OAuth callback storing verified identity. SQLite execution validates unique mapping constraints and browser-bound state consumption. The app popup-link tests and all existing app regression suites pass.
+
+Live Cloudflare execution, Discord command installation, real OAuth and Google service-account permissions have not been exercised because user-side deployment and secrets are pending. Free-tier CPU/read consumption must be monitored with real data. The initial deployment supports one configured server, 15 recap participants and 2,000 game/deletion records per user; limits return errors rather than partial totals.

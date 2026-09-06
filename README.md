@@ -73,3 +73,9 @@ Fixed an undefined variable in the IndexedDB open handler that prevented app sta
 ## Discord linking preparation (v17)
 
 Account settings includes Discord connection controls. They remain disabled until the linking service is deployed and configured. The app-side authorization/status/disconnect flow is ready; real OAuth linking and the bot still require backend setup. See DISCORD-INTEGRATION.md. No credentials or account mappings are stored in this build.
+
+## Discord bot implementation (v18)
+
+The complete Worker source and step-by-step setup guide are in [bot/README.md](bot/README.md). Commands: link, stats, session, ball, leaderboard, compare, recap, sharing, configure and disable. Weekly channel recaps are optional; milestone announcements are excluded.
+
+Your app's linking service is still disabled until the deployed Worker origin is entered in discord-config.js. The bot cannot become live until the Cloudflare/Discord secrets, D1 binding and Firebase IAM permissions are configured.
