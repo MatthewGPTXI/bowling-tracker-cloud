@@ -69,3 +69,7 @@ No Firebase configuration or security-rule changes are needed.
 ## Startup repair (v16)
 
 Fixed an undefined variable in the IndexedDB open handler that prevented app startup since v13. Existing records, session types, ball tags, Firebase config and rules are preserved. Startup failure now stops sync with a clear message. Regression: `node tests/startup.cjs`. The footer identifies v16 so installed-app users can verify the updated cache is active.
+
+## Discord linking preparation (v17)
+
+Account settings includes Discord connection controls. They remain disabled until the linking service is deployed and configured. The app-side authorization/status/disconnect flow is ready; real OAuth linking and the bot still require backend setup. See DISCORD-INTEGRATION.md. No credentials or account mappings are stored in this build.

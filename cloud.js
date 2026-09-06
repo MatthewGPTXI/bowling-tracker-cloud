@@ -282,6 +282,7 @@
     lastSyncAt = 0;
     hideSyncReview();
     currentUser = user || null;
+    window.BowlingDiscord?.setAccount(currentUser);
     profile = null;
     groups = [];
     selectedGroupId = '';

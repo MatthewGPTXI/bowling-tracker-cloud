@@ -1,5 +1,5 @@
 const CACHE_PREFIX = `bowling-tracker:${new URL(self.registration.scope).pathname}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v16-startup-fix`;
+const CACHE_NAME = `${CACHE_PREFIX}v17-discord-linking`;
 const APP_ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,8 @@ const APP_ASSETS = [
   './app.js',
   './firebase-config.js',
   './cloud.js',
+  './discord.js',
+  './discord-config.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -35,7 +37,7 @@ self.addEventListener('fetch', (event) => {
 
   // Always check the network first for Firebase config so a newly pasted
   // project configuration is not trapped behind an older offline cache.
-  if (requestUrl.pathname.endsWith('/firebase-config.js')) {
+  if ((requestUrl.pathname.endsWith('/firebase-config.js') || requestUrl.pathname.endsWith('/discord-config.js'))) {
     event.respondWith(
       fetch(event.request).then((response) => {
         if (response && response.status === 200) {
