@@ -11,3 +11,9 @@ Limitations: physical iPhone/Android, browser rendering, actual reload recovery,
 ## v14 ball tracking
 
 All four regression suites pass. Added coverage for reusable ball names, independent game tags and clearing, series defaults/overrides, draft recovery, combined ball/date comparisons, consecutive-series correctness, old game defaults, validation, account-scoped suggestions and ball-only cloud conflict detection. Browser/physical-device/live Firebase limitations above still apply.
+
+## v15 sync recovery
+
+Reproduced sync-flow gaps: unresolved conflicts halted unrelated transfers; offline changes lost their originating versions; sign-in could overwrite sync results with misleading success text. Fixed with durable account-specific retry records and reconciliation that skips only unresolved records.
+
+The cloud regression now executes the complete reconciliation flow with simulated Firestore/IndexedDB interfaces: new uploads, offline/reload retry, network-failure recovery, consecutive queued edits, conflict preservation, unrelated uploads while review is pending, explicit resolution, and account scoping. All four regression suites pass. Live production Firebase access is unavailable, so this does not establish the exact cause of the user's device-specific report.
