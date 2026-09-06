@@ -306,7 +306,7 @@
     </main>
 
     <footer>
-      <span>Bowling Tracker · v19</span>
+      <span>Bowling Tracker · v16</span>
       <span id="offlineStatus">Checking offline support…</span>
     </footer>
   </div>
@@ -420,18 +420,6 @@
           </div>
         </div>
 
-        <div class="settings-section" aria-labelledby="discordHeading">
-          <h3 id="discordHeading">Discord connection</h3>
-          <p>Connect your Discord account so the bowling bot can identify you when someone selects you in a comparison command. Discord will ask you to authorize your identity.</p>
-          <p id="discordLinkStatus" role="status">Discord linking is awaiting bot setup.</p>
-          <div class="button-row">
-            <button id="connectDiscordBtn" class="btn secondary" type="button" disabled>Connect Discord</button>
-            <button id="disconnectDiscordBtn" class="text-btn" type="button" hidden>Disconnect Discord</button>
-            <button id="refreshDiscordBtn" class="text-btn" type="button">Refresh connection</button>
-          </div>
-          <p class="small-note">Connecting makes your statistics available in public Discord bot replies, group comparisons, leaderboards and recaps. No extra opt-in is required. Notes are never included. Disconnect to stop future bot access.</p>
-        </div>
-
         <div id="syncReviewSection" class="settings-section hidden">
           <h3>Sync review needed</h3>
           <p id="syncReviewSummary">The device and cloud copies contain changes that need your choice before syncing.</p>
@@ -516,8 +504,6 @@
 
   <script src="./app.js" defer></script>
   <script src="./firebase-config.js" defer></script>
-  <script src="./discord-config.js" defer></script>
-  <script src="./discord.js" defer></script>
   <script src="./cloud.js" defer></script>
 <dialog id="importPreviewDialog"><div class="dialog-header"><h2>Review backup import</h2></div><p id="importPreviewSummary"></p><p>Duplicates are skipped. Conflicts keep your current data unless you choose the backup version.</p><div id="importPreviewRows"></div><p id="importPreviewStatus" role="status"></p><div class="button-row"><button id="cancelImportBtn" class="btn secondary" type="button">Cancel</button><button id="confirmImportBtn" class="btn primary" type="button">Import selected changes</button></div></dialog></body>
 </html>

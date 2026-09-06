@@ -1,1 +1,0 @@
-{"name":"bowling-tracker-discord-bot","version":"1.0.0","private":true,"type":"module","scripts":{"test":"node --test tests/*.test.mjs","deploy":"npx wrangler@4 deploy","register":"node register-commands.mjs"},"engines":{"node":">=22"}}

@@ -23,17 +23,3 @@ The cloud regression now executes the complete reconciliation flow with simulate
 The screenshot's storage failure was reproduced by executing the real init/openInitialDatabase/openDatabase path. openDatabase referenced an undefined `tx` variable introduced in v13's storage-handler edit; it threw ReferenceError before the IndexedDB open succeeded. v12 correctly used the open request's onsuccess handler. Restored that handler while retaining transaction-completion handling for actual data transactions. This error was independent of League defaults and ball fields.
 
 New tests/startup.cjs fails on the previous code and passes after the fix. It exercises full startup with existing legacy-shaped games, simulated cloud downloads, account switching, database-open failure, and cloud readiness success/failure. All five regression suites pass. The storage/event interfaces are simulated; live Firebase and physical iPhone testing remain unperformed. Startup errors now surface their cause and stop cloud initialization rather than hanging. Footer now identifies v16.
-
-## v17 Discord preparation
-
-Discord client tests pass for disabled/unconfigured behavior with no requests, Firebase-token authentication, allowed authorization URLs, connection/disconnection states and stale-account responses. Existing startup and sync tests pass. Live OAuth cannot be tested until the backend and Discord application are configured.
-
-## v18 Discord bot
-
-Nine Node bot tests pass, covering real signed Discord PINGs, signature tampering, request-origin checks, state replay rejection, stats/date/ball logic, command schema, admin checks, mocked sharing/group authorization and an OAuth callback storing verified identity. SQLite execution validates unique mapping constraints and browser-bound state consumption. The app popup-link tests and all existing app regression suites pass.
-
-Live Cloudflare execution, Discord command installation, real OAuth and Google service-account permissions have not been exercised because user-side deployment and secrets are pending. Free-tier CPU/read consumption must be monitored with real data. The initial deployment supports one configured server, 15 recap participants and 2,000 game/deletion records per user; limits return errors rather than partial totals.
-
-## v19 public Discord commands
-
-All ten bot tests pass, including an actual signed command through the HTTP handler verifying a public deferred response and public follow-up. Integration tests confirm that legacy share=0 does not block stats or comparisons, while nonmembers remain blocked. App linking tests pass. Public-link disclosure and setup instructions updated. Cloudflare deployment and live Discord testing remain pending user setup.
