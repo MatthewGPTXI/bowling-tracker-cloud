@@ -348,6 +348,7 @@
       date: String(game.date),
       sessionName: String(game.sessionName || ''),
       ball: String(game.ball || '').trim().replace(/\s+/g,' '),
+      noTap: game.noTap === true,
       sessionType: ['League','Practice','Tournament'].includes(game.sessionType) ? game.sessionType : 'League',
       ...(game.gameOrder !== undefined ? {gameOrder:Number(game.gameOrder)} : {}),
       score: Number(game.score),
@@ -380,6 +381,7 @@
       date: String(game?.date || ''),
       sessionName: normalizedSessionName(game),
       ball: String(game?.ball || '').trim().replace(/\s+/g,' ').toLowerCase(),
+      noTap: game?.noTap === true,
       sessionType: game?.sessionType || 'League',
       gameOrder: Number(game?.gameOrder ?? game?.createdAt ?? game?.id ?? 0),
       score: Number(game?.score || 0),
@@ -401,6 +403,7 @@
     return [
       value.date,
       value.sessionName,
+      value.noTap,
       value.score,
       value.openFrames,
       value.strikes,
@@ -413,6 +416,7 @@
     return `<div class="sync-review-game">
       <strong>${escapeHtml(label)}</strong>
       ${game.gameOrder !== undefined ? `Game order: ${escapeHtml(game.gameOrder)}<br>` : ''}${game.ball ? `Ball: ${escapeHtml(game.ball)}<br>` : ''}${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
+      ${game.noTap === true ? 'No-tap · excluded from standard stats' : 'Standard scoring'}<br>
       Score ${Number(game.score)} · ${Number(game.openFrames)} open · ${Number(game.strikes)}/${Number(game.strikeOpportunities || 10)} strikes
       ${game.notes ? `<br>${escapeHtml(game.notes)}` : ''}
     </div>`;
@@ -1120,7 +1124,10 @@
     const metric = dom.metricSelect.value || 'average';
     const info = metricInfo[metric] || metricInfo.average;
     dom.leaderboardMetricHeading.textContent = info.label;
-    const sorted = [...members].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0)
+    const needsRefresh = member => Number(member.noTapGames || 0) > 0 && member.standardStatsUpdatedAt !== member.updatedAt;
+    const eligible = member => !needsRefresh(member) && Number(member.games || 0) > 0;
+    const sorted = [...members].sort((a, b) => Number(eligible(b)) - Number(eligible(a))
+      || (eligible(a) && eligible(b) ? Number(b[metric] || 0) - Number(a[metric] || 0) : 0)
       || String(a.displayName || '').localeCompare(String(b.displayName || '')));
 
     if (!sorted.length) {
@@ -1128,15 +1135,17 @@
       return;
     }
 
-    dom.leaderboardBody.innerHTML = sorted.map((member, index) => {
-      const provisional = info.provisional && Number(member.games || 0) < 10;
+    let rank = 0;
+    dom.leaderboardBody.innerHTML = sorted.map((member) => {
+      const stale = needsRefresh(member), ranked = eligible(member);
+      const provisional = ranked && info.provisional && Number(member.games || 0) < 10;
       const you = member.uid === currentUser?.uid;
       return `
         <tr class="${you ? 'you-row' : ''}">
-          <td><span class="rank-badge">${index + 1}</span></td>
-          <td><button class="leaderboard-bowler" type="button" data-member-uid="${escapeHtml(member.uid)}" aria-haspopup="dialog" aria-controls="friendStatsDialog"><strong>${escapeHtml(member.displayName || 'Bowler')}${you ? ' · You' : ''}</strong><span class="bowler-stats-link">View stats ›</span></button>${provisional ? '<span class="provisional">Provisional</span>' : ''}</td>
-          <td class="leader-value">${escapeHtml(info.format(member[metric]))}</td>
-          <td>${Number(member.games || 0)}</td>
+          <td><span class="rank-badge">${ranked ? ++rank : '—'}</span></td>
+          <td><button class="leaderboard-bowler" type="button" data-member-uid="${escapeHtml(member.uid)}" aria-haspopup="dialog" aria-controls="friendStatsDialog"><strong>${escapeHtml(member.displayName || 'Bowler')}${you ? ' · You' : ''}</strong><span class="bowler-stats-link">View stats ›</span></button>${stale ? '<span class="provisional">Sync the updated app to exclude no-tap</span>' : !ranked ? '<span class="provisional">No standard games</span>' : provisional ? '<span class="provisional">Provisional</span>' : ''}</td>
+          <td class="leader-value">${ranked ? escapeHtml(info.format(member[metric])) : '—'}</td>
+          <td>${stale ? '—' : Number(member.games || 0)}</td>
         </tr>`;
     }).join('');
   }

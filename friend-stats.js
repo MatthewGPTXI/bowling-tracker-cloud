@@ -41,9 +41,11 @@
     && member.details.updatedAt === member.updatedAt ? member.details : null;
   const hasCurrentAccount = () => context && window.BowlingApp?.ready
     && window.BowlingApp.getLocalScopeInfo().uid === context.uid;
+  const needsStandardRefresh = member => Number(member?.noTapGames || 0) > 0
+    && member.standardStatsUpdatedAt !== member.updatedAt;
 
   function metricValue(member, metric) {
-    if (!member) return null;
+    if (!member || needsStandardRefresh(member)) return null;
     const games = finite(member.games);
     if (!metric.count && !games) return null;
     const details = currentDetails(member);
@@ -110,7 +112,8 @@
     const self = selectedUid === context.uid;
     const member = self ? { ...members.get(selectedUid), ...own } : members.get(selectedUid);
     const name = String(member.displayName || 'Bowler');
-    const count = finite(member.games);
+    const needsRefresh = needsStandardRefresh(member);
+    const count = needsRefresh ? null : finite(member.games);
     if (self) comparing = false;
 
     $('friendStatsName').textContent = self ? name + ' · You' : name;
@@ -121,14 +124,16 @@
     $('friendStatsOnly').setAttribute('aria-pressed', String(!comparing));
     $('friendStatsCompare').setAttribute('aria-pressed', String(comparing));
     $('friendStatsCompare').hidden = self;
-    const sample = count === null ? 'Game count unavailable.' : count === 0 ? 'No games shared yet.' : `${count} game${count === 1 ? '' : 's'} shared.`;
+    const sample = needsRefresh ? 'This bowler must open the updated app and sync to refresh standard-only stats.'
+      : count === null ? 'Game count unavailable.' : count === 0 ? 'No standard games shared yet.' : `${count} standard game${count === 1 ? '' : 's'} shared.`;
     $('friendStatsStatus').textContent = (comparing ? 'Comparing overall stats. ' : '') + sample
       + (count !== null && count > 0 && count < 10 ? ' Fewer than 10 games: averages are provisional.' : '')
       + (comparing && own.games > 0 && own.games < 10 ? ' Your average is provisional: fewer than 10 games.' : '')
+      + (!needsRefresh && Number(member.noTapGames || 0) > 0 ? ` ${Number(member.noTapGames)} no-tap games excluded.` : '')
       + (!navigator.onLine ? ' Offline · using the last loaded summary.' : '');
 
     if (comparing) {
-      $('friendStatsContent').innerHTML = `<div class="friend-comparison-wrap"><table class="friend-comparison"><caption class="visually-hidden">All-time stats: you compared with ${escapeHtml(name)}</caption><thead><tr><th scope="col">Metric</th><th scope="col">You</th><th scope="col">${escapeHtml(name)}</th></tr></thead><tbody>${metrics.map(metric => {
+      $('friendStatsContent').innerHTML = `<div class="friend-comparison-wrap"><table class="friend-comparison"><caption class="visually-hidden">All-time standard-game stats: you compared with ${escapeHtml(name)}</caption><thead><tr><th scope="col">Metric</th><th scope="col">You</th><th scope="col">${escapeHtml(name)}</th></tr></thead><tbody>${metrics.map(metric => {
         const mine = metricValue(own, metric), theirs = metricValue(member, metric);
         return `<tr><th scope="row">${metric.label}</th><td>${formatValue(mine, metric)}${comparisonDifference(mine, theirs, metric)}</td><td>${formatValue(theirs, metric)}</td></tr>`;
       }).join('')}</tbody></table></div>`;

@@ -10,7 +10,7 @@ const $=id=>{if(!all.has(id))all.set(id,element(id));return all.get(id)};
 const pages=['home','sessions','stats','friends'].map(v=>$('view-'+v));
 const nav=['home','sessions','stats','friends'].map(v=>{const e=$('nav-'+v);e.dataset.goView=v;return e});
 const dialogs=['seriesDialog','editSessionDialog'];
-$('seriesDialog').querySelectorAll=()=>[$('seriesDate'),$('seriesName'),...$('seriesRows').querySelectorAll('input')];
+$('seriesDialog').querySelectorAll=()=>[$('seriesDate'),$('seriesName'),$('seriesType'),$('seriesBall'),$('seriesNoTap'),...$('seriesRows').querySelectorAll('input')];
 $('editSessionDialog').querySelectorAll=()=>[$('editSessionDate'),$('editSessionName')];
 const events=[]; const storage=new Map();
 const c={console,Date,Math,Map,Set,Promise,structuredClone,setTimeout,clearTimeout,URL,CustomEvent:class{constructor(type,{detail}={}){this.type=type;this.detail=detail}},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},document:{addEventListener(){},getElementById:$,createElement:()=>element(),querySelector:()=>element(),querySelectorAll:sel=>sel==='.app-view'?pages:sel.includes('data-go-view')?nav:[]},navigator:{onLine:true},window:{confirm:()=>true,dispatchEvent:e=>events.push(e),addEventListener(){},scrollTo(){}}};

@@ -1,5 +1,15 @@
 # Bowling Tracker validation
 
+## v22 no-tap tagging and standard-only statistics
+
+All seven Node suites pass. The new tests/no-tap.cjs exercises tagging and untagging individual legacy games; preserving session type, ball, IDs and timestamps; repeated-entry defaults; complete-series tagging; old and new game/series draft recovery; standard-only averages, counts, records, milestones, recent form, charts, ball/type filters and both comparison periods; consecutive three-game records; separate history search and scoring/date filters; original game numbering and Earlier/Later controls in filtered results; explicitly separated mixed/no-tap session summaries; JSON/CSV roundtrips; tag-only import conflicts and their preview; remote download retention; empty standard histories; friend comparisons; and stale or unranked group summaries.
+
+The cloud suite now checks no-tap payloads, standard-versus-no-tap duplicate detection, a tag-only offline change retried from the durable outbox, concurrent tag/remote-edit conflict review, and tagged cloud downloads. Existing startup, navigation, ordering, atomic saves, account isolation, sync, and ball suites still pass.
+
+JavaScript syntax and static HTML/ARIA checks pass. The service-worker cache is v22-no-tap. Firebase configuration and rules are byte-for-byte unchanged. No database version bump or bulk record migration is required; missing noTap fields mean standard games. Summary freshness markers prevent known no-tap totals written by an older client from appearing as standard results in the updated app. All devices should load v22 before editing tagged games.
+
+Validation uses simulated DOM, IndexedDB, and Firestore interfaces, not production bowling records. Physical phone/browser rendering, real browser reloads, and authenticated live Firebase transactions were not tested because a browser runtime and live-account session are unavailable here.
+
 ## v21 stats, session history, and friend comparisons
 
 All six Node suites pass, including the new tests/stats-friends.cjs. New coverage checks inclusive date shortcuts across year boundaries and leap day; type/ball filter retention and reset; custom-date errors; action-panel expansion, Escape and keyboard focus; visible failed reorder recovery; unfiltered overall summaries; clickable friend stats and comparisons; account/group/member changes; legacy and stale extended summaries; empty histories and genuine zero scores; offline summary labeling; escaped names, notes and ball strings; and account guards while publishing summaries.

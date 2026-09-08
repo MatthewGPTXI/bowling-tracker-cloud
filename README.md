@@ -1,8 +1,22 @@
-# Bowling Tracker — v21
+# Bowling Tracker — v22
 
-Updated September 6, 2026. Built on the pre-journal version with the session tools and bug fixes.
+Updated September 8, 2026. Built on the pre-journal version with the session tools and bug fixes.
 
-## Latest update: simpler stats, history, and friend comparisons
+## Latest update: No-tap games
+
+- In game entry, open Advanced and set Scoring to No-tap. In series entry, Advanced → Scoring for this series applies the tag to every game being entered. League / Practice / Tournament and ball tags remain independent.
+- In Sessions, choose Scoring → No-tap only to find tagged games separately. Standard only and All games are also available. Typing "no tap", "no-tap", or "notap" in the session search works too, together with the session type and date filters.
+- No-tap games are excluded from Home's normal average/game count, all Stats metrics and records, recent averages, charts, both comparison periods, group leaderboards, and friend comparisons. No-tap-only histories have no standard results. Three-game records never skip a no-tap game to create a consecutive standard series.
+- Mixed-session headers show standard-game average and total; no-tap-only views explicitly label their separate average and total. Filtered rows keep their original game numbers and order controls.
+- Existing untagged games remain standard with no bulk rewrite. To change an older game, select Actions → Edit game → Advanced → Scoring. Changing a game's scoring never changes other games' tags.
+- Repeated entries into the same session keep the selected scoring mode. Continuing an existing session uses its last game's mode, shown in the entry summary. Start new session resets to Standard.
+- The tag survives account-scoped drafts, local saves, JSON backups/imports, CSV exports (the new Scoring column), and cloud sync. Tag-only changes are included in duplicate and conflict detection, and import/sync review shows each version's scoring mode.
+- Group summaries refresh when their bowler syncs. If a known no-tap summary is overwritten by an older app, the updated app withholds potentially mixed results until that bowler opens v22 and syncs. Open the updated app on every device before editing tagged games; older app versions do not understand the new field.
+- Firebase configuration, database names, security rules, and the confirmed startup/sync repairs are unchanged. No Discord integration is included.
+
+Validation: all seven Node suites pass, including tests/no-tap.cjs and expanded cloud retry/conflict tests. Tests simulate DOM, storage, and Firebase interfaces; browser rendering and production Firebase operation were not tested here.
+
+## Previous update: simpler stats, history, and friend comparisons (v21)
 
 - Stats opens with average, high game, high three-game series, and strike percentage, followed by recent form and the running-average chart. Accuracy, milestones, additional records, and previous-period comparison are expandable, with repeated statistics removed.
 - All time, This month, Last 90 days, and This year shortcuts retain the selected session type and ball. Custom dates remain available; Reset filters returns to all history.
@@ -12,7 +26,7 @@ Updated September 6, 2026. Built on the pre-journal version with the session too
 - Existing basic summaries work immediately. Additional stats appear after that bowler opens v21 and syncs. Missing or stale fields display — instead of zero. The view closes when its group, membership, or account changes.
 - The confirmed startup and sync repairs, drafts, ball tracking, backup tools, and account isolation are retained. No Discord integration is included.
 
-Validation: run all six scripts in tests with Node, including tests/stats-friends.cjs. Tests simulate DOM, storage, and Firebase interfaces; live browser and production Firebase verification are separate.
+Validation at v21: six Node suites passed, including tests/stats-friends.cjs.
 
 ## What's new
 
@@ -40,8 +54,8 @@ Validation: run all six scripts in tests with Node, including tests/stats-friend
 ## Everyday use
 
 - **Home:** choose Existing session or Start new session, then select the date and session type. Save one game, or open Enter a series to save multiple games together. Photo reference displays a scoreboard for manual reading.
-- **Sessions:** search by session type and/or date range. Expand a session to add a game or edit its date/type. Use each game's Actions button to edit, reorder, or delete it. Undo is available for 15 seconds after deleting a game.
-- **Stats:** career statistics, recent averages, milestones, records, and the running-average chart.
+- **Sessions:** search by session type, scoring tag, and/or date range. Expand a session to add a game or edit its date/type. Use each game's Actions button to edit, reorder, or delete it. Undo is available for 15 seconds after deleting a game.
+- **Stats:** standard-game career statistics, recent averages, milestones, records, and the running-average chart. No-tap games are excluded.
 - **Friends:** private group leaderboards and overall bowler stats with Compare with me. Manage groups from Account & settings → Account & sync.
 - **Account & settings:** account login/sync, profile, JSON backup/import, CSV export, and existing account tools.
 
@@ -49,7 +63,19 @@ Strike opportunities stays visible in game entry and defaults to 10, with 11–1
 
 ## Validation
 
-Run `node tests/ui-regression.cjs` from this folder. Tests execute the application logic with simulated DOM and storage interfaces. See BUG-TEST-REPORT.md for scope and limitations. Browser visual verification and live Firebase testing remain outstanding because a browser runtime is not available in this environment.
+Run these from this folder:
+
+```sh
+node tests/startup.cjs
+node tests/cloud-concurrency.cjs
+node tests/ui-regression.cjs
+node tests/session-tools.cjs
+node tests/ball-tracking.cjs
+node tests/stats-friends.cjs
+node tests/no-tap.cjs
+```
+
+Tests execute application logic with simulated DOM and storage interfaces. See BUG-TEST-REPORT.md for scope and limitations. Browser visual verification and live Firebase testing remain outstanding because a browser runtime is not available in this environment.
 
 
 ## Session tools update (v13)

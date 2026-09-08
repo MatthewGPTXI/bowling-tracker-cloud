@@ -74,6 +74,7 @@
     sessionName: $('sessionNameInput'),
     sessionType: $('sessionTypeInput'),
     ball: $('ballInput'),
+    noTap: $('noTapInput'),
     sessionSelect: $('sessionSelect'),
     score: $('scoreInput'),
     openFrames: $('openFramesInput'),
@@ -149,6 +150,9 @@
   }
 
   function sessionType(game) { return SESSION_TYPES.includes(game?.sessionType) ? game.sessionType : 'League'; }
+  function isNoTap(game) { return game?.noTap === true; }
+  function standardGames(source = games) { return source.filter(game => !isNoTap(game)); }
+  function scoringLabel(game) { return isNoTap(game) ? 'No-tap' : 'Standard'; }
   function cleanBall(value) { return String(value || '').trim().replace(/\s+/g,' '); }
   function ballKey(value) { return cleanBall(value).toLowerCase(); }
   function ballNames() {
@@ -343,6 +347,7 @@
     expandedSessions.clear();
     historyLimit = 10;
     for (const id of ['sessionSearch', 'sessionFrom', 'sessionTo']) $(id).value = '';
+    $('historyScoring').value = '';
     $('seriesDialog').close();
     $('editSessionDialog').close();
     games = await getAllGames();
@@ -529,12 +534,22 @@
   }
 
   function filteredGames() {
-    return [...games];
+    const scoring = $('historyScoring').value;
+    const noTapQuery = /\bno[\s-]?tap\b/i.test($('sessionSearch').value);
+    return games.filter(game => (!scoring || isNoTap(game) === (scoring === 'no-tap'))
+      && (!noTapQuery || isNoTap(game)));
+  }
+
+  function historySummary(session) {
+    const standard = standardGames(session.games), noTapCount = session.games.length - standard.length;
+    const source = standard.length ? standard : session.games;
+    const prefix = noTapCount ? (standard.length ? 'Standard ' : 'No-tap ') : '';
+    return { average: avg(source.map(game => game.score)), total: source.reduce((sum, game) => sum + game.score, 0), prefix, noTapCount };
   }
 
   function statsGames() {
     const from = $('statsFrom').value, through = $('statsTo').value, type = $('statsType').value;
-    return games.filter(g => (!from || g.date >= from) && (!through || g.date <= through) && (!type || sessionType(g) === type) && matchesBall(g));
+    return standardGames().filter(g => (!from || g.date >= from) && (!through || g.date <= through) && (!type || sessionType(g) === type) && matchesBall(g));
   }
   function applyStatsPreset(preset) {
     if (!['all', 'month', '90', 'year'].includes(preset)) return;
@@ -601,8 +616,9 @@
     if (session) {
       dom.date.value = session.date;
       dom.sessionName.value = session.games[0].sessionName || '';
-    dom.sessionType.value = sessionType(session.games[0]);
       dom.sessionType.value = sessionType(session.games[0]);
+      dom.noTap.value = isNoTap(session.games.at(-1)) ? 'no-tap' : 'standard';
+      $('gameAdvanced').open = dom.noTap.value === 'no-tap' || !!dom.ball.value;
     }
     updateEntryContext(); persistDrafts();
   }
@@ -619,11 +635,13 @@
       dom.sessionSelect.value = '';
       dom.date.value = todayLocal();
       dom.sessionType.value = 'League';
+      dom.noTap.value = 'standard';
     }
     updateEntryContext(); persistDrafts();
   }
 
   function calculateStats(sourceGames) {
+    sourceGames = standardGames(sourceGames);
     const count = sourceGames.length;
     const sessions = buildSessions(sourceGames);
     const scores = sourceGames.map((g) => g.score);
@@ -691,6 +709,8 @@
       totalStrikes: stats.totalStrikes,
       bestSessionAvg: stats.bestSession ? stats.bestSession.average : 0,
       updatedAt,
+      noTapGames: games.filter(isNoTap).length,
+      standardStatsUpdatedAt: updatedAt,
       // Timestamp equality prevents extended stats left by a newer app from
       // being mixed with a basic summary subsequently written by an older app.
       details: {
@@ -755,6 +775,7 @@
 
   function renderHistory() {
     const source = filteredGames();
+    const fullSessions = new Map(buildSessions(games).map(session => [session.key, session]));
     let sessions = matchingSessions(buildSessions(source));
     const sort = dom.sortFilter.value;
 
@@ -773,6 +794,9 @@
     sessions = sessions.slice(0, historyLimit);
     if (!sessions.length) { dom.sessionsList.innerHTML = ''; return; }
     dom.sessionsList.innerHTML = sessions.map((session, index) => {
+      const fullSession = fullSessions.get(session.key) || session;
+      const positions = new Map(fullSession.games.map((game, position) => [game.id, position]));
+      const summary = historySummary(session);
       return `
         <details class="session-card" data-session-key="${escapeHtml(session.key)}" ${expandedSessions.has(session.key) ? (expandedSessions.get(session.key) ? 'open' : '') : (index === 0 ? 'open' : '')}>
           <summary class="session-header">
@@ -781,8 +805,9 @@
               <div class="session-meta">${escapeHtml(session.name)} · ${session.games.length} game${session.games.length === 1 ? '' : 's'}</div>
             </div>
             <div class="session-badges">
-              <span class="badge">Avg ${session.average.toFixed(1)}</span>
-              <span class="badge">Total ${session.total}</span>
+              <span class="badge">${summary.prefix}Avg ${summary.average.toFixed(1)}</span>
+              <span class="badge">${summary.prefix}Total ${summary.total}</span>
+              ${summary.noTapCount ? `<span class="badge no-tap-badge">${summary.noTapCount} no-tap</span>` : ''}
             </div>
           </summary>
           <div class="session-actions">
@@ -790,23 +815,24 @@
             <button class="text-btn edit-session" data-key="${escapeHtml(session.key)}" type="button">Edit session</button>
           </div>
           <div class="games-grid">
-            ${session.games.map((g, index) => `
+            ${session.games.map(g => `
               <article class="game-row">
                 <div class="game-row-summary">
-                  <div class="game-score-block"><span class="game-number">Game ${index + 1}</span><strong class="game-score">${g.score}</strong></div>
+                  <div class="game-score-block"><span class="game-number">Game ${positions.get(g.id) + 1}</span><strong class="game-score">${g.score}</strong></div>
                   <div class="game-row-info">
                     <p class="game-ball">${g.ball ? escapeHtml(g.ball) : 'No ball recorded'}</p>
+                    ${isNoTap(g) ? '<span class="badge no-tap-badge">No-tap</span>' : ''}
                     <p class="game-stats">${g.strikes} strikes · ${g.openFrames === 0 ? '✓ Clean game' : g.openFrames + ' open frames'}</p>
                   </div>
-                  <button id="gameActionsToggle-${g.id}" class="text-btn game-actions-toggle" data-id="${g.id}" type="button" aria-expanded="false" aria-controls="gameActions-${g.id}" aria-label="Actions for game ${index + 1}">Actions</button>
+                  <button id="gameActionsToggle-${g.id}" class="text-btn game-actions-toggle" data-id="${g.id}" type="button" aria-expanded="false" aria-controls="gameActions-${g.id}" aria-label="Actions for game ${positions.get(g.id) + 1}">Actions</button>
                 </div>
                 ${g.notes ? `<p class="game-notes">${escapeHtml(g.notes)}</p>` : ''}
                 <div id="gameActions-${g.id}" class="game-detail-panel" hidden>
                   <p class="game-stats">${g.strikes} / ${g.strikeOpportunities} strike opportunities · ${g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0'}% strike rate</p>
-                  <div class="game-actions" role="group" aria-label="Game ${index + 1} actions">
+                  <div class="game-actions" role="group" aria-label="Game ${positions.get(g.id) + 1} actions">
                       <button class="text-btn edit-game" data-id="${g.id}" type="button">Edit game</button>
-                      <button class="text-btn move-game" data-id="${g.id}" data-direction="-1" type="button" ${index === 0 ? 'disabled' : ''} aria-label="Move game ${index+1} earlier">↑ Earlier</button>
-                      <button class="text-btn move-game" data-id="${g.id}" data-direction="1" type="button" ${index === session.games.length-1 ? 'disabled' : ''} aria-label="Move game ${index+1} later">↓ Later</button>
+                      <button class="text-btn move-game" data-id="${g.id}" data-direction="-1" type="button" ${positions.get(g.id) === 0 ? 'disabled' : ''} aria-label="Move game ${positions.get(g.id)+1} earlier">↑ Earlier</button>
+                      <button class="text-btn move-game" data-id="${g.id}" data-direction="1" type="button" ${positions.get(g.id) === fullSession.games.length-1 ? 'disabled' : ''} aria-label="Move game ${positions.get(g.id)+1} later">↓ Later</button>
                       <button class="text-btn danger-text delete-game" data-id="${g.id}" type="button">Delete</button>
                   </div>
                 </div>
@@ -900,7 +926,7 @@
     if (score === 300 && strikes !== 12) return { error: 'A 300 game should be recorded as 12 strikes.' };
 
     return {
-      value: { bowler, date, sessionName, sessionType: type, ball, score, openFrames, strikes, strikeOpportunities, notes }
+      value: { bowler, date, sessionName, sessionType: type, ball, noTap: fields.noTap?.value === 'no-tap', score, openFrames, strikes, strikeOpportunities, notes }
     };
   }
 
@@ -908,6 +934,7 @@
     const session = String(candidate.sessionName || '').trim().toLowerCase();
     return games.find((g) => Number(g.id) !== Number(editingGameId)
       && g.date === candidate.date
+      && isNoTap(g) === isNoTap(candidate)
       && String(g.sessionName || '').trim().toLowerCase() === session
       && Number(g.score) === candidate.score
       && Number(g.openFrames) === candidate.openFrames
@@ -941,6 +968,7 @@
       || Number(game.strikeOpportunities) < Number(game.strikes))) return false;
     if (Number(game.score) === 300 && Number(game.strikes) !== 12) return false;
     if (game.ball !== undefined && (typeof game.ball !== 'string' || cleanBall(game.ball).length > 100)) return false;
+    if (game.noTap !== undefined && typeof game.noTap !== 'boolean') return false;
     if (game.sessionType !== undefined && !SESSION_TYPES.includes(game.sessionType)) return false;
     if (game.gameOrder !== undefined && !integerIn(game.gameOrder, 0, Number.MAX_SAFE_INTEGER)) return false;
     return ['createdAt', 'updatedAt'].every((key) => game[key] === undefined || integerIn(game[key], 0, Number.MAX_SAFE_INTEGER));
@@ -955,6 +983,7 @@
       sessionName: String(game.sessionName || ''),
       sessionType: sessionType(game),
       ball: cleanBall(game.ball),
+      noTap: isNoTap(game),
       ...(game.gameOrder !== undefined ? {gameOrder: Number(game.gameOrder)} : {}),
       score: Number(game.score),
       openFrames: Number(game.openFrames),
@@ -1037,7 +1066,8 @@
     dom.strikeOpp.value = '10';
     dom.notes.value = '';
     dom.ball.value = '';
-    $('gameAdvanced').open = false;
+    dom.noTap.value = preserveSession && dom.noTap.value === 'no-tap' ? 'no-tap' : 'standard';
+    $('gameAdvanced').open = dom.noTap.value === 'no-tap';
     editingGameId = null;
     entryBaseGame = null;
     clearDraft('entry');
@@ -1069,7 +1099,9 @@
     dom.strikeOpp.value = game.strikeOpportunities;
     dom.notes.value = game.notes || '';
     dom.ball.value = game.ball || '';
-    $('gameAdvanced').open = !!dom.ball.value;
+    dom.noTap.value = isNoTap(game) ? 'no-tap' : 'standard';
+    $('gameAdvanced').open = !!dom.ball.value || isNoTap(game);
+    updateEntryContext();
     dom.saveGameBtn.textContent = 'Update game';
     dom.cancelEditBtn.classList.remove('hidden');
     dom.entryHeading.textContent = 'Edit game';
@@ -1202,13 +1234,13 @@
 
   function exportCsv() {
     const rows = [
-      ['Date','Bowler','Session Type','Session ID','Game Order','Ball','Score','Open Frames','Strikes','Strike Opportunities','Strike %','Clean Game','Notes']
+      ['Date','Bowler','Session Type','Session ID','Game Order','Ball','Score','Open Frames','Strikes','Strike Opportunities','Strike %','Clean Game','Notes','Scoring']
     ];
     buildSessions(games).sort((a,b) => a.date.localeCompare(b.date)).forEach(session => session.games.forEach((g,index) => {
       rows.push([
         g.date, g.bowler, sessionType(g), sessionKey(g), index+1, cleanBall(g.ball), g.score, g.openFrames, g.strikes, g.strikeOpportunities,
         g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0',
-        g.openFrames === 0 ? 'Yes' : 'No', g.notes || ''
+        g.openFrames === 0 ? 'Yes' : 'No', g.notes || '', scoringLabel(g)
       ]);
     }));
     const csv = '\uFEFF' + rows.map((row) => row.map(csvEscape).join(',')).join('\n');
@@ -1252,7 +1284,7 @@
       const rows = buildImportPlan(imported,deleted,current,tombstones);
       pendingImport = {database:targetDb,rows,snapshot:JSON.stringify([current,tombstones])};
       $('importPreviewSummary').textContent = `${rows.filter(r=>r.kind==='addition').length} additions · ${rows.filter(r=>r.kind==='duplicate').length} duplicates (skipped) · ${rows.filter(r=>r.kind==='conflict').length} conflicts`;
-      $('importPreviewRows').innerHTML = rows.map(r => `<div class="import-row"><strong>${escapeHtml(r.game?.date || r.local?.date || '')} · ${r.game ? r.game.score+' points' : 'Backup deletion'}</strong><p>${r.kind}${r.local ? ' · Current score: '+r.local.score : r.tombstone ? ' · Deleted on this device' : ''}</p>${r.kind==='conflict' ? `<label>Resolution<select data-import-id="${r.id}"><option value="keep">Keep current data</option><option value="backup">${r.deletion ? 'Apply backup deletion' : 'Use backup game'}</option></select>` : ''}</div>`).join('');
+      $('importPreviewRows').innerHTML = rows.map(r => `<div class="import-row"><strong>${escapeHtml(r.game?.date || r.local?.date || '')} · ${r.game ? r.game.score+' points · '+scoringLabel(r.game) : 'Backup deletion'}</strong><p>${r.kind}${r.local ? ' · Current: '+r.local.score+' points · '+scoringLabel(r.local) : r.tombstone ? ' · Deleted on this device' : ''}</p>${r.kind==='conflict' ? `<label>Resolution<select data-import-id="${r.id}"><option value="keep">Keep current data</option><option value="backup">${r.deletion ? 'Apply backup deletion' : 'Use backup game'}</option></select></label>` : ''}</div>`).join('');
       setStatus($('importPreviewStatus'),''); $('importPreviewDialog').showModal();
     } catch (error) { setStatus(dom.settingsStatus,`Import failed: ${error.message}`,'error'); }
     finally { dom.importJsonInput.value = ''; }
@@ -1365,6 +1397,8 @@
     dom.date.value = session.date;
     dom.sessionName.value = session.games[0].sessionName || '';
     dom.sessionType.value = sessionType(session.games[0]);
+    dom.noTap.value = isNoTap(session.games.at(-1)) ? 'no-tap' : 'standard';
+    $('gameAdvanced').open = dom.noTap.value === 'no-tap';
     updateSessionSuggestions();
     setEntryMode(false);
     rememberEntry();
@@ -1417,7 +1451,8 @@
     $('seriesName').value = dom.sessionName.value;
     $('seriesType').value = dom.sessionType.value;
     $('seriesBall').value = dom.ball.value;
-    $('seriesAdvanced').open = !!dom.ball.value;
+    $('seriesNoTap').value = dom.noTap.value === 'no-tap' ? 'no-tap' : 'standard';
+    $('seriesAdvanced').open = !!dom.ball.value || $('seriesNoTap').value === 'no-tap';
     $('seriesRows').innerHTML = '';
     const first = addSeriesRow();
     for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball']) first.querySelector(`[data-field="${field}"]`).value = dom[field].value;
@@ -1434,7 +1469,7 @@
     if (mutationBusy || dialogScope !== db) return;
     const values = [];
     for (const [i, row] of [...$('seriesRows').children].entries()) {
-      const fields = { date: $('seriesDate'), sessionName: $('seriesName'), sessionType: $('seriesType') };
+      const fields = { date: $('seriesDate'), sessionName: $('seriesName'), sessionType: $('seriesType'), noTap: $('seriesNoTap') };
       for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball']) fields[field] = row.querySelector(`[data-field="${field}"]`);
       const result = validateGameForm(fields);
       if (result.error) { setStatus($('seriesStatus'), `Game ${i + 1}: ${result.error}`, 'error'); return; }
@@ -1464,6 +1499,7 @@
       dom.date.value = values[0].date;
       dom.sessionName.value = values[0].sessionName;
       dom.sessionType.value = values[0].sessionType;
+      dom.noTap.value = values[0].noTap ? 'no-tap' : 'standard';
       clearDraft('series');
       resetEntryForm({ preserveDate: true, preserveSession: true });
       $('seriesDialog').close();
@@ -1524,6 +1560,7 @@
   }
 
   function progressStats(source) {
+    source = standardGames(source);
     const ordered = [...source].sort((a, b) => a.date.localeCompare(b.date) || gameOrder(a, b));
     const recent = (count) => {
       const slice = ordered.slice(-count);
@@ -1578,7 +1615,7 @@
   }
 
   function matchingSessions(sessions) {
-    const query = $('sessionSearch').value.trim().toLowerCase();
+    const query = $('sessionSearch').value.replace(/\bno[\s-]?tap\b/gi, '').trim().toLowerCase();
     const from = $('sessionFrom').value;
     const through = $('sessionTo').value;
     return sessions.filter((session) => (!query || session.name.toLowerCase().includes(query))
@@ -1587,7 +1624,7 @@
 
   function renderHome() {
     const stats = calculateStats(games);
-    $('homeRecap').innerHTML = `<div><strong>${games.length ? stats.average.toFixed(1) : '—'}</strong><span>Career average</span></div><div><strong>${games.length}</strong><span>Games logged</span></div>`;
+    $('homeRecap').innerHTML = `<div><strong>${stats.count ? stats.average.toFixed(1) : '—'}</strong><span>Standard average</span></div><div><strong>${stats.count}</strong><span>Standard games</span></div>`;
     const latest = buildSessions(games).sort(latestSessionOrder)[0];
     $('latestSessionShortcut').classList.toggle('hidden', !latest);
     if (latest) {
@@ -1599,7 +1636,7 @@
   function updateEntryContext() {
     const date = isValidDate(dom.date.value) ? fmtDate(dom.date.value) : 'Choose a date';
     const name = sessionType({sessionType:dom.sessionType.value});
-    $('entrySessionSummary').textContent = `${editingGameId ? 'Editing game in' : 'Adding to'} ${name} · ${date}`;
+    $('entrySessionSummary').textContent = `${editingGameId ? 'Editing game in' : 'Adding to'} ${name} · ${date}${dom.noTap.value === 'no-tap' ? ' · No-tap: excluded from standard stats' : ''}`;
     renderEntrySaveState();
   }
 
@@ -1617,7 +1654,7 @@
       if (hasEntryDraft()) localStorage.setItem(draftKey('entry'), JSON.stringify({version:1, values:JSON.parse(entrySnapshot()), baseline:entryBaseline, base:entryBaseGame}));
       if ($('seriesDialog').open) {
         const rows = [...$('seriesRows').children].map(row => Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes','ball'].map(field => [field,row.querySelector(`[data-field="${field}"]`).value])));
-        localStorage.setItem(draftKey('series'),JSON.stringify({version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,rows}));
+        localStorage.setItem(draftKey('series'),JSON.stringify({version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,noTap:$('seriesNoTap').value === 'no-tap',rows}));
       }
       showDraftNotice();
     } catch (_) { setStatus(dom.entryStatus, 'Draft storage is unavailable or full. Keep this page open until you save your games.', 'error'); }
@@ -1631,10 +1668,16 @@
       if (kind === 'entry' && Array.isArray(draft.values)) {
         editingGameId = draft.values[0]; entryBaseGame = draft.base || null;
         ['date','sessionName','sessionType','score','openFrames','strikes','strikeOpp','notes','ball'].forEach((key,i) => dom[key].value = draft.values[i+1] ?? '');
+        dom.noTap.value = draft.values[10] === 'no-tap' ? 'no-tap' : 'standard';
         entryBaseline = draft.baseline;
-        // v13 draft arrays did not include ball. Append an empty field to the old baseline.
-        try { const baseline = JSON.parse(entryBaseline); if (baseline.length === 9) {baseline.push('');entryBaseline=JSON.stringify(baseline);} } catch (_) {}
-        $('gameAdvanced').open = !!dom.ball.value;
+        // Older drafts lack ball and/or scoring fields. Keep their original values.
+        try {
+          const baseline = JSON.parse(entryBaseline);
+          if (baseline.length === 9) baseline.push('');
+          if (baseline.length === 10) baseline.push('standard');
+          entryBaseline = JSON.stringify(baseline);
+        } catch (_) {}
+        $('gameAdvanced').open = !!dom.ball.value || dom.noTap.value === 'no-tap';
         dom.saveGameBtn.textContent = editingGameId ? 'Update game' : 'Save game';
         dom.entryHeading.textContent = editingGameId ? 'Edit game' : 'Add game';
         dom.cancelEditBtn.classList.remove('hidden');
@@ -1643,6 +1686,8 @@
         if (editingGameId) { setStatus(dom.entryStatus,'Finish or cancel your game edit before recovering a series.'); return; }
         dialogScope = db; $('seriesRows').innerHTML = '';
         $('seriesDate').value = draft.date; $('seriesName').value = draft.name; $('seriesType').value = sessionType({sessionType:draft.type}); $('seriesBall').value = draft.ball || ''; $('seriesAdvanced').open = !!draft.ball;
+        $('seriesNoTap').value = draft.noTap === true ? 'no-tap' : 'standard';
+        $('seriesAdvanced').open = !!draft.ball || draft.noTap === true;
         draft.rows.forEach(values => { const row = addSeriesRow(); for (const field of ['score','openFrames','strikes','strikeOpp','notes','ball']) row.querySelector(`[data-field="${field}"]`).value = values[field] ?? ''; });
         dialogBaselines.set('seriesDialog',''); $('seriesDialog').showModal(); updateSeriesPreview();
         setStatus($('seriesStatus'),'Series draft recovered. Review it before saving.','success');
@@ -1651,7 +1696,7 @@
   }
 
   function entrySnapshot() {
-    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball'].map((key) => dom[key].value)]);
+    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball', 'noTap'].map((key) => dom[key].value)]);
   }
   function rememberEntry() { entryBaseline = entrySnapshot(); renderEntrySaveState(); }
   function renderEntrySaveState() {
@@ -1673,7 +1718,7 @@
     const scores = [...$('seriesRows').querySelectorAll('[data-field="score"]')];
     const entered = scores.filter((input) => input.value !== '' && Number.isInteger(Number(input.value)) && +input.value >= 0 && +input.value <= 300);
     const total = entered.reduce((sum, input) => sum + Number(input.value), 0);
-    $('seriesPreview').textContent = `${entered.length}/${scores.length} scores entered · Total ${total}${entered.length ? ` · Average ${(total / entered.length).toFixed(1)}` : ''}`;
+    $('seriesPreview').textContent = `${$('seriesNoTap').value === 'no-tap' ? 'No-tap series · ' : ''}${entered.length}/${scores.length} scores entered · Total ${total}${entered.length ? ` · Average ${(total / entered.length).toFixed(1)}` : ''}${$('seriesNoTap').value === 'no-tap' ? ' · Excluded from standard stats' : ''}`;
   }
 
   function wireNavigation() {
@@ -1688,8 +1733,10 @@
     });
     document.querySelectorAll('[data-go-view]').forEach((button) => button.addEventListener('click', () => showView(button.dataset.goView)));
     for (const id of ['sessionSearch', 'sessionFrom', 'sessionTo']) $(id).addEventListener('input', () => { historyLimit = 10; renderHistory(); });
+    $('historyScoring').addEventListener('change', () => { historyLimit = 10; renderHistory(); });
     $('clearSessionFilters').addEventListener('click', () => {
       for (const id of ['sessionSearch', 'sessionFrom', 'sessionTo']) $(id).value = '';
+      $('historyScoring').value = '';
       historyLimit = 10; renderHistory(); $('sessionSearch').focus();
     });
     $('showMoreSessions').addEventListener('click', () => { historyLimit += 10; renderHistory(); });
@@ -1722,6 +1769,8 @@
     wireNavigation();
     $('applySeriesBall').addEventListener('click', applySeriesBall);
     $('seriesBall').addEventListener('input', persistDrafts);
+    $('seriesNoTap').addEventListener('change', () => { updateSeriesPreview(); persistDrafts(); });
+    dom.noTap.addEventListener('change', () => { updateEntryContext(); persistDrafts(); });
     $('recoverEntry').addEventListener('click', () => recoverDraft('entry'));
     $('recoverSeries').addEventListener('click', () => recoverDraft('series'));
     $('discardDrafts').addEventListener('click', () => { if (window.confirm('Discard saved game and series drafts?')) { clearDraft('entry'); clearDraft('series'); showDraftNotice(); } });

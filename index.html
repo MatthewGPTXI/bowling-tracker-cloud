@@ -113,7 +113,7 @@
           </label>
         </div>
 
-        <details id="gameAdvanced" class="advanced-options"><summary>Advanced</summary><label>Ball <small>optional</small><input id="ballInput" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label><p class="field-help">Saved ball names are reusable. Leave blank if no ball should be recorded.</p></details>
+        <details id="gameAdvanced" class="advanced-options"><summary>Advanced</summary><label>Scoring<select id="noTapInput"><option value="standard">Standard</option><option value="no-tap">No-tap</option></select><small class="field-help">No-tap games stay in history but do not count toward standard stats, records, or leaderboards.</small></label><label>Ball <small>optional</small><input id="ballInput" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label><p class="field-help">Saved ball names are reusable. Leave blank if no ball should be recorded.</p></details>
         <datalist id="ballOptions"></datalist>
         <div class="entry-actions">
           <button id="saveGameBtn" class="btn primary" type="button">Save game</button>
@@ -142,12 +142,14 @@
         </div>
 
         <div class="session-filters">
-          <label><span>Find a session</span><input id="sessionSearch" type="search" placeholder="League, practice…" autocomplete="off"></label>
+          <label><span>Find a session</span><input id="sessionSearch" type="search" placeholder="League, practice, no-tap…" autocomplete="off"></label>
+          <label class="history-scoring"><span>Scoring</span><select id="historyScoring"><option value="">All games</option><option value="standard">Standard only</option><option value="no-tap">No-tap only</option></select></label>
           <label><span>From</span><input id="sessionFrom" type="date"></label>
           <label><span>Through</span><input id="sessionTo" type="date"></label>
           <button id="clearSessionFilters" class="text-btn" type="button">Clear filters</button>
         </div>
         <p id="historyResultCount" class="section-copy" aria-live="polite"></p>
+        <p class="field-help">No-tap games are tagged separately and excluded from standard stats and records. In mixed sessions, summary averages and totals use standard games only.</p>
         <p id="historyActionStatus" class="status-text" role="status"></p>
         <p id="noSessionMatches" class="empty-state hidden">No sessions match. Try another name or date range.</p>
         <div id="emptyHistory" class="empty-state">
@@ -173,6 +175,7 @@
         </div>
         <details id="statsCustomDates" class="filter-disclosure"><summary>Custom dates</summary><div class="form-grid stats-filter-grid"><label>From<input id="statsFrom" type="date"></label><label>Through<input id="statsTo" type="date"></label></div></details>
         <p id="statsRangeStatus" class="section-copy" role="status"></p>
+        <p class="field-help">Standard games only. No-tap games are excluded from every statistic, record, trend, and period comparison.</p>
       </section>
       <section class="stats-grid stats-overview" aria-label="At a glance">
         <article class="stat-card primary-stat">
@@ -300,13 +303,13 @@
               <tbody id="leaderboardBody"></tbody>
             </table>
           </div>
-          <p class="small-note leaderboard-note">Select a bowler to view overall stats or compare with yours. Average and strike-rate rankings are marked provisional until a bowler has 10 games.</p>
+          <p class="small-note leaderboard-note">Standard games only; no-tap games are excluded. Select a bowler to view overall stats or compare with yours. Average and strike-rate rankings are marked provisional until a bowler has 10 standard games.</p>
         </div>
       </section></div>
     </main>
 
     <footer>
-      <span>Bowling Tracker · v21</span>
+      <span>Bowling Tracker · v22</span>
       <span id="offlineStatus">Checking offline support…</span>
     </footer>
   </div>
@@ -314,7 +317,7 @@
   <dialog id="friendStatsDialog" aria-labelledby="friendStatsName" aria-describedby="friendStatsScope">
     <div class="dialog-inner">
       <div class="dialog-header"><div><p class="eyebrow">OVERALL STATS</p><h2 id="friendStatsName"></h2></div><button id="closeFriendStats" class="icon-btn" type="button" aria-label="Close bowler statistics" autofocus>×</button></div>
-      <p id="friendStatsScope" class="section-copy">All time · All session types · All balls</p>
+      <p id="friendStatsScope" class="section-copy">All time · Standard games only · All session types · All balls</p>
       <p id="friendStatsUpdated" class="section-copy"></p>
       <div class="stats-presets friend-view-options" role="group" aria-label="Bowler statistics view">
         <button id="friendStatsOnly" class="range-chip" type="button" aria-pressed="true">Their stats</button>
@@ -500,7 +503,7 @@
       <div class="dialog-header"><h2 id="seriesHeading">Enter a series</h2><button class="text-btn" type="button" data-close="seriesDialog">Close</button></div>
       <p class="section-copy">Save multiple games to one session. Add or remove rows as needed.</p>
       <div class="form-grid"><label>Date<input id="seriesDate" type="date" required></label><input id="seriesName" type="hidden"><label>Session type<select id="seriesType"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label></div>
-      <details id="seriesAdvanced" class="advanced-options"><summary>Advanced</summary><label>Ball for this series <small>optional</small><input id="seriesBall" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label><button id="applySeriesBall" class="btn secondary compact" type="button">Apply ball to all games</button><p class="field-help">New rows use this ball. Each game's Advanced section lets you change or clear its ball if you switched during the series.</p></details>
+      <details id="seriesAdvanced" class="advanced-options"><summary>Advanced</summary><label>Scoring for this series<select id="seriesNoTap"><option value="standard">Standard</option><option value="no-tap">No-tap</option></select><small class="field-help">Applies to every game in this entry. No-tap games stay in history but are excluded from standard stats and leaderboards. You can change individual games later using Edit game.</small></label><label>Ball for this series <small>optional</small><input id="seriesBall" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label><button id="applySeriesBall" class="btn secondary compact" type="button">Apply ball to all games</button><p class="field-help">New rows use this ball. Each game's Advanced section lets you change or clear its ball if you switched during the series.</p></details>
       <p id="seriesPreview" class="session-context" aria-live="polite"></p>
       <div id="seriesRows"></div>
       <button id="addSeriesRow" class="btn secondary" type="button">＋ Add another game</button>
