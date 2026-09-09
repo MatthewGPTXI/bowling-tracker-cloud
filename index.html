@@ -113,7 +113,9 @@
           </label>
         </div>
 
-        <details id="gameAdvanced" class="advanced-options"><summary>Advanced</summary><label>Scoring<select id="noTapInput"><option value="standard">Standard</option><option value="no-tap">No-tap</option></select><small class="field-help">No-tap games stay in history but do not count toward standard stats, records, or leaderboards.</small></label><label>Ball <small>optional</small><input id="ballInput" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label><p class="field-help">Saved ball names are reusable. Leave blank if no ball should be recorded.</p></details>
+        <details id="gameAdvanced" class="advanced-options"><summary>Advanced</summary><label>Scoring<select id="noTapInput"><option value="standard">Standard</option><option value="no-tap">No-tap</option></select><small class="field-help">No-tap games stay in history but do not count toward standard stats, records, or leaderboards.</small></label>
+          <div id="gameBallEditor" class="ball-editor"><div id="gameBallFirst" class="ball-usage-row"><label class="ball-name-field">Ball <small>optional</small><input id="ballInput" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label></div></div>
+        </details>
         <datalist id="ballOptions"></datalist>
         <div class="entry-actions">
           <button id="saveGameBtn" class="btn primary" type="button">Save game</button>
@@ -175,6 +177,7 @@
         </div>
         <details id="statsCustomDates" class="filter-disclosure"><summary>Custom dates</summary><div class="form-grid stats-filter-grid"><label>From<input id="statsFrom" type="date"></label><label>Through<input id="statsTo" type="date"></label></div></details>
         <p id="statsRangeStatus" class="section-copy" role="status"></p>
+        <p id="statsBallNote" class="field-help" hidden>Includes games using this ball. Scores and percentages describe the whole game, not just this ball's frames.</p>
         <p class="field-help">Standard games only. No-tap games are excluded from every statistic, record, trend, and period comparison.</p>
       </section>
       <section class="stats-grid stats-overview" aria-label="At a glance">
@@ -314,7 +317,7 @@
     </main>
 
     <footer>
-      <span>Bowling Tracker · v23</span>
+      <span>Bowling Tracker · v24</span>
       <span id="offlineStatus">Checking offline support…</span>
     </footer>
   </div>
@@ -525,6 +528,7 @@
   </dialog>
   <div id="undoToast" class="undo-toast hidden" role="status"><span id="undoMessage">Game deleted.</span><button id="undoDeleteBtn" class="btn secondary compact" type="button">Undo</button></div>
 
+  <script src="./balls.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./firebase-config.js" defer></script>
   <script src="./friend-stats.js" defer></script>

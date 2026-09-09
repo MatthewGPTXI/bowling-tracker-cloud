@@ -42,6 +42,17 @@
 .game-score-block .game-score { font-size: 1.8rem; line-height: 1; }
 .game-row-info { min-width: 0; }
 .game-ball { font-weight: 650; font-size: .9rem; overflow-wrap: anywhere; }
+.ball-editor { margin-top: 12px; min-width: 0; }
+.ball-usage-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-top: 8px; }
+.ball-name-field { flex: 1 1 140px; min-width: 0; }
+.ball-usage-row .ball-frame-field { flex: 0 1 92px; min-width: 72px; }
+.ball-usage-row label { font-size: .875rem; }
+.ball-usage-row input { min-width: 0; font-size: 1rem; }
+.ball-remove, .ball-add { min-height: 44px; font-size: .875rem; }
+.ball-add { margin-top: 4px; padding-left: 0; }
+.ball-frame-total { margin: 6px 0; color: var(--accent-2); font-size: .875rem; }
+.ball-frame-total.error { color: var(--danger); }
+.ball-editor .field-help { font-size: .875rem; line-height: 1.5; }
 .game-row-info .game-stats { margin-top: 4px; }
 .game-row .game-notes { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); }
 .game-row .game-detail-panel { padding: 12px; margin-top: 10px; border-radius: 12px; background: var(--panel-2); }

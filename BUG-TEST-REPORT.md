@@ -1,5 +1,23 @@
 # Bowling Tracker validation
 
+## v24 connection review — September 9, 2026
+
+All nine Node suites pass, including tests/cloud-startup.cjs. A reproduced partial-initialization failure previously left firebaseApp set while persistence and the auth observer were unfinished; subsequent attempts falsely returned success. Initialization now tracks completion separately, reuses the app, and serializes retries without duplicate observers. Focus retries failed startup. Startup errors remain visible, signed-in offline users no longer get a green connection indicator, and sync errors are not overwritten by sign-in completion. Offline readiness waits for service-worker activation rather than registration alone.
+
+The live GitHub Pages app was opened in Chrome and showed v22. Secure user sign-in succeeded, the app downloaded 18 games and reported "Synced just now," and the private group leaderboard loaded five members. No test games were created or existing games edited. This verifies live v22 authentication, automatic sync and leaderboard access; it does not verify the unpublished v24 in production. Automated sync tests use simulated Firebase interfaces and do not touch production records. Live offline transitions were not tested.
+
+Reloading the live app preserved the signed-in account and returned to "Synced just now" without credential re-entry.
+
+GitHub main remains v23 (ce8d44628e7f66711f854cc60084206c7ef77ced). Pages run 34315032606 remained queued after the earlier OIDC-token deployment failure; v22 is the latest successful deployment. Committing v24 was rejected by automatic approval review because the workspace is out of credits. These repairs and the multi-ball update are local and have not been published.
+
+## v24 multiple balls and optional frame counts
+
+All eight Node suites pass. The multiple-balls suite covers the progressive editor, the 4/6-frame example, optional/partial counts, duplicate names and invalid totals, editing and clearing, primary-ball removal, suggestions, filtering by a secondary ball, unchanged whole-game/closed-frame statistics, drafts, per-game series usage, bulk-apply confirmation, JSON and CSV exports, frame-only import conflicts and review, remote downloads, legacy single-ball data, and no-tap exclusions.
+
+The cloud suite additionally verifies multi-ball payloads, legacy-content equivalence, frame-only change detection, durable offline/reload retries, concurrent remote-edit protection, and conflict resolution retaining the selected breakdown. Existing startup, account isolation, navigation, session, stats/friends, and no-tap suites remain green.
+
+The new shared balls.js asset precedes app.js and is included in the v24 offline cache. Syntax, static asset references, and HTML IDs are checked. Firebase configuration, rules, and database version are unchanged. Validation uses simulated DOM/storage/Firebase interfaces and no production bowling records; physical browser/phone rendering and authenticated live Firebase operation were not tested in this update.
+
 ## v22 no-tap tagging and standard-only statistics
 
 All seven Node suites pass. The new tests/no-tap.cjs exercises tagging and untagging individual legacy games; preserving session type, ball, IDs and timestamps; repeated-entry defaults; complete-series tagging; old and new game/series draft recovery; standard-only averages, counts, records, milestones, recent form, charts, ball/type filters and both comparison periods; consecutive three-game records; separate history search and scoring/date filters; original game numbering and Earlier/Later controls in filtered results; explicitly separated mixed/no-tap session summaries; JSON/CSV roundtrips; tag-only import conflicts and their preview; remote download retention; empty standard histories; friend comparisons; and stale or unranked group summaries.

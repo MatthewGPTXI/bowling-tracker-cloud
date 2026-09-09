@@ -128,7 +128,7 @@ const setScores = () => {
   await t.exportBackup(); const backup = JSON.parse(downloads.at(-1).contents);
   assert.equal(backup.games.length, 2); assert.equal(backup.games[1].noTap, true);
   t.exportCsv(); const csv = downloads.at(-1).contents.split('\n');
-  assert(csv[0].endsWith(',Scoring')); assert(csv[1].endsWith(',Standard')); assert(csv[2].endsWith(',No-tap')); assert.equal(csv.length, 3);
+  assert(csv[0].endsWith(',Scoring,Ball Usage')); assert(csv[1].includes(',Standard,')); assert(csv[2].includes(',No-tap,')); assert.equal(csv.length, 3);
   assert.equal(t.buildImportPlan([{ ...standard[0], noTap: false }], [], data, [])[0].kind, 'duplicate');
   assert.equal(t.buildImportPlan([{ ...standard[0], noTap: true }], [], data, [])[0].kind, 'conflict');
   await t.importBackupFile({ text: async () => JSON.stringify({ games: [{ ...standard[0], noTap: true }] }) });

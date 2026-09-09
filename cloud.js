@@ -65,6 +65,8 @@
   let groups = [];
   let selectedGroupId = '';
   let initializing = null;
+  let firebaseReady = false;
+  let firebaseStartupError = null;
   let syncing = false;
   let lastSyncAt = 0;
   let pendingSyncReview = null;
@@ -115,6 +117,10 @@
       dom.syncBadge.className = `sync-badge ${state}`.trim();
     }
     window.BowlingApp?.setSyncStatus?.(text, state === 'success' ? 'on' : state === 'working' || state === 'pending' ? 'working' : state === 'error' ? 'error' : 'off');
+    if (currentUser) {
+      setCloudButton(!navigator.onLine ? 'off' : state === 'success' ? 'on' : state === 'error' ? 'error' : 'working',
+        !navigator.onLine ? 'Cloud offline' : state === 'success' ? 'Cloud ✓' : state === 'error' ? 'Cloud error' : 'Cloud…');
+    }
   }
 
   function setCloudButton(state, label) {
@@ -167,7 +173,7 @@
       renderConnectionState();
       return false;
     }
-    if (firebaseApp) return true;
+    if (firebaseReady) return true;
     if (!navigator.onLine) {
       renderConnectionState();
       return false;
@@ -177,16 +183,20 @@
     initializing = (async () => {
       try {
         setCloudButton('working', 'Cloud…');
+        firebaseStartupError = null;
         const fb = await loadFirebaseModules();
-        firebaseApp = fb.initializeApp(config);
+        firebaseApp = firebaseApp || fb.initializeApp(config);
         auth = fb.getAuth(firebaseApp);
         firestore = fb.getFirestore(firebaseApp);
         await fb.setPersistence(auth, fb.browserLocalPersistence);
         fb.onAuthStateChanged(auth, handleAuthStateChanged);
+        firebaseReady = true;
         return true;
       } catch (error) {
+        firebaseStartupError = error;
         console.error(error);
         setCloudButton('error', 'Cloud error');
+        window.BowlingApp?.setSyncStatus?.('Cloud unavailable · saved on device', 'error');
         setStatus(friendlyError(error), 'error');
         return false;
       } finally {
@@ -213,11 +223,14 @@
       return;
     }
 
-    if (!navigator.onLine && !currentUser) {
+    if (!navigator.onLine) {
       setCloudButton('off', 'Cloud offline');
       window.BowlingApp?.setSyncStatus?.('Offline — saved on device', 'working');
+    } else if (firebaseStartupError) {
+      setCloudButton('error', 'Cloud error');
+      window.BowlingApp?.setSyncStatus?.('Cloud unavailable · saved on device', 'error');
     } else if (currentUser) {
-      setCloudButton('on', 'Cloud ✓');
+      setCloudButton('off', 'Cloud');
     } else {
       setCloudButton('off', 'Cloud');
       window.BowlingApp?.setSyncStatus?.('Local only', 'off');
@@ -329,11 +342,11 @@
       if (!stillCurrent()) return;
       await syncAll('Signed in');
       if (!stillCurrent()) return;
-      setCloudButton('on', 'Cloud');
     } catch (error) {
       console.error(error);
       setStatus(friendlyError(error), 'error');
       setCloudButton('error', 'Cloud error');
+      setSyncBadge('Needs sync', 'error');
     }
   }
 
@@ -342,12 +355,14 @@
   }
 
   function cloudGamePayload(game) {
+    const balls = window.BowlingBalls.list(game);
     return {
       id: Number(game.id),
       bowler: String(game.bowler),
       date: String(game.date),
       sessionName: String(game.sessionName || ''),
-      ball: String(game.ball || '').trim().replace(/\s+/g,' '),
+      ball: balls[0]?.name || '',
+      balls,
       noTap: game.noTap === true,
       sessionType: ['League','Practice','Tournament'].includes(game.sessionType) ? game.sessionType : 'League',
       ...(game.gameOrder !== undefined ? {gameOrder:Number(game.gameOrder)} : {}),
@@ -359,7 +374,7 @@
       createdAt: Number(game.createdAt || Date.now()),
       updatedAt: Number(game.updatedAt || Date.now()),
       deleted: false,
-      schemaVersion: 2
+      schemaVersion: 3
     };
   }
 
@@ -380,7 +395,7 @@
     return {
       date: String(game?.date || ''),
       sessionName: normalizedSessionName(game),
-      ball: String(game?.ball || '').trim().replace(/\s+/g,' ').toLowerCase(),
+      balls: window.BowlingBalls.comparable(game),
       noTap: game?.noTap === true,
       sessionType: game?.sessionType || 'League',
       gameOrder: Number(game?.gameOrder ?? game?.createdAt ?? game?.id ?? 0),
@@ -415,7 +430,7 @@
     if (!game) return `<div class="sync-review-game"><strong>${escapeHtml(label)}</strong>Deleted</div>`;
     return `<div class="sync-review-game">
       <strong>${escapeHtml(label)}</strong>
-      ${game.gameOrder !== undefined ? `Game order: ${escapeHtml(game.gameOrder)}<br>` : ''}${game.ball ? `Ball: ${escapeHtml(game.ball)}<br>` : ''}${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
+      ${game.gameOrder !== undefined ? `Game order: ${escapeHtml(game.gameOrder)}<br>` : ''}${escapeHtml(window.BowlingBalls.summary(game))}<br>${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
       ${game.noTap === true ? 'No-tap · excluded from standard stats' : 'Standard scoring'}<br>
       Score ${Number(game.score)} · ${Number(game.openFrames)} open · ${Number(game.strikes)}/${Number(game.strikeOpportunities || 10)} strikes
       ${game.notes ? `<br>${escapeHtml(game.notes)}` : ''}
@@ -1540,8 +1555,9 @@
       renderConnectionState();
       if (currentUser) setSyncBadge(pendingLocalChanges ? `${pendingLocalChanges} change${pendingLocalChanges === 1 ? '' : 's'} waiting` : 'Offline — saved on device', 'pending');
     });
-    window.addEventListener('focus', () => {
-      if (!currentUser || !navigator.onLine) return;
+    window.addEventListener('focus', async () => {
+      if (!navigator.onLine || !configReady()) return;
+      if (!await initFirebase() || !currentUser) return;
       if (Date.now() - lastSyncAt > 15000) syncAll('App resumed');
       else if (selectedGroupId) loadLeaderboard();
     });

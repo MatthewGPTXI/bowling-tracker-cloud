@@ -1,9 +1,10 @@
 const CACHE_PREFIX = `bowling-tracker:${new URL(self.registration.scope).pathname}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v23-closed-frames`;
+const CACHE_NAME = `${CACHE_PREFIX}v24-cloud-recovery`;
 const APP_ASSETS = [
   './',
   './index.html',
   './styles.css',
+  './balls.js',
   './app.js',
   './firebase-config.js',
   './cloud.js',

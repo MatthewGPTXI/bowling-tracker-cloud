@@ -1,8 +1,21 @@
-# Bowling Tracker — v23
+# Bowling Tracker — v24
 
 Updated September 9, 2026. Built on the pre-journal version with the session tools and bug fixes.
 
-## Latest update: Closed frame percentage
+## Latest update: Multiple balls and frame counts
+
+- Game entry still has one optional Ball field under Advanced. Select More balls / frames to reveal the counter, then + Add ball for another ball. Each row can be removed; no new page or mandatory entry step is added.
+- Example: Venom — 4 frames, Mercy — 6 frames. Counts are optional whole numbers from 1 to 10, with at most 10 frames recorded for the game. Count each frame once; tenth-frame bonus shots are not extra frames. For overlapping strike/spare-ball use within the same frame, list both balls and leave counts blank. Partial counts are allowed without guessing the remainder.
+- Sessions show a compact ball/frame breakdown. Saved ball suggestions and the Stats ball filter include every ball used in a game. A matching game is counted once, with its full score; ball-filtered statistics are not per-ball frame results. No-tap exclusions and closed-frame percentage are retained.
+- In series entry, each game's Advanced section has the same editor. The starting entry's breakdown carries to Game 1; other rows use the optional shared ball without copying frame counts. Apply ball to all games asks before replacing an existing breakdown.
+- Names and frame counts persist through edits, account-scoped game/series drafts, JSON backups/imports, the additional Ball Usage JSON column in CSV, cloud payloads, offline retries, and conflict review. Import and sync review show both versions' ball usage.
+- Existing games remain unchanged on startup. Single-ball records are read without a migration, and the legacy Ball field remains the first ball for compatibility. Firebase setup, security rules, accounts, and database names are unchanged. Open v24 on every device before editing multi-ball games; older app versions do not understand the breakdown.
+
+### Connection recovery in v24
+
+Firebase startup can retry after an incomplete initialization, including when returning to the app. Cloud indicators distinguish offline and failed sync from completed sync, and offline-cache readiness waits for activation. Nine automated suites cover startup, durable sync retries, conflicts, account isolation, and the existing game/statistics flows. See BUG-TEST-REPORT.md for live verification and deployment status.
+
+## Previous update: Closed frame percentage (v23)
 
 - Stats → Accuracy & milestones now shows Closed frame %, with the number of closed frames out of total frames.
 - Calculated as `(games × 10 − open frames) / (games × 10) × 100`, displayed to one decimal place. Tenth-frame fill shots do not add frames.
@@ -80,6 +93,7 @@ node tests/session-tools.cjs
 node tests/ball-tracking.cjs
 node tests/stats-friends.cjs
 node tests/no-tap.cjs
+node tests/multiple-balls.cjs
 ```
 
 Tests execute application logic with simulated DOM and storage interfaces. See BUG-TEST-REPORT.md for scope and limitations. Browser visual verification and live Firebase testing remain outstanding because a browser runtime is not available in this environment.
