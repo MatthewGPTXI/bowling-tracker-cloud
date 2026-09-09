@@ -1,8 +1,15 @@
-# Bowling Tracker — v22
+# Bowling Tracker — v23
 
-Updated September 8, 2026. Built on the pre-journal version with the session tools and bug fixes.
+Updated September 9, 2026. Built on the pre-journal version with the session tools and bug fixes.
 
-## Latest update: No-tap games
+## Latest update: Closed frame percentage
+
+- Stats → Accuracy & milestones now shows Closed frame %, with the number of closed frames out of total frames.
+- Calculated as `(games × 10 − open frames) / (games × 10) × 100`, displayed to one decimal place. Tenth-frame fill shots do not add frames.
+- Follows the selected date range, session type, and ball. No-tap games remain excluded. With no matching standard games, the percentage displays —.
+- Uses existing saved open-frame counts; no new entry fields, database changes, or cloud changes are needed.
+
+## Previous update: No-tap games (v22)
 
 - In game entry, open Advanced and set Scoring to No-tap. In series entry, Advanced → Scoring for this series applies the tag to every game being entered. League / Practice / Tournament and ball tags remain independent.
 - In Sessions, choose Scoring → No-tap only to find tagged games separately. Standard only and All games are also available. Typing "no tap", "no-tap", or "notap" in the session search works too, together with the session type and date filters.

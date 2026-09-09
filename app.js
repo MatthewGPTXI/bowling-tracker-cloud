@@ -49,6 +49,8 @@
     strikePctDetail: $('statStrikePctDetail'),
     openAvg: $('statOpenAvg'),
     openRateDetail: $('statOpenRateDetail'),
+    closedFramePct: $('statClosedFramePct'),
+    closedFrameDetail: $('statClosedFrameDetail'),
     cleanGames: $('statCleanGames'),
     cleanGamesDetail: $('statCleanGamesDetail'),
     sessions: $('statSessions'),
@@ -648,6 +650,9 @@
     const totalStrikes = sourceGames.reduce((sum, g) => sum + g.strikes, 0);
     const strikeOpps = sourceGames.reduce((sum, g) => sum + g.strikeOpportunities, 0);
     const totalOpen = sourceGames.reduce((sum, g) => sum + g.openFrames, 0);
+    // Tenth-frame fill shots do not add frames to a ten-frame game.
+    const totalFrames = count * 10;
+    const totalClosed = totalFrames - totalOpen;
     const cleanGames = sourceGames.filter((g) => g.openFrames === 0).length;
     const sortedRecent = [...sourceGames].sort((a, b) => b.date.localeCompare(a.date) || gameOrder(b, a));
     const bestSession = sessions.length ? sessions.reduce((best, s) => s.average > best.average ? s : best) : null;
@@ -681,6 +686,9 @@
       strikePct: strikeOpps ? (totalStrikes / strikeOpps) * 100 : 0,
       openAvg: count ? totalOpen / count : 0,
       openRate: count ? (totalOpen / (count * 10)) * 100 : 0,
+      totalFrames,
+      totalClosed,
+      closedFramePct: totalFrames ? (totalClosed / totalFrames) * 100 : 0,
       cleanGames,
       cleanRate: count ? (cleanGames / count) * 100 : 0,
       strikesPerGame: count ? totalStrikes / count : 0,
@@ -751,6 +759,11 @@
 
     dom.openAvg.textContent = stats.count ? stats.openAvg.toFixed(2) : '—';
     dom.openRateDetail.textContent = `${stats.openRate.toFixed(1)}% open-frame rate`;
+
+    dom.closedFramePct.textContent = stats.count ? `${stats.closedFramePct.toFixed(1)}%` : '—';
+    dom.closedFrameDetail.textContent = stats.count
+      ? `${stats.totalClosed} / ${stats.totalFrames} frames closed`
+      : 'No standard games in these filters';
 
     dom.cleanGames.textContent = stats.cleanGames;
     dom.cleanGamesDetail.textContent = `${stats.cleanRate.toFixed(1)}% of games`;
