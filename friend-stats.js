@@ -184,7 +184,7 @@
       .game-average-status { display: block; margin-top: 4px; font-size: .72rem; font-weight: 750; line-height: 1.2; }
       .game-average-status.above { color: var(--accent-2); }
       .game-average-status.below { color: var(--danger); }
-      .game-average-status.at-average, .game-average-status.not-compared { color: var(--muted); }
+      .game-average-status.at-average { color: var(--muted); }
     `;
     document.head.appendChild(style);
   }
@@ -248,36 +248,37 @@
     list.querySelectorAll('.game-row').forEach(row => {
       const id = Number(row.querySelector('.game-actions-toggle')?.dataset.id);
       const game = byId.get(id);
-      const scoreBlock = row.querySelector('.game-score-block');
-      if (!game || !scoreBlock) return;
+      const infoBlock = row.querySelector('.game-row-info');
+      if (!game || !infoBlock) return;
 
-      let status = scoreBlock.querySelector('.game-average-status');
-      if (!status) {
-        status = document.createElement('span');
-        status.className = 'game-average-status';
-        scoreBlock.appendChild(status);
-      }
-
-      status.className = 'game-average-status';
+      const existing = infoBlock.querySelector('.game-average-status');
       if (game.noTap === true || average === null) {
-        status.classList.add('not-compared');
-        status.textContent = game.noTap === true ? 'Not in average' : 'Average unavailable';
-        status.title = game.noTap === true ? 'No-tap games are excluded from your standard-game average.' : '';
+        existing?.remove();
         return;
       }
 
-      const score = Number(game.score);
-      status.title = `Current average: ${average.toFixed(1)}`;
-      if (score > average) {
-        status.classList.add('above');
-        status.textContent = 'Above average';
-      } else if (score < average) {
-        status.classList.add('below');
-        status.textContent = 'Below average';
-      } else {
-        status.classList.add('at-average');
-        status.textContent = 'At average';
+      let status = existing;
+      if (!status) {
+        status = document.createElement('span');
+        status.className = 'game-average-status';
+        infoBlock.appendChild(status);
       }
+
+      const score = Number(game.score);
+      let className = 'game-average-status';
+      let text = 'At average';
+      if (score > average) {
+        className += ' above';
+        text = 'Above average';
+      } else if (score < average) {
+        className += ' below';
+        text = 'Below average';
+      } else {
+        className += ' at-average';
+      }
+      status.className = className;
+      status.textContent = text;
+      status.title = `Current standard-game average: ${average.toFixed(1)}`;
     });
   }
 
@@ -290,7 +291,6 @@
 
   const observer = new MutationObserver(() => {
     enhanceOpportunityInputs();
-    renderAverageStatuses();
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
