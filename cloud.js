@@ -358,9 +358,11 @@
     const balls = window.BowlingBalls.list(game);
     return {
       id: Number(game.id),
+      recordId: String(game.recordId || game.id),
       bowler: String(game.bowler),
       date: String(game.date),
       sessionName: String(game.sessionName || ''),
+      sessionId: String(game.sessionId || game.sessionName || ''),
       ball: balls[0]?.name || '',
       balls,
       noTap: game.noTap === true,
@@ -374,16 +376,18 @@
       createdAt: Number(game.createdAt || Date.now()),
       updatedAt: Number(game.updatedAt || Date.now()),
       deleted: false,
-      schemaVersion: 3
+      schemaVersion: 4
     };
   }
 
   function cloudDeletePayload(tombstone) {
     return {
       id: Number(tombstone.id),
+      recordId: String(tombstone.recordId || tombstone.id),
       updatedAt: Number(tombstone.updatedAt || Date.now()),
+      deletedAt: Number(tombstone.deletedAt || tombstone.updatedAt || Date.now()),
       deleted: true,
-      schemaVersion: 2
+      schemaVersion: 4
     };
   }
 
@@ -437,78 +441,55 @@
     </div>`;
   }
 
-  function detectSyncIssues(localGameMap, tombstoneMap, remoteMap) {
+  function detectSyncIssues(localGameMap, tombstoneMap, remoteMap, outbox = {}) {
     const issues = [];
 
-    for (const [id, remote] of remoteMap.entries()) {
-      const local = localGameMap.get(id);
-      const tombstone = tombstoneMap.get(id);
+    // A visible conflict now means one narrow thing: this device changed a
+    // specific record from a known base version, and the cloud independently
+    // changed that same record before the local change could be uploaded.
+    // Normal stale copies and same-looking games with different IDs reconcile
+    // automatically and never interrupt the user.
+    for (const [rawId, item] of Object.entries(outbox || {})) {
+      const id = Number(rawId);
+      if (!Number.isSafeInteger(id) || id <= 0 || !item?.data) continue;
 
-      if (remote.deleted && local) {
+      const local = localGameMap.get(id) || null;
+      const tombstone = tombstoneMap.get(id) || null;
+      const localVersion = local || (tombstone ? { ...tombstone, deleted: true } : null);
+      const remote = remoteMap.get(id) || null;
+
+      // If the local record has changed again since this outbox item was made,
+      // this entry is stale and should not manufacture a conflict.
+      if (!sameCloudVersion(localVersion, item.data)) continue;
+
+      // Already uploaded, or the cloud is still exactly the version we edited.
+      // In either case there is no competing edit to ask the user about.
+      if (sameCloudVersion(remote, item.data) || sameCloudVersion(remote, item.base)) continue;
+
+      const localDeleted = item.data.deleted === true;
+      const remoteDeleted = !remote || remote.deleted === true;
+
+      // Two independently recorded deletions have the same outcome. Reconcile
+      // their timestamps automatically rather than calling this a conflict.
+      if (localDeleted && remoteDeleted) continue;
+
+      if (localDeleted || remoteDeleted) {
         issues.push({
-          key: `delete:${id}:cloud`,
+          key: `delete:${id}:${localDeleted ? 'local' : 'cloud'}` ,
           type: 'delete-conflict',
           id,
-          liveSide: 'local',
+          liveSide: localDeleted ? 'cloud' : 'local',
           local,
-          remote
-        });
-        continue;
-      }
-
-      if (!remote.deleted && tombstone) {
-        issues.push({
-          key: `delete:${id}:local`,
-          type: 'delete-conflict',
-          id,
-          liveSide: 'cloud',
           tombstone,
           remote
         });
         continue;
       }
 
-      if (!remote.deleted && local && !sameGameContent(local, remote)) {
-        issues.push({
-          key: `version:${id}`,
-          type: 'version-conflict',
-          id,
-          local,
-          remote
-        });
-      }
-    }
-
-    // Duplicate protection only compares records that exist exclusively on one
-    // side. After a user chooses "keep both" and the records sync, they will no
-    // longer be flagged every time.
-    const localOnly = [...localGameMap.entries()]
-      .filter(([id]) => !remoteMap.has(id) && !tombstoneMap.has(id))
-      .map(([, game]) => game);
-    const remoteOnly = [...remoteMap.entries()]
-      .filter(([id, game]) => !game.deleted && !localGameMap.has(id) && !tombstoneMap.has(id))
-      .map(([, game]) => game);
-
-    const remoteBySignature = new Map();
-    for (const game of remoteOnly) {
-      const sig = duplicateSignature(game);
-      if (!remoteBySignature.has(sig)) remoteBySignature.set(sig, []);
-      remoteBySignature.get(sig).push(game);
-    }
-
-    const usedRemoteIds = new Set();
-    for (const local of localOnly) {
-      const matches = remoteBySignature.get(duplicateSignature(local)) || [];
-      const remote = matches.find((candidate) => !usedRemoteIds.has(Number(candidate.id)));
-      if (!remote) continue;
-      usedRemoteIds.add(Number(remote.id));
-      const localId = Number(local.id);
-      const remoteId = Number(remote.id);
       issues.push({
-        key: `duplicate:${Math.min(localId, remoteId)}:${Math.max(localId, remoteId)}`,
-        type: 'duplicate',
-        localId,
-        remoteId,
+        key: `version:${id}` ,
+        type: 'version-conflict',
+        id,
         local,
         remote
       });
@@ -528,7 +509,7 @@
       if (issue.type === 'version-conflict') {
         return `<div class="sync-review-item" data-sync-issue="${escapeHtml(issue.key)}">
           <div class="sync-review-title">Same saved game has different details</div>
-          <div class="sync-review-copy">This game has the same internal ID on both sides, but at least one bowling value or note differs. Choose which copy is correct.</div>
+          <div class="sync-review-copy">This exact saved game was edited on this device and in the cloud before either edit could see the other. Choose which version is correct.</div>
           <div class="sync-review-compare">
             ${gameReviewHtml('This device', issue.local)}
             ${gameReviewHtml('Cloud', issue.remote)}
@@ -548,7 +529,7 @@
         const deletedWhere = issue.liveSide === 'local' ? 'cloud' : 'this device';
         return `<div class="sync-review-item" data-sync-issue="${escapeHtml(issue.key)}">
           <div class="sync-review-title">Edit vs. deletion conflict</div>
-          <div class="sync-review-copy">A copy of this game exists, but it was deleted on ${escapeHtml(deletedWhere)}. Nothing will be erased until you choose.</div>
+          <div class="sync-review-copy">This exact saved game was changed on one device while the other device deleted it. Nothing will be erased until you choose.</div>
           <div class="sync-review-compare">
             ${gameReviewHtml('Game copy', live)}
             ${gameReviewHtml(`Deleted on ${deletedWhere}`, null)}
@@ -564,7 +545,7 @@
       }
 
       return `<div class="sync-review-item" data-sync-issue="${escapeHtml(issue.key)}">
-        <div class="sync-review-title">Possible duplicate game</div>
+        <div class="sync-review-title">Sync item</div>
         <div class="sync-review-copy">These have different internal IDs but the same date, session, score, open frames and strike totals. They may be two copies of the same real game.</div>
         <div class="sync-review-compare">
           ${gameReviewHtml('This device', issue.local)}
@@ -697,7 +678,7 @@
 
     syncing = true;
     setSyncBadge('Syncing…', 'working');
-    setStatus(`${reason}: comparing local and cloud bowling history…`);
+    setStatus(`${reason}: reconciling local changes with your cloud history…`);
 
     try {
       const app = await waitForBowlingApp();
@@ -715,7 +696,8 @@
       const remoteMap = new Map();
       remoteSnap.forEach((item) => remoteMap.set(Number(item.id), item.data()));
 
-      const issues = detectSyncIssues(localGameMap, tombstoneMap, remoteMap);
+      const syncOutbox = readOutbox(uid);
+      const issues = detectSyncIssues(localGameMap, tombstoneMap, remoteMap, syncOutbox);
       if (reviewChoices && pendingSyncReview?.issues && JSON.stringify(issues) !== JSON.stringify(pendingSyncReview.issues)) reviewChoices = null;
       const unresolved = issues.filter((issue) => !reviewChoices?.[issue.key]);
       const cloudWrites = [];
@@ -838,9 +820,11 @@
         return;
       }
       hideSyncReview();
-      // Explicit review choices supersede the saved retry versions.
-      const remaining = readOutbox(uid);
-      handledIds.forEach(id => delete remaining[id]); saveOutbox(uid,remaining);
+      // Reaching this point means every currently queued local change has
+      // either been written, downloaded, or explicitly resolved. Because the
+      // sync is revision-guarded, clearing the outbox here cannot erase a newer
+      // local edit that arrived during this pass.
+      saveOutbox(uid, {});
       pendingLocalChanges = 0;
       lastSyncAt = Date.now();
       setSyncBadge('Synced just now', 'success');
@@ -849,7 +833,15 @@
     } catch (error) {
       console.error(error);
       if (!isCurrentAccount()) return;
-      setSyncBadge('Needs sync', 'error');
+      if (error?.code === 'bowling/conflict') {
+        setSyncBadge('Refreshing cloud…', 'working');
+        setStatus('Cloud history changed during sync. Refreshing automatically…');
+        setTimeout(() => {
+          if (currentUser?.uid === uid && navigator.onLine) syncAll('Automatic retry');
+        }, 0);
+        return;
+      }
+      setSyncBadge('Saved on this device · needs sync', 'error');
       setStatus(`Sync paused: ${friendlyError(error)}`, 'error');
     } finally {
       syncing = false;
