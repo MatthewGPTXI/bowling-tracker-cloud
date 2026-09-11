@@ -1,5 +1,5 @@
 const CACHE_PREFIX = `bowling-tracker:${new URL(self.registration.scope).pathname}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v27-average-series`;
+const CACHE_NAME = `${CACHE_PREFIX}v28-sync-reconciliation`;
 const APP_ASSETS = [
   './',
   './index.html',
