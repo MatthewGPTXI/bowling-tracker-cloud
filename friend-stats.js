@@ -175,6 +175,7 @@
 
   const OPPORTUNITIES = ['10', '11', '12'];
   const STYLE_ID = 'bowling-user-suggestions-style';
+  const SESSION_TYPES = ['League', 'Practice', 'Tournament'];
 
   function installStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -182,9 +183,10 @@
     style.id = STYLE_ID;
     style.textContent = `
       .game-average-status { display: block; margin-top: 4px; font-size: .72rem; font-weight: 750; line-height: 1.2; }
-      .game-average-status.above { color: var(--accent-2); }
-      .game-average-status.below { color: var(--danger); }
-      .game-average-status.at-average { color: var(--muted); }
+      .game-average-status.above, .session-average-status.above { color: var(--accent-2); }
+      .game-average-status.below, .session-average-status.below { color: var(--danger); }
+      .game-average-status.at-average, .session-average-status.at-average { color: var(--muted); }
+      .session-average-status { font-weight: 750; }
     `;
     document.head.appendChild(style);
   }
@@ -233,13 +235,139 @@
     document.querySelectorAll('[data-opportunity-dropdown="true"]').forEach(syncOpportunitySelect);
   }
 
+  function sessionKey(game) {
+    return `${game?.date || ''}|||${String(game?.sessionName || '').trim().toLowerCase() || 'bowling session'}`;
+  }
+
+  function sessionType(game) {
+    return SESSION_TYPES.includes(game?.sessionType) ? game.sessionType : 'League';
+  }
+
+  function gameOrder(a, b) {
+    return Number(a?.gameOrder ?? a?.createdAt ?? a?.id ?? 0) - Number(b?.gameOrder ?? b?.createdAt ?? b?.id ?? 0)
+      || Number(a?.id || 0) - Number(b?.id || 0);
+  }
+
+  function ballKey(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  function validStandardGames(source) {
+    return source.filter(game => game?.noTap !== true && Number.isFinite(Number(game?.score)));
+  }
+
+  function gameBalls(game) {
+    if (window.BowlingBalls?.list) return window.BowlingBalls.list(game);
+    return game?.ball ? [{ name: game.ball }] : [];
+  }
+
+  function matchesStatsBall(game, selected) {
+    if (!selected) return true;
+    const balls = gameBalls(game);
+    if (selected === 'none') return balls.length === 0;
+    if (!selected.startsWith('ball:')) return true;
+    const selectedKey = selected.slice(5);
+    return balls.some(row => ballKey(row?.name) === selectedKey);
+  }
+
+  function currentStatsGames(allGames) {
+    const from = document.getElementById('statsFrom')?.value || '';
+    const through = document.getElementById('statsTo')?.value || '';
+    const type = document.getElementById('statsType')?.value || '';
+    const selectedBall = document.getElementById('statsBall')?.value || '';
+    return validStandardGames(allGames).filter(game => (!from || game.date >= from)
+      && (!through || game.date <= through)
+      && (!type || sessionType(game) === type)
+      && matchesStatsBall(game, selectedBall));
+  }
+
+  function groupGames(source) {
+    const groups = new Map();
+    source.forEach(game => {
+      const key = sessionKey(game);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(game);
+    });
+    groups.forEach(group => group.sort(gameOrder));
+    return groups;
+  }
+
+  function completedSeriesTotals(filteredGames, allGames) {
+    const filteredGroups = groupGames(filteredGames);
+    const fullGroups = groupGames(validStandardGames(allGames));
+    const totals = [];
+
+    filteredGroups.forEach((filteredGroup, key) => {
+      const fullGroup = fullGroups.get(key) || filteredGroup;
+      const positions = new Map(fullGroup.map((game, index) => [Number(game.id), index]));
+      let run = [];
+      let priorPosition = null;
+
+      const commitRun = () => {
+        for (let i = 0; i + 2 < run.length; i += 3) {
+          totals.push(run.slice(i, i + 3).reduce((sum, game) => sum + Number(game.score), 0));
+        }
+        run = [];
+      };
+
+      filteredGroup.forEach(game => {
+        const position = positions.get(Number(game.id));
+        if (position === undefined || (priorPosition !== null && position !== priorPosition + 1)) commitRun();
+        run.push(game);
+        priorPosition = position === undefined ? null : position;
+      });
+      commitRun();
+    });
+
+    return totals;
+  }
+
+  function ensureAverageSeriesCard() {
+    const highSeries = document.getElementById('statHighSeries');
+    const highSeriesCard = highSeries?.closest('.stat-card');
+    if (!highSeriesCard) return null;
+
+    let card = document.getElementById('statAverageSeriesCard');
+    if (!card) {
+      card = document.createElement('article');
+      card.id = 'statAverageSeriesCard';
+      card.className = 'stat-card';
+      card.innerHTML = '<span class="stat-label">Average series</span><strong id="statAverageSeries" class="stat-value">—</strong><span id="statAverageSeriesDetail" class="stat-detail">Need 3 games in one session</span>';
+      highSeriesCard.insertAdjacentElement('afterend', card);
+    }
+    return card;
+  }
+
+  function renderAverageSeriesStat() {
+    const app = window.BowlingApp;
+    const card = ensureAverageSeriesCard();
+    if (!app?.getGames || !card) return;
+
+    const allGames = app.getGames();
+    const totals = completedSeriesTotals(currentStatsGames(allGames), allGames);
+    const value = card.querySelector('#statAverageSeries');
+    const detail = card.querySelector('#statAverageSeriesDetail');
+    const averageSeries = totals.length ? totals.reduce((sum, total) => sum + total, 0) / totals.length : null;
+
+    value.textContent = averageSeries === null ? '—' : averageSeries.toFixed(1);
+    detail.textContent = totals.length
+      ? `${totals.length} completed 3-game series`
+      : 'Need 3 games in one session';
+  }
+
+  function performanceStatus(value, average) {
+    if (value > average) return { className: 'above', text: 'Above average' };
+    if (value < average) return { className: 'below', text: 'Below average' };
+    return { className: 'at-average', text: 'At average' };
+  }
+
   function renderAverageStatuses() {
     const app = window.BowlingApp;
     const list = document.getElementById('sessionsList');
     if (!app?.getGames || !list) return;
 
     const allGames = app.getGames();
-    const standardGames = allGames.filter(game => game?.noTap !== true && Number.isFinite(Number(game?.score)));
+    const standardGames = validStandardGames(allGames);
     const average = standardGames.length
       ? standardGames.reduce((sum, game) => sum + Number(game.score), 0) / standardGames.length
       : null;
@@ -264,21 +392,37 @@
         infoBlock.appendChild(status);
       }
 
-      const score = Number(game.score);
-      let className = 'game-average-status';
-      let text = 'At average';
-      if (score > average) {
-        className += ' above';
-        text = 'Above average';
-      } else if (score < average) {
-        className += ' below';
-        text = 'Below average';
-      } else {
-        className += ' at-average';
-      }
-      status.className = className;
-      status.textContent = text;
+      const result = performanceStatus(Number(game.score), average);
+      status.className = `game-average-status ${result.className}`;
+      if (status.textContent !== result.text) status.textContent = result.text;
       status.title = `Current standard-game average: ${average.toFixed(1)}`;
+    });
+
+    list.querySelectorAll('.session-card').forEach(card => {
+      const badges = card.querySelector('.session-badges');
+      if (!badges) return;
+
+      const visibleStandard = [...card.querySelectorAll('.game-row')]
+        .map(row => byId.get(Number(row.querySelector('.game-actions-toggle')?.dataset.id)))
+        .filter(game => game && game.noTap !== true && Number.isFinite(Number(game.score)));
+      const existing = badges.querySelector('.session-average-status');
+
+      if (average === null || visibleStandard.length < 2) {
+        existing?.remove();
+        return;
+      }
+
+      const sessionAverage = visibleStandard.reduce((sum, game) => sum + Number(game.score), 0) / visibleStandard.length;
+      const result = performanceStatus(sessionAverage, average);
+      let status = existing;
+      if (!status) {
+        status = document.createElement('span');
+        status.className = 'badge session-average-status';
+        badges.appendChild(status);
+      }
+      status.className = `badge session-average-status ${result.className}`;
+      if (status.textContent !== result.text) status.textContent = result.text;
+      status.title = `Session average: ${sessionAverage.toFixed(1)} · Current standard-game average: ${average.toFixed(1)}`;
     });
   }
 
@@ -286,11 +430,16 @@
     installStyles();
     enhanceOpportunityInputs();
     syncOpportunitySelects();
+    renderAverageSeriesStat();
     renderAverageStatuses();
   }
 
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver(mutations => {
     enhanceOpportunityInputs();
+    const sessionsList = document.getElementById('sessionsList');
+    if (sessionsList && mutations.some(mutation => mutation.target === sessionsList)) {
+      queueMicrotask(renderAverageStatuses);
+    }
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
@@ -299,9 +448,17 @@
       queueMicrotask(syncOpportunitySelects);
     }
   });
+  document.addEventListener('change', event => {
+    if (event.target.matches('#statsFrom, #statsTo, #statsType, #statsBall')) {
+      queueMicrotask(renderAverageSeriesStat);
+    }
+  });
   document.addEventListener('click', event => {
     if (event.target.closest('.edit-game, #recoverEntry, #recoverSeries, #cancelEditBtn, .add-to-session')) {
       queueMicrotask(syncOpportunitySelects);
+    }
+    if (event.target.closest('[data-stats-preset], #clearStatsFilters')) {
+      queueMicrotask(renderAverageSeriesStat);
     }
   });
   window.addEventListener('bowling:ready', refreshSuggestions);
