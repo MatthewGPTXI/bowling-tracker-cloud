@@ -169,3 +169,142 @@
 
   window.BowlingFriends = { setMembers, clear, open };
 })();
+
+(() => {
+  'use strict';
+
+  const OPPORTUNITIES = ['10', '11', '12'];
+  const STYLE_ID = 'bowling-user-suggestions-style';
+
+  function installStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      .game-average-status { display: block; margin-top: 4px; font-size: .72rem; font-weight: 750; line-height: 1.2; }
+      .game-average-status.above { color: var(--accent-2); }
+      .game-average-status.below { color: var(--danger); }
+      .game-average-status.at-average, .game-average-status.not-compared { color: var(--muted); }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function syncOpportunitySelect(source) {
+    if (!source) return;
+    const select = source._strikeOpportunitySelect;
+    if (!select) return;
+    const value = OPPORTUNITIES.includes(String(source.value)) ? String(source.value) : '10';
+    if (select.value !== value) select.value = value;
+  }
+
+  function enhanceOpportunityInput(source) {
+    if (!source) return;
+    if (source.dataset.opportunityDropdown === 'true') {
+      syncOpportunitySelect(source);
+      return;
+    }
+
+    const select = document.createElement('select');
+    select.className = 'strike-opportunity-select';
+    select.innerHTML = OPPORTUNITIES.map(value => `<option value="${value}">${value}</option>`).join('');
+    if (source.id) select.id = `${source.id}Select`;
+
+    source.dataset.opportunityDropdown = 'true';
+    source._strikeOpportunitySelect = select;
+    source.type = 'hidden';
+    source.insertAdjacentElement('afterend', select);
+
+    const rangeHint = source.closest('label')?.querySelector('span small');
+    if (rangeHint?.textContent.trim() === '10–12') rangeHint.remove();
+
+    select.addEventListener('change', () => {
+      source.value = select.value;
+      source.dispatchEvent(new Event('input', { bubbles: true }));
+      source.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    syncOpportunitySelect(source);
+  }
+
+  function enhanceOpportunityInputs() {
+    document.querySelectorAll('#strikeOppInput, [data-field="strikeOpp"]').forEach(enhanceOpportunityInput);
+  }
+
+  function syncOpportunitySelects() {
+    document.querySelectorAll('[data-opportunity-dropdown="true"]').forEach(syncOpportunitySelect);
+  }
+
+  function renderAverageStatuses() {
+    const app = window.BowlingApp;
+    const list = document.getElementById('sessionsList');
+    if (!app?.getGames || !list) return;
+
+    const allGames = app.getGames();
+    const standardGames = allGames.filter(game => game?.noTap !== true && Number.isFinite(Number(game?.score)));
+    const average = standardGames.length
+      ? standardGames.reduce((sum, game) => sum + Number(game.score), 0) / standardGames.length
+      : null;
+    const byId = new Map(allGames.map(game => [Number(game.id), game]));
+
+    list.querySelectorAll('.game-row').forEach(row => {
+      const id = Number(row.querySelector('.game-actions-toggle')?.dataset.id);
+      const game = byId.get(id);
+      const scoreBlock = row.querySelector('.game-score-block');
+      if (!game || !scoreBlock) return;
+
+      let status = scoreBlock.querySelector('.game-average-status');
+      if (!status) {
+        status = document.createElement('span');
+        status.className = 'game-average-status';
+        scoreBlock.appendChild(status);
+      }
+
+      status.className = 'game-average-status';
+      if (game.noTap === true || average === null) {
+        status.classList.add('not-compared');
+        status.textContent = game.noTap === true ? 'Not in average' : 'Average unavailable';
+        status.title = game.noTap === true ? 'No-tap games are excluded from your standard-game average.' : '';
+        return;
+      }
+
+      const score = Number(game.score);
+      status.title = `Current average: ${average.toFixed(1)}`;
+      if (score > average) {
+        status.classList.add('above');
+        status.textContent = 'Above average';
+      } else if (score < average) {
+        status.classList.add('below');
+        status.textContent = 'Below average';
+      } else {
+        status.classList.add('at-average');
+        status.textContent = 'At average';
+      }
+    });
+  }
+
+  function refreshSuggestions() {
+    installStyles();
+    enhanceOpportunityInputs();
+    syncOpportunitySelects();
+    renderAverageStatuses();
+  }
+
+  const observer = new MutationObserver(() => {
+    enhanceOpportunityInputs();
+    renderAverageStatuses();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  document.addEventListener('input', event => {
+    if (event.target.matches('#scoreInput, #strikesInput, [data-field="score"], [data-field="strikes"]')) {
+      queueMicrotask(syncOpportunitySelects);
+    }
+  });
+  document.addEventListener('click', event => {
+    if (event.target.closest('.edit-game, #recoverEntry, #recoverSeries, #cancelEditBtn, .add-to-session')) {
+      queueMicrotask(syncOpportunitySelects);
+    }
+  });
+  window.addEventListener('bowling:ready', refreshSuggestions);
+  window.addEventListener('bowling:rendered', refreshSuggestions);
+  refreshSuggestions();
+})();
