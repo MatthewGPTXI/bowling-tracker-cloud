@@ -1,5 +1,5 @@
 const CACHE_PREFIX = `bowling-tracker:${new URL(self.registration.scope).pathname}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v25-user-suggestions`;
+const CACHE_NAME = `${CACHE_PREFIX}v26-profile-goals`;
 const APP_ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const APP_ASSETS = [
   './firebase-config.js',
   './cloud.js',
   './friend-stats.js',
+  './profile.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png'
