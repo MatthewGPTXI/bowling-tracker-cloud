@@ -1,8 +1,18 @@
-# Bowling Tracker — v24
+# Bowling Tracker
 
-Updated September 9, 2026. Built on the pre-journal version with the session tools and bug fixes.
+## Latest release: v29 — September 15, 2026
 
-## Latest update: Multiple balls and frame counts
+Built directly on the verified live September 11 v28 sync-reconciliation release (`5bf1e1c`), including the earlier pre-Discord rollback. The old page labels v24/v26 were stale; `version.js` now supplies both the visible release label and offline cache version. There is no update prompt.
+
+- Empty series forms no longer create unfinished-entry notices; empty drafts left by older releases are cleared while entered scores (including zero), notes, and ball details remain recoverable.
+- Session search includes current and legacy session names, dates, notes, session types, and every recorded ball, alongside the existing date/scoring filters.
+- The progress chart has a labeled adaptive score scale and a choice of running average or a rolling average of up to ten games within the selected filters.
+- Closed frame percentage is visible in At a glance. Account wording uses the visible Profile → Cloud navigation and avoids backend terminology.
+- Single-game and series entry reject contradictory scores, strikes, and open-frame counts while allowing legal tenth-frame fill shots. Existing saved records and imports are not rewritten.
+
+Validation: ten Node test suites pass, covering these changes plus cloud concurrency, startup, account isolation, ball tracking, no-tap exclusions, stats, friends, and session tools. These tests simulate browser/storage/Firebase interfaces; they do not replace authenticated testing on two devices.
+
+## Previous update: Multiple balls and frame counts (v24)
 
 - Game entry still has one optional Ball field under Advanced. Select More balls / frames to reveal the counter, then + Add ball for another ball. Each row can be removed; no new page or mandatory entry step is added.
 - Example: Venom — 4 frames, Mercy — 6 frames. Counts are optional whole numbers from 1 to 10, with at most 10 frames recorded for the game. Count each frame once; tenth-frame bonus shots are not extra frames. For overlapping strike/spare-ball use within the same frame, list both balls and leave counts blank. Partial counts are allowed without guessing the remainder.

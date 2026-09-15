@@ -1,8 +1,10 @@
+importScripts('./version.js');
 const CACHE_PREFIX = `bowling-tracker:${new URL(self.registration.scope).pathname}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v28-sync-reconciliation`;
+const CACHE_NAME = `${CACHE_PREFIX}v${self.BOWLING_VERSION}`;
 const APP_ASSETS = [
   './',
   './index.html',
+  './version.js',
   './styles.css',
   './balls.js',
   './app.js',

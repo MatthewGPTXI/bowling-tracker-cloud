@@ -139,7 +139,7 @@
       'auth/network-request-failed': 'Network unavailable. Your local bowling data is still safe.',
       'auth/requires-recent-login': 'For security, sign in again and retry this account change.',
       'auth/wrong-password': 'The current password was not accepted.',
-      'permission-denied': 'Firebase blocked this request. Check that the provided Firestore rules are published.'
+      'permission-denied': 'Cloud access was denied. Try signing in again; contact the app owner if this continues.'
     };
     return map[code] || error?.message || 'Something went wrong with cloud sync.';
   }
@@ -816,7 +816,7 @@
       if (unresolved.length) {
         renderSyncReview(issues,app.getGames().length,[...remoteMap.values()].filter(g=>!g.deleted).length);
         setSyncBadge('Review needed','pending');
-        setStatus(`Other games synced. ${unresolved.length} conflicting item${unresolved.length===1?'':'s'} still need review in Account & settings.`);
+        setStatus(`Other games synced. ${unresolved.length} conflicting item${unresolved.length===1?'':'s'} still need review in Profile → Cloud.`);
         return;
       }
       hideSyncReview();
@@ -828,7 +828,7 @@
       pendingLocalChanges = 0;
       lastSyncAt = Date.now();
       setSyncBadge('Synced just now', 'success');
-      setStatus(`Synced ${app.getGames().length} local game${app.getGames().length === 1 ? '' : 's'} with Firebase.`, 'success');
+      setStatus(`Synced ${app.getGames().length} local game${app.getGames().length === 1 ? '' : 's'} with your account.`, 'success');
       await loadLeaderboard();
     } catch (error) {
       console.error(error);
@@ -1283,7 +1283,7 @@
 
     try {
       dom.downloadCloudBackupBtn.disabled = true;
-      setStatus('Reading your Firebase bowling history…');
+      setStatus('Reading your cloud bowling history…');
 
       const gameSnap = await modules.getDocs(modules.collection(firestore, 'users', currentUser.uid, 'games'));
       const games = [];
@@ -1400,7 +1400,7 @@
     }
 
     const confirmed = window.confirm(
-      'Permanently delete your Firebase account and cloud bowling data? Your local games on this device will remain. This cannot be undone unless you downloaded a backup.'
+      'Permanently delete your account and cloud bowling data? Your local games on this device will remain. This cannot be undone unless you downloaded a backup.'
     );
     if (!confirmed) return;
 
@@ -1433,7 +1433,7 @@
       const app = await waitForBowlingApp();
       await app.copyAccountDataToGuest?.(uid);
 
-      setStatus('Deleting Firebase login…');
+      setStatus('Deleting account…');
       await modules.deleteUser(user);
 
       if (dom.deleteAccountPassword) dom.deleteAccountPassword.value = '';

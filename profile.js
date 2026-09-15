@@ -132,9 +132,9 @@
       </section>
 
       <section class="panel" aria-labelledby="profileSettingsHeading">
-        <div class="section-heading"><div><p class="eyebrow">ACCOUNT & APP</p><h2 id="profileSettingsHeading">Profile settings</h2><p class="section-copy">Cloud sync, leaderboard profile, backups, imports, and local data tools now live here.</p></div></div>
+        <div class="section-heading"><div><p class="eyebrow">ACCOUNT & APP</p><h2 id="profileSettingsHeading">Profile settings</h2><p class="section-copy">Manage your account, backups, and app settings.</p></div></div>
         <div id="profileActionButtons" class="profile-actions"></div>
-        <p class="field-help">Account & sync opens your Firebase profile and private groups. Data & backup contains exports, imports, local display name, and reset tools.</p>
+        <p class="field-help">Cloud opens your account and private groups. Data & backup settings contains exports, imports, your display name, and reset tools.</p>
       </section>
     `;
   }
@@ -372,16 +372,10 @@
     recap.appendChild(item);
   }
 
-  function updateFooterVersion() {
-    const footer = document.querySelector('footer span:first-child');
-    if (footer && /Bowling Tracker/.test(footer.textContent)) footer.textContent = 'Bowling Tracker · v26';
-  }
-
   function refresh() {
     if (!ensureProfileUI()) return;
     renderProfile();
     renderHomeGoal();
-    updateFooterVersion();
     setTimeout(renderGameBenchmarks, 0);
   }
 

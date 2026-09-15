@@ -946,6 +946,12 @@
     if (!Number.isInteger(strikeOpportunities) || strikeOpportunities < 10 || strikeOpportunities > 12) return { error: 'Strike opportunities must be a whole number from 10 to 12.' };
     if (strikes > strikeOpportunities) return { error: 'Strikes cannot exceed strike opportunities.' };
     if (score === 300 && strikes !== 12) return { error: 'A 300 game should be recorded as 12 strikes.' };
+    if (score === 300 && openFrames !== 0) return { error: 'A 300 game cannot have open frames.' };
+    if (strikes === 12 && score !== 300) return { error: '12 strikes must have a score of 300.' };
+    const closedFrames = 10 - openFrames;
+    if (strikes > (closedFrames ? closedFrames + 2 : 0)) return { error: 'The strike count is too high for this many open frames. Check both counts, including tenth-frame fill shots.' };
+    if (score < strikes * 10) return { error: 'The score is too low for this many strikes. Check the score and strike count.' };
+    if (openFrames === 0 && score < 100) return { error: 'A clean game must score at least 100. Check the score or open frames.' };
 
     return {
       value: { bowler, date, sessionName, sessionType: type, ball, balls, noTap: fields.noTap?.value === 'no-tap', score, openFrames, strikes, strikeOpportunities, notes }
@@ -1341,7 +1347,7 @@
       return;
     }
     try {
-      await navigator.serviceWorker.register('./service-worker.js');
+      await navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' });
       await navigator.serviceWorker.ready;
       offlineCacheReady = true;
       dom.offlineStatus.textContent = navigator.onLine ? 'Online · offline cache ready' : 'Offline · local data available';
@@ -1588,7 +1594,7 @@
     finally { mutationBusy = false; $('saveSessionBtn').disabled = false; }
   }
 
-  function progressStats(source) {
+  function progressStats(source, mode = 'running') {
     source = standardGames(source);
     const ordered = [...source].sort((a, b) => a.date.localeCompare(b.date) || gameOrder(a, b));
     const recent = (count) => {
@@ -1599,15 +1605,32 @@
     const points = [];
     ordered.forEach((game, i) => {
       sum += game.score;
-      const point = { date: game.date, average: sum / (i + 1), count: i + 1 };
+      const windowGames = mode === 'recent' ? ordered.slice(Math.max(0, i - 9), i + 1) : null;
+      const point = { date: game.date, average: windowGames ? avg(windowGames.map(g => g.score)) : sum / (i + 1), count: windowGames ? windowGames.length : i + 1 };
       if (points.at(-1)?.date === game.date) points[points.length - 1] = point;
       else points.push(point);
     });
     return { last10: recent(10), last30: recent(30), points };
   }
 
+  function chartScale(points) {
+    const values = points.map(point => point.average);
+    let low = Math.max(0, Math.floor((Math.min(...values) - 10) / 10) * 10);
+    let high = Math.min(300, Math.ceil((Math.max(...values) + 10) / 10) * 10);
+    if (high - low < 40) {
+      low = Math.max(0, Math.min(260, Math.floor(((low + high) / 2 - 20) / 10) * 10));
+      high = low + 40;
+    }
+    return { low, high, ticks: [low, (low + high) / 2, high] };
+  }
+
   function renderProgress() {
-    const stats = progressStats(statsGames());
+    const mode = $('chartMode').value === 'recent' ? 'recent' : 'running';
+    const chartLabel = mode === 'recent' ? 'Last 10 games average' : 'Running average';
+    $('chartDescription').textContent = mode === 'recent'
+      ? 'Average of up to 10 most recent games at each date, within the selected filters.'
+      : 'Your running average for the selected dates, session type, and ball.';
+    const stats = progressStats(statsGames(), mode);
     const last5Count = Math.min(5, statsGames().length);
     $('last5Count').textContent = last5Count < 5 ? `${last5Count} of 5 games recorded` : 'Most recent 5 games';
     for (const count of [10, 30]) {
@@ -1616,19 +1639,23 @@
       $(`last${count}Count`).textContent = stat.count < count ? `${stat.count} of ${count} games recorded` : `Most recent ${count} games`;
     }
     const points = stats.points;
+    $('chartScaleNote').textContent = '';
     if (!points.length) { $('averageChart').innerHTML = '<p class="section-copy">Add a game to start your progress chart.</p>'; return; }
     const time = (date) => Date.parse(`${date}T12:00:00Z`);
     const first = time(points[0].date), last = time(points.at(-1).date);
     const x = (point) => first === last ? 340 : 44 + (time(point.date) - first) / (last - first) * 590;
-    const y = (point) => 194 - point.average / 300 * 170;
+    const { low, high, ticks } = chartScale(points);
+    $('chartScaleNote').textContent = `Score scale: ${low}–${high} pins · adjusts to your averages. Each point shows the end of a bowling date.`;
+    const yValue = value => 194 - (value - low) / (high - low) * 170;
+    const y = point => yValue(point.average);
     const path = points.map((point, i) => `${i ? 'L' : 'M'}${x(point).toFixed(2)},${y(point).toFixed(2)}`).join(' ');
     $('averageChart').innerHTML = `<svg class="average-chart" viewBox="0 0 680 230" role="img" aria-labelledby="trendTitle trendDesc">
-      <title id="trendTitle">Running average for selected games by date</title><desc id="trendDesc">${points.length} bowling dates. Latest average ${points.at(-1).average.toFixed(1)} across ${points.at(-1).count} games. Exact values are in the table below.</desc>
-      ${[0, 150, 300].map((value) => `<line x1="44" x2="634" y1="${194 - value / 300 * 170}" y2="${194 - value / 300 * 170}" class="chart-grid"/><text x="34" y="${199 - value / 300 * 170}" text-anchor="end">${value}</text>`).join('')}
+      <title id="trendTitle">${chartLabel} for selected games by date</title><desc id="trendDesc">${points.length} bowling dates. Latest average ${points.at(-1).average.toFixed(1)} across ${points.at(-1).count} games. Exact values are in the table below.</desc>
+      ${ticks.map((value) => `<line x1="44" x2="634" y1="${yValue(value)}" y2="${yValue(value)}" class="chart-grid"/><text x="34" y="${yValue(value) + 5}" text-anchor="end">${value}</text>`).join('')}
       <path d="${path}" class="chart-line"/>
       ${points.map((point) => `<circle cx="${x(point)}" cy="${y(point)}" r="3.5" class="chart-point"><title>${escapeHtml(fmtDate(point.date))}: ${point.average.toFixed(1)} · ${point.count} games</title></circle>`).join('')}
       <text x="44" y="220">${escapeHtml(fmtDate(points[0].date))}</text>${points.length > 1 ? `<text x="634" y="220" text-anchor="end">${escapeHtml(fmtDate(points.at(-1).date))}</text>` : ''}
-    </svg><details><summary>View exact averages</summary><div class="trend-table-wrap"><table class="trend-table"><thead><tr><th scope="col">Date</th><th scope="col">Games to date</th><th scope="col">Average</th></tr></thead><tbody>${points.map((point) => `<tr><td>${escapeHtml(fmtDate(point.date))}</td><td>${point.count}</td><td>${point.average.toFixed(1)}</td></tr>`).join('')}</tbody></table></div></details>`;
+    </svg><details><summary>View exact averages</summary><div class="trend-table-wrap"><table class="trend-table"><thead><tr><th scope="col">Date</th><th scope="col">${mode === 'recent' ? 'Games in average' : 'Games to date'}</th><th scope="col">Average</th></tr></thead><tbody>${points.map((point) => `<tr><td>${escapeHtml(fmtDate(point.date))}</td><td>${point.count}</td><td>${point.average.toFixed(1)}</td></tr>`).join('')}</tbody></table></div></details>`;
   }
 
   function showView(view, focus = true) {
@@ -1647,7 +1674,9 @@
     const query = $('sessionSearch').value.replace(/\bno[\s-]?tap\b/gi, '').trim().toLowerCase();
     const from = $('sessionFrom').value;
     const through = $('sessionTo').value;
-    return sessions.filter((session) => (!query || session.name.toLowerCase().includes(query))
+    return sessions.filter((session) => (!query || [session.name, session.date,
+      ...session.games.flatMap(game => [game.notes || '', game.sessionName || '', sessionType(game), ...Balls.list(game).map(ball => ball.name)])
+    ].join(' ').toLowerCase().includes(query))
       && (!from || session.date >= from) && (!through || session.date <= through));
   }
 
@@ -1670,7 +1699,24 @@
   }
 
   function draftKey(kind) { return `bowling-draft:${activeLocalScope.dbName || activeLocalScope.uid || 'guest'}:${kind}`; }
-  function readDraft(kind) { try { return JSON.parse(safeLocalStorageGet(draftKey(kind)) || 'null'); } catch (_) { return null; } }
+  function seriesHasInput(draft) {
+    const hasText = value => value !== null && value !== undefined && String(value).trim() !== '';
+    return hasText(draft?.ball) || (draft?.rows || []).some(row =>
+      ['score', 'openFrames', 'strikes', 'notes', 'ball'].some(field => hasText(row[field]))
+      || (hasText(row.strikeOpp) && Number(row.strikeOpp) !== 10)
+      || (row.balls || []).some(ball => hasText(ball.name) || hasText(ball.frames)));
+  }
+  function readDraft(kind) {
+    try {
+      const draft = JSON.parse(safeLocalStorageGet(draftKey(kind)) || 'null');
+      // Also clear empty series drafts left by earlier releases.
+      if (kind === 'series' && draft && !seriesHasInput(draft)) {
+        safeLocalStorageSet(draftKey(kind), '');
+        return null;
+      }
+      return draft;
+    } catch (_) { return null; }
+  }
   function clearDraft(kind) { if (!restoringDraft) safeLocalStorageSet(draftKey(kind), ''); }
   function showDraftNotice() {
     const entry = !!readDraft('entry'), series = !!readDraft('series');
@@ -1683,7 +1729,9 @@
       if (hasEntryDraft()) localStorage.setItem(draftKey('entry'), JSON.stringify({version:1, values:JSON.parse(entrySnapshot()), baseline:entryBaseline, base:entryBaseGame}));
       if ($('seriesDialog').open) {
         const rows = [...$('seriesRows').children].map(row => ({...Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes','ball'].map(field => [field,row.querySelector(`[data-field="${field}"]`).value])), balls: Balls.draft(row.querySelector('[data-field="ball"]'))}));
-        localStorage.setItem(draftKey('series'),JSON.stringify({version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,noTap:$('seriesNoTap').value === 'no-tap',rows}));
+        const draft = {version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,noTap:$('seriesNoTap').value === 'no-tap',rows};
+        if (seriesHasInput(draft)) localStorage.setItem(draftKey('series'), JSON.stringify(draft));
+        else clearDraft('series');
       }
       showDraftNotice();
     } catch (_) { setStatus(dom.entryStatus, 'Draft storage is unavailable or full. Keep this page open until you save your games.', 'error'); }
@@ -1820,6 +1868,7 @@
       refreshStatsView();
     });
     document.querySelectorAll('[data-stats-preset]').forEach(button => button.addEventListener('click', () => applyStatsPreset(button.dataset.statsPreset)));
+    $('chartMode').addEventListener('change', renderProgress);
     $('clearStatsFilters').addEventListener('click', () => {
       $('statsType').value = ''; $('statsBall').value = ''; applyStatsPreset('all');
     });

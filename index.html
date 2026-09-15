@@ -23,10 +23,10 @@
         <h1>Bowling Tracker</h1>
         <p class="subtitle">Log your games. See your progress.</p>
       </div>
-      <details class="profile-menu" id="profileMenu"><summary>Account &amp; settings</summary>
+      <details class="profile-menu" id="profileMenu"><summary>Profile &amp; settings</summary>
       <div class="top-actions">
         <button id="installBtn" class="btn secondary hidden" type="button">Install</button>
-        <button id="openCloudBtn" class="btn secondary cloud-button" type="button"><span id="cloudButtonDot" class="status-dot"></span><span id="cloudButtonLabel">Account &amp; sync</span></button>
+        <button id="openCloudBtn" class="btn secondary cloud-button" type="button"><span id="cloudButtonDot" class="status-dot"></span><span id="cloudButtonLabel">Cloud</span></button>
         <button id="openSettingsBtn" class="btn secondary" type="button">Settings</button>
       </div>
       </details>
@@ -144,7 +144,7 @@
         </div>
 
         <div class="session-filters">
-          <label><span>Find a session</span><input id="sessionSearch" type="search" placeholder="League, practice, no-tap…" autocomplete="off"></label>
+          <label><span>Find a session</span><input id="sessionSearch" type="search" placeholder="Session, date, notes, or ball" autocomplete="off"></label>
           <label class="history-scoring"><span>Scoring</span><select id="historyScoring"><option value="">All games</option><option value="standard">Standard only</option><option value="no-tap">No-tap only</option></select></label>
           <label><span>From</span><input id="sessionFrom" type="date"></label>
           <label><span>Through</span><input id="sessionTo" type="date"></label>
@@ -201,6 +201,11 @@
           <strong id="statStrikePct" class="stat-value">—</strong>
           <span id="statStrikePctDetail" class="stat-detail">0 strikes</span>
         </article>
+        <article class="stat-card">
+          <span class="stat-label">Closed frame %</span>
+          <strong id="statClosedFramePct" class="stat-value">—</strong>
+          <span id="statClosedFrameDetail" class="stat-detail">No standard games in these filters</span>
+        </article>
       </section>
       <section class="panel recent-form" aria-labelledby="recentFormHeading">
         <div class="section-heading"><div><h2 id="recentFormHeading">Recent form</h2><p class="section-copy">Your latest games within the selected filters.</p></div></div>
@@ -211,7 +216,9 @@
         </div>
       </section>
       <section class="panel">
-        <div class="section-heading"><div><h2>Average over time</h2><p class="section-copy">Your running average for the selected dates, session type, and ball.</p></div></div>
+        <div class="section-heading"><div><h2>Average over time</h2><p id="chartDescription" class="section-copy">Your running average for the selected dates, session type, and ball.</p></div></div>
+        <label class="chart-mode">Show<select id="chartMode"><option value="running">Running average</option><option value="recent">Last 10 games average</option></select></label>
+        <p id="chartScaleNote" class="field-help"></p>
         <div id="averageChart"></div>
       </section>
       <details id="statsPeriodPanel" class="panel stats-disclosure" hidden><summary>Compare with the previous period</summary><div id="periodComparison"></div></details>
@@ -220,11 +227,6 @@
           <span class="stat-label">Open frames / game</span>
           <strong id="statOpenAvg" class="stat-value">—</strong>
           <span id="statOpenRateDetail" class="stat-detail">0% open-frame rate</span>
-        </article>
-        <article class="stat-card">
-          <span class="stat-label">Closed frame %</span>
-          <strong id="statClosedFramePct" class="stat-value">—</strong>
-          <span id="statClosedFrameDetail" class="stat-detail">No standard games in these filters</span>
         </article>
         <article class="stat-card">
           <span class="stat-label">Clean games</span>
@@ -283,13 +285,13 @@
         <div id="leaderboardSignedOut" class="empty-state">
           <div class="empty-icon">☁️</div>
           <strong>Cloud sync is optional</strong>
-          <span>Connect a free Firebase account to sync your games across devices and join private leaderboards.</span>
-          <button id="leaderboardConnectBtn" class="btn primary" type="button">Set up cloud sync</button>
+          <span>Create a free account to sync your games across devices and join private leaderboards.</span>
+          <button id="leaderboardConnectBtn" class="btn primary" type="button">Sign in / create account</button>
         </div>
         <div id="leaderboardNoGroup" class="empty-state hidden">
           <div class="empty-icon">🏆</div>
           <strong>No bowling group yet</strong>
-          <span>Create a group or join with a friend’s invite code from Account &amp; sync.</span>
+          <span>Create a group or join with a friend’s invite code in Profile → Cloud.</span>
           <button id="leaderboardManageGroupsBtn" class="btn secondary" type="button">Manage groups</button>
         </div>
         <div id="leaderboardContent" class="hidden">
@@ -317,7 +319,7 @@
     </main>
 
     <footer>
-      <span>Bowling Tracker · v24</span>
+      <span id="appVersion">Bowling Tracker</span>
       <span id="offlineStatus">Checking offline support…</span>
     </footer>
   </div>
@@ -389,9 +391,8 @@
       </div>
 
       <div id="cloudConfigMissing" class="settings-section">
-        <h3>Firebase connection needed</h3>
-        <p>This build is cloud-ready, but it still needs the Firebase configuration from your own free project. Paste that configuration into <code>firebase-config.js</code>, then upload the updated files to GitHub.</p>
-        <p class="small-note">The Firebase web configuration is designed to live in client code. Access to your bowling data is controlled by Authentication and Firestore Security Rules.</p>
+        <h3>Cloud sync is unavailable</h3>
+        <p>Your games can still be saved on this device. Contact the app owner if this continues.</p>
       </div>
 
       <div id="cloudOfflineNotice" class="notice cloud-notice hidden">
@@ -400,7 +401,7 @@
 
       <div id="cloudSignedOut" class="settings-section hidden">
         <h3>Sign in or create an account</h3>
-        <p>Use the same account on another phone or computer to pull down your bowling history. Each signed-in account gets its own isolated offline history on this browser.</p>
+        <p>Use the same account on another phone or computer to access your bowling history. Each account keeps its history separate on this device.</p>
         <div class="cloud-auth-grid">
           <label>
             <span>Leaderboard name</span>
@@ -480,7 +481,7 @@
 
         <div class="settings-section">
           <h3>Cloud backup</h3>
-          <p>Download a JSON backup directly from Firebase. The games and deletion history in this file are compatible with the regular Import backup tool.</p>
+          <p>Download a backup of your cloud history. The games and deletion history in this file are compatible with the regular Import backup tool.</p>
           <div class="button-row">
             <button id="downloadCloudBackupBtn" class="btn secondary" type="button">Download cloud backup</button>
           </div>
@@ -488,7 +489,7 @@
 
         <div class="settings-section danger-zone">
           <h3>Delete cloud account</h3>
-          <p>Permanently deletes your Firebase login, private cloud games, cloud profile, and your own leaderboard entries. Your local bowling history stays on this device. Shared groups remain available to other members.</p>
+          <p>Permanently deletes your account, private cloud games, cloud profile, and your own leaderboard entries. Your local bowling history stays on this device. Shared groups remain available to other members.</p>
           <label>
             <span>Current password</span>
             <input id="deleteAccountPasswordInput" type="password" autocomplete="current-password" placeholder="Required to confirm deletion">
@@ -528,6 +529,7 @@
   </dialog>
   <div id="undoToast" class="undo-toast hidden" role="status"><span id="undoMessage">Game deleted.</span><button id="undoDeleteBtn" class="btn secondary compact" type="button">Undo</button></div>
 
+  <script src="./version.js" defer></script>
   <script src="./balls.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./firebase-config.js" defer></script>

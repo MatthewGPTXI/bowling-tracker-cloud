@@ -568,3 +568,8 @@ button:disabled { opacity: .45; cursor: default; }
 .advanced-options[open] summary { margin-bottom: .85rem; }
 .advanced-options label { display: grid; gap: .4rem; }
 .advanced-options label + label { margin-top: 1rem; }
+
+.chart-mode { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.chart-mode select { width: auto; max-width: 100%; }
+
+@media (min-width: 901px) { .stats-grid.stats-overview { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
