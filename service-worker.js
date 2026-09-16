@@ -18,7 +18,10 @@ const APP_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS)));
+  // A new offline cache must not reuse old files from the HTTP cache.
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) =>
+    cache.addAll(APP_ASSETS.map(asset => new Request(asset, { cache: 'reload' })))
+  ));
   self.skipWaiting();
 });
 
