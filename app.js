@@ -37,6 +37,7 @@
   let offlineCacheReady = false;
   let selectedPhotoUrl = null;
   let activeProfileName = 'Bowler';
+  let ballInventory = [];
 
   const $ = (id) => document.getElementById(id);
 
@@ -173,8 +174,61 @@
   function renderBallOptions() {
     const names = ballNames(), selected = $('statsBall').value;
     $('ballOptions').innerHTML = names.map(name => `<option value="${escapeHtml(name)}"></option>`).join('');
+    document.querySelectorAll('[data-ball-select]').forEach(input => Balls.fillSelect(input));
     $('statsBall').innerHTML = '<option value="">All balls</option><option value="none">No ball recorded</option>' + names.map(name => `<option value="ball:${escapeHtml(ballKey(name))}">${escapeHtml(name)}</option>`).join('');
     $('statsBall').value = selected === 'none' || names.some(name => 'ball:'+ballKey(name) === selected) ? selected : '';
+  }
+
+  function getBallInventory() {
+    // Legacy game tags seed the list, but never override explicit edits/removals.
+    return Balls.mergeInventory(ballNames().map(name => ({name, updatedAt: 0})), ballInventory);
+  }
+
+  async function loadBallInventory() {
+    const targetDb = db;
+    const records = await getSettingFromDb(targetDb, 'ballInventory');
+    if (db !== targetDb) return;
+    ballInventory = Balls.mergeInventory(records);
+    await mergeBallInventory([]);
+  }
+
+  function mergeBallInventory(records, expectedUid = activeLocalScope.uid) {
+    if (expectedUid !== activeLocalScope.uid) return Promise.resolve(false);
+    const targetDb = db;
+    const seeds = getBallInventory();
+    // Read and merge in the same transaction to preserve edits made during sync.
+    return new Promise((resolve, reject) => {
+      const tx = targetDb.transaction(SETTINGS_STORE, 'readwrite');
+      const store = tx.objectStore(SETTINGS_STORE);
+      const request = store.get('ballInventory');
+      let merged;
+      request.onsuccess = () => {
+        merged = Balls.mergeInventory(seeds, request.result?.value, records);
+        store.put({key: 'ballInventory', value: merged});
+      };
+      tx.oncomplete = () => {
+        if (db !== targetDb) { resolve(false); return; }
+        ballInventory = merged;
+        renderBallOptions();
+        window.dispatchEvent(new CustomEvent('bowling:inventory-changed'));
+        resolve(true);
+      };
+      tx.onabort = tx.onerror = () => reject(tx.error || new Error('Could not save ball inventory.'));
+    });
+  }
+
+  async function editBallInventory(name, previousName = '', remove = false) {
+    if (!api.ready) throw new Error('Your profile is still loading. Try again in a moment.');
+    name = cleanBall(name);
+    const current = getBallInventory();
+    if (!name || name.length > 100) throw new Error('Enter a ball name from 1 to 100 characters.');
+    if (!remove && current.some(row => !row.removed && ballKey(row.name) === ballKey(name) && ballKey(row.name) !== ballKey(previousName))) throw new Error('That ball is already in your inventory.');
+    const updatedAt = Math.max(Date.now(), ...current.map(row => row.updatedAt + 1));
+    const changes = [{name, updatedAt, removed: remove}];
+    if (previousName && ballKey(previousName) !== ballKey(name)) changes.push({name: previousName, updatedAt, removed: true});
+    const saved = await mergeBallInventory(changes);
+    if (!saved) throw new Error('The profile changed. Please try again.');
+    emitDataChanged({type: 'inventory'});
   }
   function applySeriesBall() {
     const value = cleanBall($('seriesBall').value);
@@ -348,6 +402,8 @@
     if (sourceProfileName && !await getSettingFromDb(targetDb, 'profileName')) {
       await setSettingOnDb(targetDb, 'profileName', sourceProfileName);
     }
+    const inventory = Balls.mergeInventory(await getSettingFromDb(sourceDb, 'ballInventory'), await getSettingFromDb(targetDb, 'ballInventory'));
+    await setSettingOnDb(targetDb, 'ballInventory', inventory);
   }
 
   async function refreshFromActiveDatabase() {
@@ -360,6 +416,10 @@
     $('editSessionDialog').close();
     games = await getAllGames();
     editingGameId = null;
+    ballInventory = [];
+    await loadBallInventory();
+    $('seriesRows').innerHTML = '';
+    Balls.fillSelect($('seriesBall'), '');
     await loadProfileName(true);
     restoringDraft = true;
     resetEntryForm({ preserveDate: false, preserveSession: false });
@@ -1249,6 +1309,7 @@
       version: APP_VERSION,
       exportedAt: new Date().toISOString(),
       profileName: activeProfileName,
+      ballInventory: getBallInventory(),
       games: [...games].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       tombstones
     };
@@ -1312,8 +1373,11 @@
       const current = await getAllFromDb(targetDb,GAME_STORE);
       if (targetDb !== db) return;
       const rows = buildImportPlan(imported,deleted,current,tombstones);
-      pendingImport = {database:targetDb,rows,snapshot:JSON.stringify([current,tombstones])};
+      const inventory = payload.ballInventory || payload.profile?.ballInventory || [];
+      if (!Array.isArray(inventory) || inventory.some(row => Balls.mergeInventory([row]).length !== 1)) throw new Error('Invalid ball inventory in backup.');
+      pendingImport = {database:targetDb,rows,inventory,snapshot:JSON.stringify([current,tombstones])};
       $('importPreviewSummary').textContent = `${rows.filter(r=>r.kind==='addition').length} additions · ${rows.filter(r=>r.kind==='duplicate').length} duplicates (skipped) · ${rows.filter(r=>r.kind==='conflict').length} conflicts`;
+      if (inventory.length) $('importPreviewSummary').textContent += ' · Saved ball inventory will be merged';
       $('importPreviewRows').innerHTML = rows.map(r => `<div class="import-row"><strong>${escapeHtml(r.game?.date || r.local?.date || '')} · ${r.game ? r.game.score+' points · '+scoringLabel(r.game) : 'Backup deletion'}</strong>${r.game ? `<p>Backup balls: ${escapeHtml(Balls.summary(r.game))}</p>` : ''}<p>${r.kind}${r.local ? ' · Current: '+r.local.score+' points · '+scoringLabel(r.local) : r.tombstone ? ' · Deleted on this device' : ''}</p>${r.local ? `<p>Current balls: ${escapeHtml(Balls.summary(r.local))}</p>` : ''}${r.kind==='conflict' ? `<label>Resolution<select data-import-id="${r.id}"><option value="keep">Keep current data</option><option value="backup">${r.deletion ? 'Apply backup deletion' : 'Use backup game'}</option></select></label>` : ''}</div>`).join('');
       setStatus($('importPreviewStatus'),''); $('importPreviewDialog').showModal();
     } catch (error) { setStatus(dom.settingsStatus,`Import failed: ${error.message}`,'error'); }
@@ -1334,8 +1398,10 @@
       const deletes = selected.filter(r=>r.deletion).map(r=>({...r.deletion,updatedAt:Math.max(now,r.deletion.updatedAt+1,Number(r.local?.updatedAt||0)+1)}));
       await commitGames(upserts,deletes,plan.database);
       if (db !== plan.database) return;
+      if (plan.inventory?.length) await mergeBallInventory(plan.inventory);
+      if (db !== plan.database) return;
       games = await getAllGames(); pendingImport = null; $('importPreviewDialog').close(); renderAll();
-      if (selected.length) emitDataChanged({type:'bulk'});
+      if (selected.length || plan.inventory?.length) emitDataChanged({type:'bulk'});
       setStatus(dom.settingsStatus,`Imported ${upserts.length} games and applied ${deletes.length} reviewed deletions.`,'success');
     } catch (error) { setStatus($('importPreviewStatus'),error.message,'error'); }
     finally { mutationBusy = false; $('confirmImportBtn').disabled = false; }
@@ -1368,6 +1434,8 @@
     const refreshed = await getAllFromDb(targetDb, GAME_STORE);
     if (db !== targetDb) return;
     games = refreshed;
+    await mergeBallInventory([], expectedUid);
+    if (db !== targetDb) return;
     renderAll();
   }
 
@@ -1448,7 +1516,7 @@
       <label>Strikes<input data-field="strikes" type="number" min="0" max="12" step="1" inputmode="numeric" required></label>
       <label>Strike opportunities<input data-field="strikeOpp" type="number" min="10" max="12" step="1" inputmode="numeric" value="10" required></label>
       <label class="series-notes">Notes <small>optional</small><input data-field="notes" type="text"></label>
-    </div><details class="advanced-options" data-ball-advanced><summary>Advanced</summary><div class="ball-editor" data-ball-editor><div class="ball-usage-row" data-ball-first><label class="ball-name-field">Ball <small>optional</small><input data-field="ball" type="text" list="ballOptions" maxlength="100" placeholder="Choose or type a ball"></label></div></div></details><button class="text-btn danger-text remove-series-row" type="button">Remove game</button>`;
+    </div><details class="advanced-options" data-ball-advanced><summary>Advanced</summary><div class="ball-editor" data-ball-editor><div class="ball-usage-row" data-ball-first><label class="ball-name-field">Ball <small>optional</small><select data-field="ball" data-ball-select><option value="">No ball selected</option></select></label></div></div></details><button class="text-btn danger-text remove-series-row" type="button">Remove game</button>`;
     row.querySelector('.remove-series-row').addEventListener('click', () => {
       if ($('seriesRows').children.length > 1) { row.remove(); numberSeriesRows(); updateSeriesPreview(); persistDrafts(); }
     });
@@ -1461,7 +1529,7 @@
       const opp = row.querySelector('[data-field="strikeOpp"]');
       if (+event.target.value > +opp.value) opp.value = Math.min(12, +event.target.value);
     });
-    row.querySelector('[data-field="ball"]').value = $('seriesBall').value;
+    Balls.fillSelect(row.querySelector('[data-field="ball"]'), $('seriesBall').value);
     Balls.attach(row.querySelector('[data-field="ball"]'), row.querySelector('[data-ball-editor]'), row.querySelector('[data-ball-first]'), document, persistDrafts);
     $('seriesRows').appendChild(row);
     numberSeriesRows();
@@ -1483,7 +1551,7 @@
     $('seriesDate').value = dom.date.value || todayLocal();
     $('seriesName').value = dom.sessionName.value;
     $('seriesType').value = dom.sessionType.value;
-    $('seriesBall').value = dom.ball.value;
+    Balls.fillSelect($('seriesBall'), dom.ball.value);
     $('seriesNoTap').value = dom.noTap.value === 'no-tap' ? 'no-tap' : 'standard';
     $('seriesAdvanced').open = !!dom.ball.value || $('seriesNoTap').value === 'no-tap';
     $('seriesRows').innerHTML = '';
@@ -1746,7 +1814,7 @@
         editingGameId = draft.values[0]; entryBaseGame = draft.base || null;
         ['date','sessionName','sessionType','score','openFrames','strikes','strikeOpp','notes','ball'].forEach((key,i) => dom[key].value = draft.values[i+1] ?? '');
         dom.noTap.value = draft.values[10] === 'no-tap' ? 'no-tap' : 'standard';
-        Balls.set(dom.ball, Array.isArray(draft.values[11]) ? draft.values[11] : [{name: dom.ball.value}]);
+        Balls.set(dom.ball, Array.isArray(draft.values[11]) ? draft.values[11] : [{name: draft.values[9] || ''}]);
         entryBaseline = draft.baseline;
         // Older drafts lack ball and/or scoring fields. Keep their original values.
         try {
@@ -1764,7 +1832,7 @@
       } else if (kind === 'series' && Array.isArray(draft.rows)) {
         if (editingGameId) { setStatus(dom.entryStatus,'Finish or cancel your game edit before recovering a series.'); return; }
         dialogScope = db; $('seriesRows').innerHTML = '';
-        $('seriesDate').value = draft.date; $('seriesName').value = draft.name; $('seriesType').value = sessionType({sessionType:draft.type}); $('seriesBall').value = draft.ball || ''; $('seriesAdvanced').open = !!draft.ball;
+        $('seriesDate').value = draft.date; $('seriesName').value = draft.name; $('seriesType').value = sessionType({sessionType:draft.type}); Balls.fillSelect($('seriesBall'), draft.ball || ''); $('seriesAdvanced').open = !!draft.ball;
         $('seriesNoTap').value = draft.noTap === true ? 'no-tap' : 'standard';
         $('seriesAdvanced').open = !!draft.ball || draft.noTap === true;
         draft.rows.forEach(values => {
@@ -1992,6 +2060,9 @@
     getDefaultBowler: async () => activeProfileName || await getSetting('profileName') || await getSetting('defaultBowler') || 'Bowler',
     getProfileName: () => activeProfileName || 'Bowler',
     setProfileName,
+    getBallInventory,
+    editBallInventory,
+    mergeBallInventory,
     setSyncStatus,
     getLeaderboardSummary: (bowlerName) => clone(leaderboardSummaryForBowler(bowlerName)),
     getLocalScopeInfo,
@@ -2027,6 +2098,7 @@
       db = await openInitialDatabase();
       games = await getAllGames();
       await loadProfileName();
+      await loadBallInventory();
       renderAll();
       showDraftNotice();
       api.ready = true;

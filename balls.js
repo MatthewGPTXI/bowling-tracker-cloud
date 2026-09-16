@@ -5,6 +5,30 @@
   const key = value => clean(value).toLowerCase();
   const limit = 10;
 
+  // Keep removals so an offline device cannot bring an old inventory item back.
+  function mergeInventory(...sources) {
+    const records = new Map();
+    for (const source of sources) for (const row of Array.isArray(source) ? source : []) {
+      if (!row || typeof row.name !== 'string' || !clean(row.name) || clean(row.name).length > 100 ||
+          !Number.isSafeInteger(row.updatedAt) || row.updatedAt < 0) continue;
+      const next = {name: clean(row.name), updatedAt: row.updatedAt, removed: row.removed === true};
+      const previous = records.get(key(next.name));
+      if (!previous || next.updatedAt > previous.updatedAt || (next.updatedAt === previous.updatedAt &&
+          (Number(next.removed) > Number(previous.removed) || (next.removed === previous.removed && next.name > previous.name)))) records.set(key(next.name), next);
+    }
+    return [...records.values()].sort((a, b) => key(a.name).localeCompare(key(b.name)));
+  }
+
+  function fillSelect(input, selected = input.value, names) {
+    if (!input || input.tagName !== 'SELECT') { if (input) input.value = selected; return; }
+    names = names || window.BowlingApp?.getBallInventory?.().filter(row => !row.removed).map(row => row.name) || [];
+    const escape = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
+    const current = names.find(name => key(name) === key(selected));
+    const retained = selected && !current ? `<option value="${escape(selected)}">${escape(selected)} (not in inventory)</option>` : '';
+    input.innerHTML = '<option value="">No ball selected</option>' + names.map(name => `<option value="${escape(name)}">${escape(name)}</option>`).join('') + retained;
+    input.value = current || selected || '';
+  }
+
   function list(game) {
     const rows = Array.isArray(game?.balls) ? game.balls : clean(game?.ball) ? [{name: game.ball}] : [];
     return rows.map(row => ({name: clean(row?.name), frames: row?.frames ?? null}));
@@ -45,7 +69,7 @@
   function set(input, rows = []) {
     if (input.bowlingBallEditor) { input.bowlingBallEditor.set(rows); return; }
     input.bowlingBallDraft = (rows.length ? rows : [{name: '', frames: ''}]).map(row => ({name: row.name || '', frames: row.frames ?? ''}));
-    input.value = input.bowlingBallDraft[0].name;
+    fillSelect(input, input.bowlingBallDraft[0].name);
   }
 
   function fromDraft(rows, canonical = clean) {
@@ -90,7 +114,7 @@
       ...extras.map(row => ({name: row.name.value, frames: row.frame.validity?.badInput ? 'invalid' : row.frame.value}))];
     function refresh() {
       firstFrame.label.hidden = firstRemove.hidden = help.hidden = total.hidden = !expanded;
-      add.textContent = expanded ? '+ Add ball' : 'More balls / frames';
+      add.textContent = expanded ? '+ Select another ball' : 'More balls / frames';
       add.disabled = extras.length + 1 >= limit;
       const rows = fromDraft(raw());
       const warning = error(rows);
@@ -103,8 +127,8 @@
     function append(values = {}) {
       const row = create('div', 'ball-usage-row');
       const label = create('label', 'ball-name-field', 'Ball');
-      const name = create('input'); name.type = 'text'; name.maxLength = 100; name.setAttribute('list', 'ballOptions');
-      name.placeholder = 'Choose or type a ball'; name.value = values.name || '';
+      const name = create('select'); name.setAttribute('data-ball-select', '');
+      fillSelect(name, values.name || '');
       label.appendChild(name); row.appendChild(label);
       const frame = frameField(); frame.field.value = String(values.frames ?? ''); row.appendChild(frame.label);
       const remove = removeButton(); row.appendChild(remove);
@@ -119,7 +143,7 @@
     input.addEventListener('input', changed);
     firstRemove.addEventListener('click', () => {
       const next = extras.shift();
-      input.value = next?.name.value || ''; firstFrame.field.value = next?.frame.value || '';
+      fillSelect(input, next?.name.value || ''); firstFrame.field.value = next?.frame.value || '';
       if (next) next.row.remove();
       changed(); input.focus();
     });
@@ -134,7 +158,7 @@
       draft: raw,
       set(rows) {
         extras.forEach(row => row.row.remove()); extras = [];
-        input.value = rows[0]?.name || ''; firstFrame.field.value = String(rows[0]?.frames ?? '');
+        fillSelect(input, rows[0]?.name || ''); firstFrame.field.value = String(rows[0]?.frames ?? '');
         rows.slice(1).forEach(append);
         expanded = rows.length > 1 || rows.some(row => String(row.frames ?? '') !== '');
         refresh();
@@ -145,7 +169,7 @@
     return controller;
   }
 
-  const api = {clean, key, list, error, summary, comparable, draft, set, fromDraft, attach};
+  const api = {clean, key, list, error, summary, comparable, draft, set, fromDraft, attach, mergeInventory, fillSelect};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else window.BowlingBalls = api;
 })();
