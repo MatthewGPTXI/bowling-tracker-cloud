@@ -5,6 +5,8 @@
   const VIEW_ID = 'view-profile';
   const NAV_ID = 'nav-profile';
   let goalInputDirty = false;
+  let inventoryEditName = '';
+  let inventorySignature = '';
 
   const $ = id => document.getElementById(id);
   const app = () => window.BowlingApp;
@@ -110,6 +112,20 @@
         </div>
       </section>
 
+      <section class="panel" aria-labelledby="ballInventoryHeading">
+        <div class="section-heading"><div><p class="eyebrow">YOUR EQUIPMENT</p><h2 id="ballInventoryHeading">Ball inventory</h2><p class="section-copy">Choose from these balls when adding a game or series.</p></div></div>
+        <form id="ballInventoryForm" class="inventory-form">
+          <label>Ball name<input id="inventoryBallName" type="text" maxlength="100" required placeholder="e.g. Storm Concept" autocomplete="off"></label>
+          <button id="saveInventoryBall" class="btn primary" type="submit">Add ball</button>
+          <button id="cancelInventoryEdit" class="text-btn" type="button" hidden>Cancel</button>
+        </form>
+        <p id="inventoryEmpty" class="field-help">No balls yet. Add your first ball above.</p>
+        <ul id="ballInventoryList" class="inventory-list" aria-label="Your bowling balls"></ul>
+        <p class="field-help">Renaming or removing a ball leaves past game records unchanged. Saved ball names are included automatically.</p>
+        <p id="inventorySyncNote" class="field-help"></p>
+        <p id="inventoryStatus" class="status-text" role="status"></p>
+      </section>
+
       <section class="panel" aria-labelledby="goalAverageHeading">
         <div class="goal-heading">
           <div><p class="eyebrow">AVERAGE TARGET</p><h2 id="goalAverageHeading">Goal average</h2><p class="section-copy">Set the average you are working toward.</p></div>
@@ -170,6 +186,8 @@
       $('goalAverageInput').addEventListener('keydown', event => { if (event.key === 'Enter') saveGoal(); });
       $('saveGoalAverageBtn').addEventListener('click', saveGoal);
       $('clearGoalAverageBtn').addEventListener('click', clearGoal);
+      $('ballInventoryForm').addEventListener('submit', saveInventoryBall);
+      $('cancelInventoryEdit').addEventListener('click', resetInventoryEditor);
     }
 
     moveSettingsButtons();
@@ -270,6 +288,7 @@
 
   function renderProfile(forceInput = false) {
     if (!ensureProfileUI()) return;
+    renderInventory();
     const average = currentAverage();
     const goal = readGoal();
     const games = standardGames();
@@ -304,6 +323,68 @@
       help.textContent = goal === null
         ? `Green means a standard game is above your current running average${average === null ? '' : ` (${average.toFixed(1)})`}; red means below it. Set a Goal average in Profile to use a fixed target instead. No-tap games are excluded.`
         : `Your Goal average (${goal.toFixed(1)}) is the color benchmark: at/above goal is green and below goal is red. Your current running average${average === null ? ' is not available yet' : ` is ${average.toFixed(1)}`}. No-tap games are excluded.`;
+    }
+  }
+
+  function resetInventoryEditor() {
+    inventoryEditName = '';
+    $('inventoryBallName').value = '';
+    $('saveInventoryBall').textContent = 'Add ball';
+    $('cancelInventoryEdit').hidden = true;
+  }
+
+  async function saveInventoryBall(event) {
+    event.preventDefault();
+    const scope = scopeKey();
+    const editing = !!inventoryEditName;
+    $('saveInventoryBall').disabled = true;
+    try {
+      await app().editBallInventory($('inventoryBallName').value, inventoryEditName);
+      if (scope !== scopeKey()) return;
+      resetInventoryEditor();
+      $('inventoryStatus').textContent = editing ? 'Ball renamed. Past games keep their original ball name.' : 'Ball added to your inventory.';
+      $('inventoryBallName').focus();
+    } catch (error) {
+      if (scope === scopeKey()) $('inventoryStatus').textContent = error.message;
+    } finally { $('saveInventoryBall').disabled = !app()?.ready; }
+  }
+
+  function renderInventory() {
+    $('saveInventoryBall').disabled = !app()?.ready;
+    $('inventorySyncNote').textContent = window.BowlingCloud?.isSignedIn?.()
+      ? 'Your inventory syncs with your account. Offline changes sync when you reconnect.'
+      : 'Saved with this profile on this device. Sign in to sync your inventory.';
+    const rows = (app()?.getBallInventory?.() || []).filter(row => !row.removed);
+    const signature = JSON.stringify([scopeKey(), rows]);
+    if (inventorySignature === signature) return;
+    inventorySignature = signature;
+    $('inventoryEmpty').hidden = rows.length > 0;
+    const list = $('ballInventoryList');
+    list.replaceChildren();
+    for (const row of rows) {
+      const item = document.createElement('li');
+      const name = document.createElement('strong'); name.textContent = row.name; item.appendChild(name);
+      const actions = document.createElement('div'); actions.className = 'inventory-actions'; item.appendChild(actions);
+      const rename = document.createElement('button'); rename.type = 'button'; rename.className = 'text-btn'; rename.textContent = 'Rename';
+      rename.setAttribute('aria-label', `Rename ${row.name}`);
+      rename.addEventListener('click', () => {
+        inventoryEditName = row.name; $('inventoryBallName').value = row.name;
+        $('saveInventoryBall').textContent = 'Save name'; $('cancelInventoryEdit').hidden = false;
+        $('inventoryStatus').textContent = ''; $('inventoryBallName').focus();
+      });
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'text-btn danger-text'; remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove ${row.name}`);
+      remove.addEventListener('click', async () => {
+        const scope = scopeKey(); remove.disabled = true;
+        try {
+          await app().editBallInventory(row.name, '', true);
+          if (scope !== scopeKey()) return;
+          if (inventoryEditName === row.name) resetInventoryEditor();
+          $('inventoryStatus').textContent = 'Ball removed from inventory. Past games are unchanged.';
+        } catch (error) { if (scope === scopeKey()) $('inventoryStatus').textContent = error.message; }
+        finally { remove.disabled = false; }
+      });
+      actions.append(rename, remove); list.appendChild(item);
     }
   }
 
@@ -387,6 +468,12 @@
     refresh();
   });
   window.addEventListener('bowling:profile-options-changed', refresh);
+  window.addEventListener('bowling:inventory-changed', refresh);
+  window.addEventListener('bowling:local-account-changed', () => {
+    resetInventoryEditor();
+    $('inventoryStatus').textContent = '';
+    renderInventory();
+  });
   window.addEventListener('storage', event => {
     if (event.key === goalStorageKey()) {
       goalInputDirty = false;

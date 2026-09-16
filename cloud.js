@@ -684,6 +684,24 @@
       const app = await waitForBowlingApp();
       if (!isCurrentAccount()) return;
       if (app.getLocalScopeInfo && app.getLocalScopeInfo().uid !== uid) return;
+      if (app.getBallInventory) {
+        const inventory = app.getBallInventory();
+        const ref = modules.doc(firestore, 'users', uid);
+        const merged = await modules.runTransaction(firestore, async transaction => {
+          const snapshot = await transaction.get(ref);
+          if (!isCurrentAccount()) return null;
+          const remote = snapshot.exists() ? snapshot.data().ballInventory : [];
+          const result = window.BowlingBalls.mergeInventory(remote, inventory);
+          if (JSON.stringify(result) !== JSON.stringify(remote || [])) transaction.set(ref, {ballInventory: result}, {merge: true});
+          return result;
+        });
+        if (!isCurrentAccount()) return;
+        if (merged) {
+          await app.mergeBallInventory(merged, uid);
+          if (!isCurrentAccount()) return;
+          if (profile) profile.ballInventory = merged;
+        }
+      }
       const localGames = app.getGames();
       const localTombstones = await app.getTombstones();
       if (!isCurrentAccount()) return;
@@ -1335,6 +1353,7 @@
           displayName: profile?.displayName || currentUser.displayName || ''
         },
         profile: profile ? { ...profile } : null,
+        ballInventory: (await modules.getDoc(await userProfileRef())).data()?.ballInventory || [],
         games: games.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
         tombstones: tombstones.sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0)),
         groupMemberships: memberships

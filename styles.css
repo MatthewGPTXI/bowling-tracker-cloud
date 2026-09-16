@@ -573,3 +573,16 @@ button:disabled { opacity: .45; cursor: default; }
 .chart-mode select { width: auto; max-width: 100%; }
 
 @media (min-width: 901px) { .stats-grid.stats-overview { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* Profile ball inventory */
+.inventory-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.inventory-form label { flex: 1 1 200px; min-width: 0; }
+.inventory-list { list-style: none; padding: 0; margin: 16px 0; }
+.inventory-list li { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.inventory-list strong { min-width: 0; overflow-wrap: anywhere; }
+.inventory-actions { display: flex; flex-shrink: 0; gap: 10px; }
+.inventory-actions button { min-height: 44px; }
+.ball-name-field select { width: 100%; min-width: 0; }
+@media (max-width: 380px) {
+  .inventory-list li { align-items: flex-start; flex-direction: column; gap: 0; }
+}

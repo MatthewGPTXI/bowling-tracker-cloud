@@ -138,3 +138,13 @@ No Firebase configuration or security-rule changes are needed.
 ## Startup repair (v16)
 
 Fixed an undefined variable in the IndexedDB open handler that prevented app startup since v13. Existing records, session types, ball tags, Firebase config and rules are preserved. Startup failure now stops sync with a clear message. Regression: `node tests/startup.cjs`. The footer identifies v16 so installed-app users can verify the updated cache is active.
+
+### v30 — Profile ball inventory
+
+- Profile → Ball inventory lets each bowler add, rename, and remove ball names.
+- Advanced entry uses inventory dropdowns for single games, series defaults, and additional balls. Optional frame counts and per-game overrides still work.
+- Existing game tags populate the inventory. Renaming/removing inventory items never rewrites historical games; editing a past game or recovering a draft retains its original selection, even if it is no longer in the inventory. Statistics continue to use recorded game names.
+- Inventory is stored in the active profile's IndexedDB database, included in JSON backups/imports, and synced privately through the existing Firebase user profile. Per-name timestamps and removal markers preserve independent additions and prevent stale devices from resurrecting removed names. Same-name concurrent changes use the newest timestamp, with removal winning ties.
+- The shared release/cache version is 30. No update prompt was added.
+
+Validation: `node tests/ball-inventory.cjs` covers migration, edits, storage failures, historical records, legacy drafts, and account isolation. `node tests/cloud-concurrency.cjs` also covers inventory merging, offline retries, and removal protection. Run all regression suites with `for test in tests/*.cjs; do node "$test" || exit 1; done`.

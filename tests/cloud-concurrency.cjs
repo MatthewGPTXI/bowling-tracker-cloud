@@ -56,5 +56,25 @@ const section=(start,end)=>source.slice(source.indexOf('  '+start),source.indexO
  local.set(8,later);c.queueLocalChange({type:'upsert',game:later,bases:[allocation]},'a');remote.set(8,{...allocation,notes:'Changed on another device',updatedAt:11});
  await c.performSyncAll();assert(c.pendingSyncReview);assert.equal(remote.get(8).balls[1].frames,5);
  await c.performSyncAll('Reviewed sync',{'version:8':'remote'});assert.equal(local.get(8).balls[1].frames,5);assert.equal(local.get(8).notes,'Changed on another device');
- console.log('PASS: sync, durable retries, conflict protection, no-tap and multi-ball/frame-only edits, account isolation and stale leaderboards.');
+ // Profile inventory merges independently from game history and game conflicts.
+ const Balls=c.window.BowlingBalls;
+ let inventory=[{name:'Concept',updatedAt:10}], cloudProfile={displayName:'Matthew',ballInventory:[{name:'Spare',updatedAt:20}]};
+ const gameTransaction=c.modules.runTransaction;
+ c.modules.doc=(_,a,uid,b,id)=>b ? id : 'profile:'+uid;
+ c.modules.runTransaction=async(_,callback)=>{
+   if(fail)throw new Error('Simulated connection loss');
+   return gameTransaction(_,tx=>callback({get:ref=>ref==='profile:a'?Promise.resolve({exists:()=>true,data:()=>cloudProfile}):tx.get(ref),set:(ref,data)=>{if(ref==='profile:a')cloudProfile={...cloudProfile,...data};else tx.set(ref,data)}}));
+ };
+ app.getLocalScopeInfo=()=>({uid:'a'});
+ app.getBallInventory=()=>inventory;
+ app.mergeBallInventory=async(rows,uid)=>{assert.equal(uid,'a');inventory=Balls.mergeInventory(inventory,rows)};
+ c.profile={displayName:'Matthew'};
+ await c.performSyncAll(); assert.equal(inventory.length,2); assert.equal(cloudProfile.ballInventory.length,2); assert.equal(cloudProfile.displayName,'Matthew');
+ inventory=Balls.mergeInventory(inventory,[{name:'Concept',updatedAt:30,removed:true}]);
+ c.navigator.onLine=false;await c.performSyncAll();assert(!cloudProfile.ballInventory.find(x=>x.name==='Concept').removed);
+ c.navigator.onLine=true;await c.performSyncAll();assert(cloudProfile.ballInventory.find(x=>x.name==='Concept').removed);
+ inventory=[{name:'Concept',updatedAt:10}];await c.performSyncAll();assert(inventory.find(x=>x.name==='Concept').removed,'Stale device cannot resurrect removed ball');
+ inventory=Balls.mergeInventory(inventory,[{name:'Offline addition',updatedAt:40}]);fail=true;await c.performSyncAll();assert(inventory.some(x=>x.name==='Offline addition'));fail=false;await c.performSyncAll();assert(cloudProfile.ballInventory.some(x=>x.name==='Offline addition'));
+ c.currentUser={uid:'b'};await c.performSyncAll();assert.equal(cloudProfile.ballInventory.length,3,'Wrong local account must not sync inventory');
+ console.log('PASS: sync, durable retries, conflict protection, no-tap and multi-ball/frame-only edits, profile inventory merge/removal/offline recovery, account isolation and stale leaderboards.');
 })().catch(e=>{console.error(e);process.exitCode=1});
