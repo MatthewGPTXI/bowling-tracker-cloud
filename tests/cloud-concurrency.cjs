@@ -75,6 +75,25 @@ const section=(start,end)=>source.slice(source.indexOf('  '+start),source.indexO
  c.navigator.onLine=true;await c.performSyncAll();assert(cloudProfile.ballInventory.find(x=>x.name==='Concept').removed);
  inventory=[{name:'Concept',updatedAt:10}];await c.performSyncAll();assert(inventory.find(x=>x.name==='Concept').removed,'Stale device cannot resurrect removed ball');
  inventory=Balls.mergeInventory(inventory,[{name:'Offline addition',updatedAt:40}]);fail=true;await c.performSyncAll();assert(inventory.some(x=>x.name==='Offline addition'));fail=false;await c.performSyncAll();assert(cloudProfile.ballInventory.some(x=>x.name==='Offline addition'));
+
+ // Alley-only edits use the same durable conflict handling as score edits.
+ assert(!c.sameGameContent({...base,alley:'A'},{...base,alley:'B'}));
+ assert(c.sameGameContent(base,{...base,alley:''}));
+ const beforeAlley=local.get(8), withAlley={...beforeAlley,alley:'Pasadena Lanes',updatedAt:20};
+ local.set(8,withAlley);c.queueLocalChange({type:'upsert',game:withAlley,bases:[beforeAlley]},'a');
+ c.navigator.onLine=false;await c.performSyncAll();assert.equal(c.readOutbox('a')[8].data.alley,'Pasadena Lanes');
+ c.navigator.onLine=true;await c.performSyncAll();assert.equal(remote.get(8).alley,'Pasadena Lanes');
+ let alleys=[{name:'Home Lanes',updatedAt:10}];cloudProfile.alleyInventory=[{name:'Away Lanes',updatedAt:20}];
+ app.getAlleyInventory=()=>alleys;
+ app.mergeAlleyInventory=async(rows,uid)=>{assert.equal(uid,'a');alleys=Balls.mergeInventory(alleys,rows)};
+ await c.performSyncAll();assert.equal(alleys.length,2);assert.equal(cloudProfile.alleyInventory.length,2);
+ assert.equal(cloudProfile.ballInventory.length,3,'Alley sync preserves balls');
+ alleys=Balls.mergeInventory(alleys,[{name:'Home Lanes',updatedAt:30,removed:true}]);
+ c.navigator.onLine=false;await c.performSyncAll();assert(!cloudProfile.alleyInventory.find(x=>x.name==='Home Lanes').removed);
+ c.navigator.onLine=true;await c.performSyncAll();assert(cloudProfile.alleyInventory.find(x=>x.name==='Home Lanes').removed);
+ alleys=[{name:'Home Lanes',updatedAt:10}];await c.performSyncAll();assert(alleys.find(x=>x.name==='Home Lanes').removed);
+ const beforeWrongAccount=JSON.stringify(cloudProfile.alleyInventory);
  c.currentUser={uid:'b'};await c.performSyncAll();assert.equal(cloudProfile.ballInventory.length,3,'Wrong local account must not sync inventory');
- console.log('PASS: sync, durable retries, conflict protection, no-tap and multi-ball/frame-only edits, profile inventory merge/removal/offline recovery, account isolation and stale leaderboards.');
+ assert.equal(JSON.stringify(cloudProfile.alleyInventory),beforeWrongAccount);
+ console.log('PASS: alley sync, durable location edits, inventory isolation, sync, durable retries, conflict protection, no-tap and multi-ball/frame-only edits, profile inventory merge/removal/offline recovery, account isolation and stale leaderboards.');
 })().catch(e=>{console.error(e);process.exitCode=1});

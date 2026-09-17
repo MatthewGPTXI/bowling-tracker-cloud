@@ -148,3 +148,13 @@ Fixed an undefined variable in the IndexedDB open handler that prevented app sta
 - The shared release/cache version is 30. No update prompt was added.
 
 Validation: `node tests/ball-inventory.cjs` covers migration, edits, storage failures, historical records, legacy drafts, and account isolation. `node tests/cloud-concurrency.cjs` also covers inventory merging, offline retries, and removal protection. Run all regression suites with `for test in tests/*.cjs; do node "$test" || exit 1; done`.
+
+## v31 — Saved alleys
+
+Manage your locations in **Profile → Alleys** with Add, Rename, and Remove. Choose an optional alley under **Advanced** when entering a game or series. A series selection applies to every game in that entry; edit individual saved games to change or clear it. Continuing an existing session uses its last game's alley, while starting a new session clears the selection.
+
+Game history shows the alley, session search includes it, and **Stats → Alley** filters averages, records, trends, and period comparisons by location. No-tap games remain excluded from standard statistics. Renaming or removing a saved alley preserves past game tags, which remain available in historical filters.
+
+Alley lists are isolated by account and sync alongside ball inventories, with removal records preventing stale devices from restoring deleted names. JSON backups include lists and tags; CSV exports include an Alley column. Existing backups and drafts without an alley remain compatible.
+
+Validation: run `for test in tests/*.cjs; do node "$test" || exit 1; done`. Alley coverage includes inventory lifecycle, storage failures, account isolation, draft recovery, series entry, filtering, backup/import, remote downloads, and durable offline edits.
