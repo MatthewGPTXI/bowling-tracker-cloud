@@ -912,7 +912,7 @@
     dom.closedFramePct.textContent = stats.count ? `${stats.closedFramePct.toFixed(1)}%` : '—';
     dom.closedFrameDetail.textContent = stats.count
       ? `${stats.totalClosed} / ${stats.totalFrames} frames closed`
-      : 'No standard games in these filters';
+      : 'No games match these filters';
 
     dom.cleanGames.textContent = stats.cleanGames;
     dom.cleanGamesDetail.textContent = `${stats.cleanRate.toFixed(1)}% of games`;
@@ -1252,7 +1252,7 @@
     dom.saveGameBtn.textContent = 'Save game';
     dom.cancelEditBtn.classList.add('hidden');
     dom.entryHeading.textContent = 'Add game';
-    dom.entrySubheading.textContent = 'Enter the numbers directly or use a scoreboard photo as a reference.';
+    dom.entrySubheading.textContent = 'Enter one game or a full series.';
     clearPhoto();
     updateSessionSuggestions();
     rememberEntry();
@@ -1284,7 +1284,7 @@
     dom.saveGameBtn.textContent = 'Update game';
     dom.cancelEditBtn.classList.remove('hidden');
     dom.entryHeading.textContent = 'Edit game';
-    dom.entrySubheading.textContent = 'Update the saved values, then tap Update game.';
+    dom.entrySubheading.textContent = 'Edit the details, then save your changes.';
     setEntryMode(false);
     setStatus(dom.entryStatus, 'Editing saved game.');
     rememberEntry();
@@ -1503,17 +1503,17 @@
 
   async function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) {
-      dom.offlineStatus.textContent = 'Offline install not supported in this browser';
+      dom.offlineStatus.textContent = 'Offline use is not supported by this browser';
       return;
     }
     try {
       await navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' });
       await navigator.serviceWorker.ready;
       offlineCacheReady = true;
-      dom.offlineStatus.textContent = navigator.onLine ? 'Online · offline cache ready' : 'Offline · local data available';
+      dom.offlineStatus.textContent = navigator.onLine ? 'Online · ready for offline use' : 'Offline · saved games available';
     } catch (error) {
       console.error(error);
-      dom.offlineStatus.textContent = 'Offline cache unavailable on this URL';
+      dom.offlineStatus.textContent = 'Offline use is unavailable on this page';
     }
   }
 
@@ -1794,8 +1794,8 @@
     const mode = $('chartMode').value === 'recent' ? 'recent' : 'running';
     const chartLabel = mode === 'recent' ? 'Last 10 games average' : 'Running average';
     $('chartDescription').textContent = mode === 'recent'
-      ? 'Average of up to 10 most recent games at each date, within the selected filters.'
-      : 'Your running average for the selected dates, session type, and ball.';
+      ? 'Average of up to 10 recent games at each date, within the selected filters.'
+      : 'Your running average within the selected filters.';
     const stats = progressStats(statsGames(), mode);
     const last5Count = Math.min(5, statsGames().length);
     $('last5Count').textContent = last5Count < 5 ? `${last5Count} of 5 games recorded` : 'Most recent 5 games';
@@ -1848,7 +1848,7 @@
 
   function renderHome() {
     const stats = calculateStats(games);
-    $('homeRecap').innerHTML = `<div><strong>${stats.count ? stats.average.toFixed(1) : '—'}</strong><span>Standard average</span></div><div><strong>${stats.count}</strong><span>Standard games</span></div>`;
+    $('homeRecap').innerHTML = `<div><strong>${stats.count ? stats.average.toFixed(1) : '—'}</strong><span>Average</span></div><div><strong>${stats.count}</strong><span>Games</span></div>`;
     const latest = buildSessions(games).sort(latestSessionOrder)[0];
     $('latestSessionShortcut').classList.toggle('hidden', !latest);
     if (latest) {
@@ -2101,7 +2101,7 @@
     });
     dom.saveDefaultBowlerBtn.addEventListener('click', async () => {
       if (activeLocalScope.kind === 'user') {
-        setStatus(dom.settingsStatus, 'While signed in, change your name under Cloud Sync → Leaderboard profile.', 'error');
+        setStatus(dom.settingsStatus, 'Change your name in Profile → Account & sync → Display name.', 'error');
         return;
       }
       const name = dom.defaultBowlerInput.value.trim() || 'Bowler';
@@ -2147,8 +2147,8 @@
       deferredInstallPrompt = null;
       dom.installBtn.classList.add('hidden');
     });
-    window.addEventListener('online', () => { dom.offlineStatus.textContent = offlineCacheReady ? 'Online · offline cache ready' : 'Online · offline cache not ready'; });
-    window.addEventListener('offline', () => { dom.offlineStatus.textContent = 'Offline · local data available'; });
+    window.addEventListener('online', () => { dom.offlineStatus.textContent = offlineCacheReady ? 'Online · ready for offline use' : 'Online · offline setup pending'; });
+    window.addEventListener('offline', () => { dom.offlineStatus.textContent = 'Offline · saved games available'; });
   }
 
   const api = {

@@ -53,6 +53,6 @@ const section = (start, end) => source.slice(source.indexOf('  ' + start), sourc
   assert.equal(local.offlineCacheReady, false, 'Registration alone does not mean assets are cached');
   activate(); await installing;
   assert.equal(local.offlineCacheReady, true);
-  assert.equal(local.dom.offlineStatus.textContent, 'Online · offline cache ready');
+  assert.equal(local.dom.offlineStatus.textContent, 'Online · ready for offline use');
   console.log('PASS: partial Firebase startup retries, concurrent initialization, offline/error indicators, and cache activation readiness.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

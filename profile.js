@@ -105,14 +105,16 @@
     return `
       <section class="panel" aria-labelledby="profileHeading">
         <div class="section-heading">
-          <div><p class="eyebrow">YOUR PROFILE</p><h2 id="profileHeading">Profile</h2><p class="section-copy">Your bowling identity, goal, account tools, and app settings in one place.</p></div>
+          <div><p class="eyebrow">YOUR PROFILE</p><h2 id="profileHeading">Profile</h2><p class="section-copy">Your account, equipment, and goals.</p></div>
         </div>
         <div class="profile-summary-grid">
           <div class="profile-summary-card"><span>Bowler</span><strong id="profileNameSummary">Bowler</strong><small id="profileScopeSummary">Current local profile</small></div>
-          <div class="profile-summary-card"><span>Current standard average</span><strong id="profileAverageSummary">—</strong><small id="profileAverageDetail">No standard games yet</small></div>
+          <div class="profile-summary-card"><span>Average</span><strong id="profileAverageSummary">—</strong><small id="profileAverageDetail">No games yet</small></div>
           <div class="profile-summary-card"><span>Goal average</span><strong id="profileGoalSummary">Not set</strong><small id="profileGoalProgress">Uses running average for game colors</small></div>
         </div>
       </section>
+
+
 
       <section class="panel" aria-labelledby="ballInventoryHeading">
         <div class="section-heading"><div><p class="eyebrow">YOUR EQUIPMENT</p><h2 id="ballInventoryHeading">Ball inventory</h2><p class="section-copy">Choose from these balls when adding a game or series.</p></div></div>
@@ -121,9 +123,9 @@
           <button id="saveInventoryBall" class="btn primary" type="submit">Add ball</button>
           <button id="cancelInventoryEdit" class="text-btn" type="button" hidden>Cancel</button>
         </form>
-        <p id="inventoryEmpty" class="field-help">No balls yet. Add your first ball above.</p>
+        <p id="inventoryEmpty" class="field-help">No balls added yet.</p>
         <ul id="ballInventoryList" class="inventory-list" aria-label="Your bowling balls"></ul>
-        <p class="field-help">Renaming or removing a ball leaves past game records unchanged. Saved ball names are included automatically.</p>
+        <p class="field-help">Renaming or removing a ball keeps past game tags unchanged.</p>
         <p id="inventorySyncNote" class="field-help"></p>
         <p id="inventoryStatus" class="status-text" role="status"></p>
       </section>
@@ -135,9 +137,9 @@
           <button id="saveAlleyInventoryAlley" class="btn primary" type="submit">Add alley</button>
           <button id="cancelAlleyInventoryEdit" class="text-btn" type="button" hidden>Cancel</button>
         </form>
-        <p id="alleyInventoryEmpty" class="field-help">No alleys yet. Add your first alley above.</p>
+        <p id="alleyInventoryEmpty" class="field-help">No alleys added yet.</p>
         <ul id="alleyInventoryList" class="inventory-list" aria-label="Your bowling alleys"></ul>
-        <p class="field-help">Renaming or removing an alley leaves past game records unchanged. Saved alley names are included automatically.</p>
+        <p class="field-help">Renaming or removing an alley keeps past game tags unchanged.</p>
         <p id="alleyInventorySyncNote" class="field-help"></p>
         <p id="alleyInventoryStatus" class="status-text" role="status"></p>
       </section>
@@ -147,11 +149,11 @@
           <div><p class="eyebrow">AVERAGE TARGET</p><h2 id="goalAverageHeading">Goal average</h2><p class="section-copy">Set the average you are working toward.</p></div>
           <details class="goal-help">
             <summary aria-label="How goal average changes game colors">?</summary>
-            <div class="goal-help-copy">By default, each standard game is colored against your current all-time running average. When you set a goal average, that goal becomes the benchmark instead: games at or above the goal are green, and games below it are red. No-tap games remain excluded. The goal is kept with this profile on this device.</div>
+            <div class="goal-help-copy">Green means at or above your goal; red means below. Without a goal, colors compare games with your running average. No-tap games are excluded. This goal is saved only on this device.</div>
           </details>
         </div>
         <div class="profile-goal-row">
-          <label><span>Goal average</span><input id="goalAverageInput" type="number" min="1" max="300" step="0.1" inputmode="decimal" placeholder="175"><small class="field-help">Any value from 1 to 300. Leave it unset to compare games with your running average.</small></label>
+          <label><span>Goal average</span><input id="goalAverageInput" type="number" min="1" max="300" step="0.1" inputmode="decimal" placeholder="175"><small class="field-help">Optional · 1–300</small></label>
           <button id="saveGoalAverageBtn" class="btn primary" type="button">Save goal</button>
           <button id="clearGoalAverageBtn" class="btn secondary" type="button">Remove goal</button>
         </div>
@@ -164,9 +166,8 @@
       </section>
 
       <section class="panel" aria-labelledby="profileSettingsHeading">
-        <div class="section-heading"><div><p class="eyebrow">ACCOUNT & APP</p><h2 id="profileSettingsHeading">Profile settings</h2><p class="section-copy">Manage your account, backups, and app settings.</p></div></div>
+        <div class="section-heading"><div><p class="eyebrow">ACCOUNT & APP</p><h2 id="profileSettingsHeading">Account & backups</h2></div></div>
         <div id="profileActionButtons" class="profile-actions"></div>
-        <p class="field-help">Cloud opens your account and private groups. Data & backup settings contains exports, imports, your display name, and reset tools.</p>
       </section>
     `;
   }
@@ -232,7 +233,7 @@
     const install = $('installBtn');
     if (cloud && cloud.parentElement !== actions) actions.appendChild(cloud);
     if (settings) {
-      settings.textContent = 'Data & backup settings';
+      settings.textContent = 'Data & backups';
       if (settings.parentElement !== actions) actions.appendChild(settings);
     }
     if (install && install.parentElement !== actions) actions.appendChild(install);
@@ -317,13 +318,13 @@
     $('profileNameSummary').textContent = name;
     $('profileScopeSummary').textContent = scope?.kind === 'user' ? 'Signed-in profile on this device' : 'Local profile on this device';
     $('profileAverageSummary').textContent = average === null ? '—' : average.toFixed(1);
-    $('profileAverageDetail').textContent = games.length ? `${games.length} standard game${games.length === 1 ? '' : 's'}` : 'No standard games yet';
+    $('profileAverageDetail').textContent = games.length ? `${games.length} game${games.length === 1 ? '' : 's'}` : 'No games yet';
     $('profileGoalSummary').textContent = goal === null ? 'Not set' : goal.toFixed(1);
 
     if (goal === null) {
       $('profileGoalProgress').textContent = 'Game colors use your running average';
     } else if (average === null) {
-      $('profileGoalProgress').textContent = 'Add standard games to track progress';
+      $('profileGoalProgress').textContent = 'Add games to track progress';
     } else {
       const delta = average - goal;
       $('profileGoalProgress').textContent = delta >= 0
@@ -371,8 +372,8 @@
   function renderInventory() {
     $('saveInventoryBall').disabled = !app()?.ready;
     $('inventorySyncNote').textContent = window.BowlingCloud?.isSignedIn?.()
-      ? 'Your inventory syncs with your account. Offline changes sync when you reconnect.'
-      : 'Saved with this profile on this device. Sign in to sync your inventory.';
+      ? 'Syncs with your account when online.'
+      : 'Saved on this device. Sign in to sync.';
     const rows = (app()?.getBallInventory?.() || []).filter(row => !row.removed);
     const signature = JSON.stringify([scopeKey(), rows]);
     if (inventorySignature === signature) return;
@@ -433,8 +434,8 @@
   function renderAlleyInventory() {
     $('saveAlleyInventoryAlley').disabled = !app()?.ready;
     $('alleyInventorySyncNote').textContent = window.BowlingCloud?.isSignedIn?.()
-      ? 'Your alley list syncs with your account. Offline changes sync when you reconnect.'
-      : 'Saved with this profile on this device. Sign in to sync your alley list.';
+      ? 'Syncs with your account when online.'
+      : 'Saved on this device. Sign in to sync.';
     const rows = (app()?.getAlleyInventory?.() || []).filter(row => !row.removed);
     const signature = JSON.stringify([scopeKey(), rows]);
     if (alleyInventorySignature === signature) return;
