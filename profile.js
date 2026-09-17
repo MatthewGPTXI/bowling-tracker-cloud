@@ -7,6 +7,8 @@
   let goalInputDirty = false;
   let inventoryEditName = '';
   let inventorySignature = '';
+  let alleyInventoryEditName = '';
+  let alleyInventorySignature = '';
 
   const $ = id => document.getElementById(id);
   const app = () => window.BowlingApp;
@@ -126,6 +128,20 @@
         <p id="inventoryStatus" class="status-text" role="status"></p>
       </section>
 
+      <section class="panel" aria-labelledby="alleyInventoryHeading">
+        <div class="section-heading"><div><p class="eyebrow">YOUR LOCATIONS</p><h2 id="alleyInventoryHeading">Alleys</h2><p class="section-copy">Choose from these alleys when adding a game or series.</p></div></div>
+        <form id="alleyInventoryForm" class="inventory-form">
+          <label>Alley name<input id="alleyInventoryAlleyName" type="text" maxlength="100" required placeholder="e.g. Bowlero Pasadena" autocomplete="off"></label>
+          <button id="saveAlleyInventoryAlley" class="btn primary" type="submit">Add alley</button>
+          <button id="cancelAlleyInventoryEdit" class="text-btn" type="button" hidden>Cancel</button>
+        </form>
+        <p id="alleyInventoryEmpty" class="field-help">No alleys yet. Add your first alley above.</p>
+        <ul id="alleyInventoryList" class="inventory-list" aria-label="Your bowling alleys"></ul>
+        <p class="field-help">Renaming or removing an alley leaves past game records unchanged. Saved alley names are included automatically.</p>
+        <p id="alleyInventorySyncNote" class="field-help"></p>
+        <p id="alleyInventoryStatus" class="status-text" role="status"></p>
+      </section>
+
       <section class="panel" aria-labelledby="goalAverageHeading">
         <div class="goal-heading">
           <div><p class="eyebrow">AVERAGE TARGET</p><h2 id="goalAverageHeading">Goal average</h2><p class="section-copy">Set the average you are working toward.</p></div>
@@ -186,6 +202,8 @@
       $('goalAverageInput').addEventListener('keydown', event => { if (event.key === 'Enter') saveGoal(); });
       $('saveGoalAverageBtn').addEventListener('click', saveGoal);
       $('clearGoalAverageBtn').addEventListener('click', clearGoal);
+      $('alleyInventoryForm').addEventListener('submit', saveAlleyInventoryAlley);
+      $('cancelAlleyInventoryEdit').addEventListener('click', resetAlleyInventoryEditor);
       $('ballInventoryForm').addEventListener('submit', saveInventoryBall);
       $('cancelInventoryEdit').addEventListener('click', resetInventoryEditor);
     }
@@ -289,6 +307,7 @@
   function renderProfile(forceInput = false) {
     if (!ensureProfileUI()) return;
     renderInventory();
+    renderAlleyInventory();
     const average = currentAverage();
     const goal = readGoal();
     const games = standardGames();
@@ -388,6 +407,68 @@
     }
   }
 
+  function resetAlleyInventoryEditor() {
+    alleyInventoryEditName = '';
+    $('alleyInventoryAlleyName').value = '';
+    $('saveAlleyInventoryAlley').textContent = 'Add alley';
+    $('cancelAlleyInventoryEdit').hidden = true;
+  }
+
+  async function saveAlleyInventoryAlley(event) {
+    event.preventDefault();
+    const scope = scopeKey();
+    const editing = !!alleyInventoryEditName;
+    $('saveAlleyInventoryAlley').disabled = true;
+    try {
+      await app().editAlleyInventory($('alleyInventoryAlleyName').value, alleyInventoryEditName);
+      if (scope !== scopeKey()) return;
+      resetAlleyInventoryEditor();
+      $('alleyInventoryStatus').textContent = editing ? 'Alley renamed. Past games keep their original alley name.' : 'Alley added to your alley list.';
+      $('alleyInventoryAlleyName').focus();
+    } catch (error) {
+      if (scope === scopeKey()) $('alleyInventoryStatus').textContent = error.message;
+    } finally { $('saveAlleyInventoryAlley').disabled = !app()?.ready; }
+  }
+
+  function renderAlleyInventory() {
+    $('saveAlleyInventoryAlley').disabled = !app()?.ready;
+    $('alleyInventorySyncNote').textContent = window.BowlingCloud?.isSignedIn?.()
+      ? 'Your alley list syncs with your account. Offline changes sync when you reconnect.'
+      : 'Saved with this profile on this device. Sign in to sync your alley list.';
+    const rows = (app()?.getAlleyInventory?.() || []).filter(row => !row.removed);
+    const signature = JSON.stringify([scopeKey(), rows]);
+    if (alleyInventorySignature === signature) return;
+    alleyInventorySignature = signature;
+    $('alleyInventoryEmpty').hidden = rows.length > 0;
+    const list = $('alleyInventoryList');
+    list.replaceChildren();
+    for (const row of rows) {
+      const item = document.createElement('li');
+      const name = document.createElement('strong'); name.textContent = row.name; item.appendChild(name);
+      const actions = document.createElement('div'); actions.className = 'inventory-actions'; item.appendChild(actions);
+      const rename = document.createElement('button'); rename.type = 'button'; rename.className = 'text-btn'; rename.textContent = 'Rename';
+      rename.setAttribute('aria-label', `Rename ${row.name}`);
+      rename.addEventListener('click', () => {
+        alleyInventoryEditName = row.name; $('alleyInventoryAlleyName').value = row.name;
+        $('saveAlleyInventoryAlley').textContent = 'Save name'; $('cancelAlleyInventoryEdit').hidden = false;
+        $('alleyInventoryStatus').textContent = ''; $('alleyInventoryAlleyName').focus();
+      });
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'text-btn danger-text'; remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove ${row.name}`);
+      remove.addEventListener('click', async () => {
+        const scope = scopeKey(); remove.disabled = true;
+        try {
+          await app().editAlleyInventory(row.name, '', true);
+          if (scope !== scopeKey()) return;
+          if (alleyInventoryEditName === row.name) resetAlleyInventoryEditor();
+          $('alleyInventoryStatus').textContent = 'Alley removed from your alley list. Past games are unchanged.';
+        } catch (error) { if (scope === scopeKey()) $('alleyInventoryStatus').textContent = error.message; }
+        finally { remove.disabled = false; }
+      });
+      actions.append(rename, remove); list.appendChild(item);
+    }
+  }
+
   function renderGameBenchmarks() {
     const list = $('sessionsList');
     if (!list || !app()?.getGames) return;
@@ -469,10 +550,14 @@
   });
   window.addEventListener('bowling:profile-options-changed', refresh);
   window.addEventListener('bowling:inventory-changed', refresh);
+  window.addEventListener('bowling:alley-inventory-changed', refresh);
   window.addEventListener('bowling:local-account-changed', () => {
     resetInventoryEditor();
+    resetAlleyInventoryEditor();
+    $('alleyInventoryStatus').textContent = '';
     $('inventoryStatus').textContent = '';
     renderInventory();
+    renderAlleyInventory();
   });
   window.addEventListener('storage', event => {
     if (event.key === goalStorageKey()) {

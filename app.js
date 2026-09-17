@@ -10,7 +10,7 @@
   const GAME_STORE = 'games';
   const SETTINGS_STORE = 'settings';
   const TOMBSTONE_STORE = 'tombstones';
-  const APP_VERSION = 7;
+  const APP_VERSION = 8;
   const Balls = window.BowlingBalls;
   const SESSION_TYPES = ['League', 'Practice', 'Tournament'];
   let restoringDraft = false;
@@ -38,6 +38,7 @@
   let selectedPhotoUrl = null;
   let activeProfileName = 'Bowler';
   let ballInventory = [];
+  let alleyInventory = [];
 
   const $ = (id) => document.getElementById(id);
 
@@ -79,6 +80,7 @@
     sessionName: $('sessionNameInput'),
     sessionType: $('sessionTypeInput'),
     ball: $('ballInput'),
+    alley: $('alleyInput'),
     noTap: $('noTapInput'),
     sessionSelect: $('sessionSelect'),
     score: $('scoreInput'),
@@ -227,6 +229,77 @@
     const changes = [{name, updatedAt, removed: remove}];
     if (previousName && ballKey(previousName) !== ballKey(name)) changes.push({name: previousName, updatedAt, removed: true});
     const saved = await mergeBallInventory(changes);
+    if (!saved) throw new Error('The profile changed. Please try again.');
+    emitDataChanged({type: 'inventory'});
+  }
+  function alleyNames() {
+    const names = new Map();
+    games.forEach(game => { const name = cleanBall(game.alley); if (name && !names.has(ballKey(name))) names.set(ballKey(name), name); });
+    return [...names.values()].sort((a,b) => a.localeCompare(b));
+  }
+  const cleanAlley = cleanBall, alleyKey = ballKey;
+  function fillAlleySelect(input, selected = input.value) {
+    Balls.fillSelect(input, selected, getAlleyInventory().filter(row => !row.removed).map(row => row.name), 'No alley selected');
+  }
+  function matchesAlley(game) {
+    const selected = $('statsAlley').value;
+    return !selected || (selected === 'none' ? !cleanAlley(game.alley) : 'alley:' + alleyKey(game.alley) === selected);
+  }
+  function renderAlleyOptions() {
+    document.querySelectorAll('[data-alley-select]').forEach(input => fillAlleySelect(input));
+    const names = alleyNames(), selected = $('statsAlley').value;
+    $('statsAlley').innerHTML = '<option value="">All alleys</option><option value="none">No alley recorded</option>' + names.map(name => `<option value="alley:${escapeHtml(alleyKey(name))}">${escapeHtml(name)}</option>`).join('');
+    $('statsAlley').value = selected === 'none' || names.some(name => 'alley:' + alleyKey(name) === selected) ? selected : '';
+  }
+
+  function getAlleyInventory() {
+    // Legacy game tags seed the list, but never override explicit edits/removals.
+    return Balls.mergeInventory(alleyNames().map(name => ({name, updatedAt: 0})), alleyInventory);
+  }
+
+  async function loadAlleyInventory() {
+    const targetDb = db;
+    const records = await getSettingFromDb(targetDb, 'alleyInventory');
+    if (db !== targetDb) return;
+    alleyInventory = Balls.mergeInventory(records);
+    await mergeAlleyInventory([]);
+  }
+
+  function mergeAlleyInventory(records, expectedUid = activeLocalScope.uid) {
+    if (expectedUid !== activeLocalScope.uid) return Promise.resolve(false);
+    const targetDb = db;
+    const seeds = getAlleyInventory();
+    // Read and merge in the same transaction to preserve edits made during sync.
+    return new Promise((resolve, reject) => {
+      const tx = targetDb.transaction(SETTINGS_STORE, 'readwrite');
+      const store = tx.objectStore(SETTINGS_STORE);
+      const request = store.get('alleyInventory');
+      let merged;
+      request.onsuccess = () => {
+        merged = Balls.mergeInventory(seeds, request.result?.value, records);
+        store.put({key: 'alleyInventory', value: merged});
+      };
+      tx.oncomplete = () => {
+        if (db !== targetDb) { resolve(false); return; }
+        alleyInventory = merged;
+        renderAlleyOptions();
+        window.dispatchEvent(new CustomEvent('bowling:alley-inventory-changed'));
+        resolve(true);
+      };
+      tx.onabort = tx.onerror = () => reject(tx.error || new Error('Could not save alley inventory.'));
+    });
+  }
+
+  async function editAlleyInventory(name, previousName = '', remove = false) {
+    if (!api.ready) throw new Error('Your profile is still loading. Try again in a moment.');
+    name = cleanAlley(name);
+    const current = getAlleyInventory();
+    if (!name || name.length > 100) throw new Error('Enter an alley name from 1 to 100 characters.');
+    if (!remove && current.some(row => !row.removed && alleyKey(row.name) === alleyKey(name) && alleyKey(row.name) !== alleyKey(previousName))) throw new Error('That alley is already in your inventory.');
+    const updatedAt = Math.max(Date.now(), ...current.map(row => row.updatedAt + 1));
+    const changes = [{name, updatedAt, removed: remove}];
+    if (previousName && alleyKey(previousName) !== alleyKey(name)) changes.push({name: previousName, updatedAt, removed: true});
+    const saved = await mergeAlleyInventory(changes);
     if (!saved) throw new Error('The profile changed. Please try again.');
     emitDataChanged({type: 'inventory'});
   }
@@ -404,6 +477,8 @@
     }
     const inventory = Balls.mergeInventory(await getSettingFromDb(sourceDb, 'ballInventory'), await getSettingFromDb(targetDb, 'ballInventory'));
     await setSettingOnDb(targetDb, 'ballInventory', inventory);
+    const alleys = Balls.mergeInventory(await getSettingFromDb(sourceDb, 'alleyInventory'), await getSettingFromDb(targetDb, 'alleyInventory'));
+    await setSettingOnDb(targetDb, 'alleyInventory', alleys);
   }
 
   async function refreshFromActiveDatabase() {
@@ -417,15 +492,18 @@
     games = await getAllGames();
     editingGameId = null;
     ballInventory = [];
+    alleyInventory = [];
     await loadBallInventory();
+    await loadAlleyInventory();
     $('seriesRows').innerHTML = '';
     Balls.fillSelect($('seriesBall'), '');
+    fillAlleySelect($('seriesAlley'), '');
     await loadProfileName(true);
     restoringDraft = true;
     resetEntryForm({ preserveDate: false, preserveSession: false });
     restoringDraft = false;
     pendingImport = null; $('importPreviewDialog').close();
-    for (const id of ['statsFrom','statsTo','statsType','statsBall']) $(id).value = '';
+    for (const id of ['statsFrom','statsTo','statsType','statsBall','statsAlley']) $(id).value = '';
     statsPreset = 'all';
     $('statsCustomDates').open = false;
     $('statsPeriodPanel').open = false;
@@ -617,7 +695,7 @@
 
   function statsGames() {
     const from = $('statsFrom').value, through = $('statsTo').value, type = $('statsType').value;
-    return standardGames().filter(g => (!from || g.date >= from) && (!through || g.date <= through) && (!type || sessionType(g) === type) && matchesBall(g));
+    return standardGames().filter(g => (!from || g.date >= from) && (!through || g.date <= through) && (!type || sessionType(g) === type) && matchesBall(g) && matchesAlley(g));
   }
   function applyStatsPreset(preset) {
     if (!['all', 'month', '90', 'year'].includes(preset)) return;
@@ -649,7 +727,7 @@
     const date = n => new Date(n).toISOString().slice(0,10);
     const previousFrom = date(start-(end-start+day)), previousTo = date(start-day);
     const type = $('statsType').value;
-    return {previousFrom,previousTo,current:calculateStats(statsGames()),previous:calculateStats(games.filter(g => g.date >= previousFrom && g.date <= previousTo && (!type || sessionType(g) === type) && matchesBall(g)))};
+    return {previousFrom,previousTo,current:calculateStats(statsGames()),previous:calculateStats(games.filter(g => g.date >= previousFrom && g.date <= previousTo && (!type || sessionType(g) === type) && matchesBall(g) && matchesAlley(g)))};
   }
   function renderComparison() {
     const comparison = periodComparison();
@@ -658,7 +736,9 @@
     const selectedBall = $('statsBall').value;
     $('statsBallNote').hidden = !selectedBall.startsWith('ball:');
     const ball = selectedBall === 'none' ? 'No ball recorded' : ballNames().find(name => 'ball:' + ballKey(name) === selectedBall) || 'All balls';
-    $('statsRangeStatus').textContent = from && through && from > through ? 'Start date must be on or before end date.' : `${statsGames().length} games · ${range} · ${$('statsType').value || 'All types'} · ${ball}`;
+    const selectedAlley = $('statsAlley').value;
+    const alley = selectedAlley === 'none' ? 'No alley recorded' : alleyNames().find(name => 'alley:' + alleyKey(name) === selectedAlley) || 'All alleys';
+    $('statsRangeStatus').textContent = from && through && from > through ? 'Start date must be on or before end date.' : `${statsGames().length} games · ${range} · ${$('statsType').value || 'All types'} · ${ball} · ${alley}`;
     document.querySelectorAll('[data-stats-preset]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.statsPreset === statsPreset)));
     $('statsPeriodPanel').hidden = !comparison;
     if (!comparison) { $('periodComparison').textContent = ''; return; }
@@ -686,8 +766,9 @@
       dom.date.value = session.date;
       dom.sessionName.value = session.games[0].sessionName || '';
       dom.sessionType.value = sessionType(session.games[0]);
+      fillAlleySelect(dom.alley, session.games.at(-1)?.alley || '');
       dom.noTap.value = isNoTap(session.games.at(-1)) ? 'no-tap' : 'standard';
-      $('gameAdvanced').open = dom.noTap.value === 'no-tap' || !!dom.ball.value;
+      $('gameAdvanced').open = dom.noTap.value === 'no-tap' || !!dom.ball.value || !!dom.alley.value;
     }
     updateEntryContext(); persistDrafts();
   }
@@ -704,6 +785,7 @@
       dom.sessionSelect.value = '';
       dom.date.value = todayLocal();
       dom.sessionType.value = 'League';
+      fillAlleySelect(dom.alley, '');
       dom.noTap.value = 'standard';
     }
     updateEntryContext(); persistDrafts();
@@ -813,7 +895,7 @@
 
     dom.highGame.textContent = stats.highGameObj ? stats.highGameObj.score : '—';
     dom.highGameDetail.textContent = stats.highGameObj
-      ? fmtDate(stats.highGameObj.date)
+      ? [fmtDate(stats.highGameObj.date), cleanAlley(stats.highGameObj.alley)].filter(Boolean).join(' · ')
       : 'No games yet';
 
     dom.highSeries.textContent = stats.bestSeries ? stats.bestSeries.total : '—';
@@ -900,7 +982,7 @@
                 <div class="game-row-summary">
                   <div class="game-score-block"><span class="game-number">Game ${positions.get(g.id) + 1}</span><strong class="game-score">${g.score}</strong></div>
                   <div class="game-row-info">
-                    <p class="game-ball">${escapeHtml(Balls.summary(g))}</p>
+                    <p class="game-ball">${escapeHtml(Balls.summary(g))}</p>${g.alley ? `<p class="game-ball">Alley: ${escapeHtml(g.alley)}</p>` : ''}
                     ${isNoTap(g) ? '<span class="badge no-tap-badge">No-tap</span>' : ''}
                     <p class="game-stats">${g.strikes} strikes · ${g.openFrames === 0 ? '✓ Clean game' : g.openFrames + ' open frames'}</p>
                   </div>
@@ -971,6 +1053,7 @@
 
   function renderAll() {
     renderBallOptions();
+    renderAlleyOptions();
     renderStats();
     renderProgress();
     renderComparison();
@@ -995,6 +1078,8 @@
     const ballError = Balls.error(balls);
     if (ballError) return {error: ballError};
     const ball = balls[0]?.name || '';
+    const alley = cleanAlley(fields.alley?.value);
+    if (alley.length > 100) return {error: 'Alley names must be 100 characters or fewer.'};
 
     if (!date || fields.score.value === '' || fields.openFrames.value === '' || fields.strikes.value === '' || fields.strikeOpp.value === '') {
       return { error: 'Please fill in date, score, open frames, strikes, and strike opportunities.' };
@@ -1014,7 +1099,7 @@
     if (openFrames === 0 && score < 100) return { error: 'A clean game must score at least 100. Check the score or open frames.' };
 
     return {
-      value: { bowler, date, sessionName, sessionType: type, ball, balls, noTap: fields.noTap?.value === 'no-tap', score, openFrames, strikes, strikeOpportunities, notes }
+      value: { bowler, date, sessionName, sessionType: type, ball, balls, alley, noTap: fields.noTap?.value === 'no-tap', score, openFrames, strikes, strikeOpportunities, notes }
     };
   }
 
@@ -1055,6 +1140,7 @@
     if (game.strikeOpportunities !== undefined && (!integerIn(game.strikeOpportunities, 10, 12)
       || Number(game.strikeOpportunities) < Number(game.strikes))) return false;
     if (Number(game.score) === 300 && Number(game.strikes) !== 12) return false;
+    if (game.alley !== undefined && (typeof game.alley !== 'string' || cleanAlley(game.alley).length > 100)) return false;
     if (game.ball !== undefined && (typeof game.ball !== 'string' || cleanBall(game.ball).length > 100)) return false;
     if (game.balls !== undefined && Balls.error(game.balls)) return false;
     if (game.noTap !== undefined && typeof game.noTap !== 'boolean') return false;
@@ -1073,6 +1159,7 @@
       sessionType: sessionType(game),
       ball: Balls.list(game)[0]?.name || '',
       balls: Balls.list(game),
+      alley: cleanAlley(game.alley),
       noTap: isNoTap(game),
       ...(game.gameOrder !== undefined ? {gameOrder: Number(game.gameOrder)} : {}),
       score: Number(game.score),
@@ -1156,8 +1243,9 @@
     dom.strikeOpp.value = '10';
     dom.notes.value = '';
     Balls.set(dom.ball, []);
+    fillAlleySelect(dom.alley, preserveSession ? dom.alley.value : '');
     dom.noTap.value = preserveSession && dom.noTap.value === 'no-tap' ? 'no-tap' : 'standard';
-    $('gameAdvanced').open = dom.noTap.value === 'no-tap';
+    $('gameAdvanced').open = !!dom.alley.value || dom.noTap.value === 'no-tap';
     editingGameId = null;
     entryBaseGame = null;
     clearDraft('entry');
@@ -1189,8 +1277,9 @@
     dom.strikeOpp.value = game.strikeOpportunities;
     dom.notes.value = game.notes || '';
     Balls.set(dom.ball, Balls.list(game));
+    fillAlleySelect(dom.alley, game.alley || '');
     dom.noTap.value = isNoTap(game) ? 'no-tap' : 'standard';
-    $('gameAdvanced').open = !!dom.ball.value || isNoTap(game);
+    $('gameAdvanced').open = !!dom.ball.value || !!dom.alley.value || isNoTap(game);
     updateEntryContext();
     dom.saveGameBtn.textContent = 'Update game';
     dom.cancelEditBtn.classList.remove('hidden');
@@ -1310,6 +1399,7 @@
       exportedAt: new Date().toISOString(),
       profileName: activeProfileName,
       ballInventory: getBallInventory(),
+      alleyInventory: getAlleyInventory(),
       games: [...games].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       tombstones
     };
@@ -1325,13 +1415,13 @@
 
   function exportCsv() {
     const rows = [
-      ['Date','Bowler','Session Type','Session ID','Game Order','Ball','Score','Open Frames','Strikes','Strike Opportunities','Strike %','Clean Game','Notes','Scoring','Ball Usage']
+      ['Date','Bowler','Session Type','Session ID','Game Order','Ball','Score','Open Frames','Strikes','Strike Opportunities','Strike %','Clean Game','Notes','Scoring','Ball Usage','Alley']
     ];
     buildSessions(games).sort((a,b) => a.date.localeCompare(b.date)).forEach(session => session.games.forEach((g,index) => {
       rows.push([
         g.date, g.bowler, sessionType(g), sessionKey(g), index+1, Balls.list(g)[0]?.name || '', g.score, g.openFrames, g.strikes, g.strikeOpportunities,
         g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0',
-        g.openFrames === 0 ? 'Yes' : 'No', g.notes || '', scoringLabel(g), JSON.stringify(Balls.list(g))
+        g.openFrames === 0 ? 'Yes' : 'No', g.notes || '', scoringLabel(g), JSON.stringify(Balls.list(g)), cleanAlley(g.alley)
       ]);
     }));
     const csv = '\uFEFF' + rows.map((row) => row.map(csvEscape).join(',')).join('\n');
@@ -1375,10 +1465,13 @@
       const rows = buildImportPlan(imported,deleted,current,tombstones);
       const inventory = payload.ballInventory || payload.profile?.ballInventory || [];
       if (!Array.isArray(inventory) || inventory.some(row => Balls.mergeInventory([row]).length !== 1)) throw new Error('Invalid ball inventory in backup.');
-      pendingImport = {database:targetDb,rows,inventory,snapshot:JSON.stringify([current,tombstones])};
+      const alleys = payload.alleyInventory || payload.profile?.alleyInventory || [];
+      if (!Array.isArray(alleys) || alleys.some(row => Balls.mergeInventory([row]).length !== 1)) throw new Error('Invalid alley list in backup.');
+      pendingImport = {database:targetDb,rows,inventory,alleys,snapshot:JSON.stringify([current,tombstones])};
       $('importPreviewSummary').textContent = `${rows.filter(r=>r.kind==='addition').length} additions · ${rows.filter(r=>r.kind==='duplicate').length} duplicates (skipped) · ${rows.filter(r=>r.kind==='conflict').length} conflicts`;
+      if (alleys.length) $('importPreviewSummary').textContent += ' · Saved alleys will be merged';
       if (inventory.length) $('importPreviewSummary').textContent += ' · Saved ball inventory will be merged';
-      $('importPreviewRows').innerHTML = rows.map(r => `<div class="import-row"><strong>${escapeHtml(r.game?.date || r.local?.date || '')} · ${r.game ? r.game.score+' points · '+scoringLabel(r.game) : 'Backup deletion'}</strong>${r.game ? `<p>Backup balls: ${escapeHtml(Balls.summary(r.game))}</p>` : ''}<p>${r.kind}${r.local ? ' · Current: '+r.local.score+' points · '+scoringLabel(r.local) : r.tombstone ? ' · Deleted on this device' : ''}</p>${r.local ? `<p>Current balls: ${escapeHtml(Balls.summary(r.local))}</p>` : ''}${r.kind==='conflict' ? `<label>Resolution<select data-import-id="${r.id}"><option value="keep">Keep current data</option><option value="backup">${r.deletion ? 'Apply backup deletion' : 'Use backup game'}</option></select></label>` : ''}</div>`).join('');
+      $('importPreviewRows').innerHTML = rows.map(r => `<div class="import-row"><strong>${escapeHtml(r.game?.date || r.local?.date || '')} · ${r.game ? r.game.score+' points · '+scoringLabel(r.game) : 'Backup deletion'}</strong>${r.game ? `<p>Backup balls: ${escapeHtml(Balls.summary(r.game))}</p><p>Backup alley: ${escapeHtml(r.game.alley || 'None')}</p>` : ''}<p>${r.kind}${r.local ? ' · Current: '+r.local.score+' points · '+scoringLabel(r.local) : r.tombstone ? ' · Deleted on this device' : ''}</p>${r.local ? `<p>Current balls: ${escapeHtml(Balls.summary(r.local))}</p><p>Current alley: ${escapeHtml(r.local.alley || 'None')}</p>` : ''}${r.kind==='conflict' ? `<label>Resolution<select data-import-id="${r.id}"><option value="keep">Keep current data</option><option value="backup">${r.deletion ? 'Apply backup deletion' : 'Use backup game'}</option></select></label>` : ''}</div>`).join('');
       setStatus($('importPreviewStatus'),''); $('importPreviewDialog').showModal();
     } catch (error) { setStatus(dom.settingsStatus,`Import failed: ${error.message}`,'error'); }
     finally { dom.importJsonInput.value = ''; }
@@ -1399,9 +1492,10 @@
       await commitGames(upserts,deletes,plan.database);
       if (db !== plan.database) return;
       if (plan.inventory?.length) await mergeBallInventory(plan.inventory);
+      if (plan.alleys?.length) await mergeAlleyInventory(plan.alleys);
       if (db !== plan.database) return;
       games = await getAllGames(); pendingImport = null; $('importPreviewDialog').close(); renderAll();
-      if (selected.length || plan.inventory?.length) emitDataChanged({type:'bulk'});
+      if (selected.length || plan.inventory?.length || plan.alleys?.length) emitDataChanged({type:'bulk'});
       setStatus(dom.settingsStatus,`Imported ${upserts.length} games and applied ${deletes.length} reviewed deletions.`,'success');
     } catch (error) { setStatus($('importPreviewStatus'),error.message,'error'); }
     finally { mutationBusy = false; $('confirmImportBtn').disabled = false; }
@@ -1435,6 +1529,7 @@
     if (db !== targetDb) return;
     games = refreshed;
     await mergeBallInventory([], expectedUid);
+    await mergeAlleyInventory([], expectedUid);
     if (db !== targetDb) return;
     renderAll();
   }
@@ -1497,8 +1592,9 @@
     dom.date.value = session.date;
     dom.sessionName.value = session.games[0].sessionName || '';
     dom.sessionType.value = sessionType(session.games[0]);
+    fillAlleySelect(dom.alley, session.games.at(-1)?.alley || '');
     dom.noTap.value = isNoTap(session.games.at(-1)) ? 'no-tap' : 'standard';
-    $('gameAdvanced').open = dom.noTap.value === 'no-tap';
+    $('gameAdvanced').open = !!dom.alley.value || dom.noTap.value === 'no-tap';
     updateSessionSuggestions();
     setEntryMode(false);
     rememberEntry();
@@ -1552,8 +1648,9 @@
     $('seriesName').value = dom.sessionName.value;
     $('seriesType').value = dom.sessionType.value;
     Balls.fillSelect($('seriesBall'), dom.ball.value);
+    fillAlleySelect($('seriesAlley'), dom.alley.value);
     $('seriesNoTap').value = dom.noTap.value === 'no-tap' ? 'no-tap' : 'standard';
-    $('seriesAdvanced').open = !!dom.ball.value || $('seriesNoTap').value === 'no-tap';
+    $('seriesAdvanced').open = !!dom.ball.value || !!dom.alley.value || $('seriesNoTap').value === 'no-tap';
     $('seriesRows').innerHTML = '';
     const first = addSeriesRow();
     for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball']) first.querySelector(`[data-field="${field}"]`).value = dom[field].value;
@@ -1572,7 +1669,7 @@
     if (mutationBusy || dialogScope !== db) return;
     const values = [];
     for (const [i, row] of [...$('seriesRows').children].entries()) {
-      const fields = { date: $('seriesDate'), sessionName: $('seriesName'), sessionType: $('seriesType'), noTap: $('seriesNoTap') };
+      const fields = { date: $('seriesDate'), sessionName: $('seriesName'), sessionType: $('seriesType'), noTap: $('seriesNoTap'), alley: $('seriesAlley') };
       for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball']) fields[field] = row.querySelector(`[data-field="${field}"]`);
       const result = validateGameForm(fields);
       if (result.error) { setStatus($('seriesStatus'), `Game ${i + 1}: ${result.error}`, 'error'); return; }
@@ -1602,6 +1699,7 @@
       dom.date.value = values[0].date;
       dom.sessionName.value = values[0].sessionName;
       dom.sessionType.value = values[0].sessionType;
+      fillAlleySelect(dom.alley, values[0].alley);
       dom.noTap.value = values[0].noTap ? 'no-tap' : 'standard';
       clearDraft('series');
       resetEntryForm({ preserveDate: true, preserveSession: true });
@@ -1743,7 +1841,7 @@
     const from = $('sessionFrom').value;
     const through = $('sessionTo').value;
     return sessions.filter((session) => (!query || [session.name, session.date,
-      ...session.games.flatMap(game => [game.notes || '', game.sessionName || '', sessionType(game), ...Balls.list(game).map(ball => ball.name)])
+      ...session.games.flatMap(game => [game.notes || '', game.alley || '', game.sessionName || '', sessionType(game), ...Balls.list(game).map(ball => ball.name)])
     ].join(' ').toLowerCase().includes(query))
       && (!from || session.date >= from) && (!through || session.date <= through));
   }
@@ -1769,7 +1867,7 @@
   function draftKey(kind) { return `bowling-draft:${activeLocalScope.dbName || activeLocalScope.uid || 'guest'}:${kind}`; }
   function seriesHasInput(draft) {
     const hasText = value => value !== null && value !== undefined && String(value).trim() !== '';
-    return hasText(draft?.ball) || (draft?.rows || []).some(row =>
+    return hasText(draft?.ball) || hasText(draft?.alley) || (draft?.rows || []).some(row =>
       ['score', 'openFrames', 'strikes', 'notes', 'ball'].some(field => hasText(row[field]))
       || (hasText(row.strikeOpp) && Number(row.strikeOpp) !== 10)
       || (row.balls || []).some(ball => hasText(ball.name) || hasText(ball.frames)));
@@ -1797,7 +1895,7 @@
       if (hasEntryDraft()) localStorage.setItem(draftKey('entry'), JSON.stringify({version:1, values:JSON.parse(entrySnapshot()), baseline:entryBaseline, base:entryBaseGame}));
       if ($('seriesDialog').open) {
         const rows = [...$('seriesRows').children].map(row => ({...Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes','ball'].map(field => [field,row.querySelector(`[data-field="${field}"]`).value])), balls: Balls.draft(row.querySelector('[data-field="ball"]'))}));
-        const draft = {version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,noTap:$('seriesNoTap').value === 'no-tap',rows};
+        const draft = {version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,alley:$('seriesAlley').value,noTap:$('seriesNoTap').value === 'no-tap',rows};
         if (seriesHasInput(draft)) localStorage.setItem(draftKey('series'), JSON.stringify(draft));
         else clearDraft('series');
       }
@@ -1815,6 +1913,7 @@
         ['date','sessionName','sessionType','score','openFrames','strikes','strikeOpp','notes','ball'].forEach((key,i) => dom[key].value = draft.values[i+1] ?? '');
         dom.noTap.value = draft.values[10] === 'no-tap' ? 'no-tap' : 'standard';
         Balls.set(dom.ball, Array.isArray(draft.values[11]) ? draft.values[11] : [{name: draft.values[9] || ''}]);
+        fillAlleySelect(dom.alley, draft.values[12] || '');
         entryBaseline = draft.baseline;
         // Older drafts lack ball and/or scoring fields. Keep their original values.
         try {
@@ -1822,9 +1921,10 @@
           if (baseline.length === 9) baseline.push('');
           if (baseline.length === 10) baseline.push('standard');
           if (baseline.length === 11) baseline.push([{name: baseline[9] || '', frames: ''}]);
+          if (baseline.length === 12) baseline.push('');
           entryBaseline = JSON.stringify(baseline);
         } catch (_) {}
-        $('gameAdvanced').open = !!dom.ball.value || dom.noTap.value === 'no-tap';
+        $('gameAdvanced').open = !!dom.ball.value || !!dom.alley.value || dom.noTap.value === 'no-tap';
         dom.saveGameBtn.textContent = editingGameId ? 'Update game' : 'Save game';
         dom.entryHeading.textContent = editingGameId ? 'Edit game' : 'Add game';
         dom.cancelEditBtn.classList.remove('hidden');
@@ -1833,8 +1933,9 @@
         if (editingGameId) { setStatus(dom.entryStatus,'Finish or cancel your game edit before recovering a series.'); return; }
         dialogScope = db; $('seriesRows').innerHTML = '';
         $('seriesDate').value = draft.date; $('seriesName').value = draft.name; $('seriesType').value = sessionType({sessionType:draft.type}); Balls.fillSelect($('seriesBall'), draft.ball || ''); $('seriesAdvanced').open = !!draft.ball;
+        fillAlleySelect($('seriesAlley'), draft.alley || '');
         $('seriesNoTap').value = draft.noTap === true ? 'no-tap' : 'standard';
-        $('seriesAdvanced').open = !!draft.ball || draft.noTap === true;
+        $('seriesAdvanced').open = !!draft.ball || !!draft.alley || draft.noTap === true;
         draft.rows.forEach(values => {
           const row = addSeriesRow();
           for (const field of ['score','openFrames','strikes','strikeOpp','notes','ball']) row.querySelector(`[data-field="${field}"]`).value = values[field] ?? '';
@@ -1848,7 +1949,7 @@
   }
 
   function entrySnapshot() {
-    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball', 'noTap'].map((key) => dom[key].value), Balls.draft(dom.ball)]);
+    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball', 'noTap'].map((key) => dom[key].value), Balls.draft(dom.ball), dom.alley.value]);
   }
   function rememberEntry() { entryBaseline = entrySnapshot(); renderEntrySaveState(); }
   function renderEntrySaveState() {
@@ -1931,19 +2032,19 @@
     $('recoverEntry').addEventListener('click', () => recoverDraft('entry'));
     $('recoverSeries').addEventListener('click', () => recoverDraft('series'));
     $('discardDrafts').addEventListener('click', () => { if (window.confirm('Discard saved game and series drafts?')) { clearDraft('entry'); clearDraft('series'); showDraftNotice(); } });
-    for (const id of ['statsFrom','statsTo','statsType','statsBall']) $(id).addEventListener('change', () => {
+    for (const id of ['statsFrom','statsTo','statsType','statsBall','statsAlley']) $(id).addEventListener('change', () => {
       if (id === 'statsFrom' || id === 'statsTo') statsPreset = 'custom';
       refreshStatsView();
     });
     document.querySelectorAll('[data-stats-preset]').forEach(button => button.addEventListener('click', () => applyStatsPreset(button.dataset.statsPreset)));
     $('chartMode').addEventListener('change', renderProgress);
     $('clearStatsFilters').addEventListener('click', () => {
-      $('statsType').value = ''; $('statsBall').value = ''; applyStatsPreset('all');
+      $('statsType').value = ''; $('statsBall').value = ''; $('statsAlley').value = ''; applyStatsPreset('all');
     });
     $('confirmImportBtn').addEventListener('click', confirmImport);
     $('cancelImportBtn').addEventListener('click', () => { pendingImport = null; $('importPreviewDialog').close(); });
     $('importPreviewDialog').addEventListener('cancel', () => { pendingImport = null; });
-    for (const input of [dom.date,dom.sessionType,dom.score,dom.openFrames,dom.strikes,dom.strikeOpp,dom.notes,dom.ball]) input.addEventListener('input', () => { persistDrafts(); renderEntrySaveState(); });
+    for (const input of [dom.date,dom.sessionType,dom.score,dom.openFrames,dom.strikes,dom.strikeOpp,dom.notes,dom.ball,dom.alley]) input.addEventListener('input', () => { persistDrafts(); renderEntrySaveState(); });
     $('seriesForm').addEventListener('input', persistDrafts);
     $('seriesForm').addEventListener('change', persistDrafts);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persistDrafts(); });
@@ -2060,6 +2161,9 @@
     getDefaultBowler: async () => activeProfileName || await getSetting('profileName') || await getSetting('defaultBowler') || 'Bowler',
     getProfileName: () => activeProfileName || 'Bowler',
     setProfileName,
+    getAlleyInventory,
+    editAlleyInventory,
+    mergeAlleyInventory,
     getBallInventory,
     editBallInventory,
     mergeBallInventory,
@@ -2099,6 +2203,7 @@
       games = await getAllGames();
       await loadProfileName();
       await loadBallInventory();
+      await loadAlleyInventory();
       renderAll();
       showDraftNotice();
       api.ready = true;

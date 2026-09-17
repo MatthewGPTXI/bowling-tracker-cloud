@@ -365,6 +365,7 @@
       sessionId: String(game.sessionId || game.sessionName || ''),
       ball: balls[0]?.name || '',
       balls,
+      alley: window.BowlingBalls.clean(game.alley),
       noTap: game.noTap === true,
       sessionType: ['League','Practice','Tournament'].includes(game.sessionType) ? game.sessionType : 'League',
       ...(game.gameOrder !== undefined ? {gameOrder:Number(game.gameOrder)} : {}),
@@ -400,6 +401,7 @@
       date: String(game?.date || ''),
       sessionName: normalizedSessionName(game),
       balls: window.BowlingBalls.comparable(game),
+      alley: window.BowlingBalls.clean(game?.alley),
       noTap: game?.noTap === true,
       sessionType: game?.sessionType || 'League',
       gameOrder: Number(game?.gameOrder ?? game?.createdAt ?? game?.id ?? 0),
@@ -434,7 +436,7 @@
     if (!game) return `<div class="sync-review-game"><strong>${escapeHtml(label)}</strong>Deleted</div>`;
     return `<div class="sync-review-game">
       <strong>${escapeHtml(label)}</strong>
-      ${game.gameOrder !== undefined ? `Game order: ${escapeHtml(game.gameOrder)}<br>` : ''}${escapeHtml(window.BowlingBalls.summary(game))}<br>${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
+      ${game.gameOrder !== undefined ? `Game order: ${escapeHtml(game.gameOrder)}<br>` : ''}${escapeHtml(window.BowlingBalls.summary(game))}<br>${game.alley ? `Alley: ${escapeHtml(game.alley)}<br>` : ''}${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
       ${game.noTap === true ? 'No-tap · excluded from standard stats' : 'Standard scoring'}<br>
       Score ${Number(game.score)} · ${Number(game.openFrames)} open · ${Number(game.strikes)}/${Number(game.strikeOpportunities || 10)} strikes
       ${game.notes ? `<br>${escapeHtml(game.notes)}` : ''}
@@ -700,6 +702,24 @@
           await app.mergeBallInventory(merged, uid);
           if (!isCurrentAccount()) return;
           if (profile) profile.ballInventory = merged;
+        }
+      }
+      if (app.getAlleyInventory) {
+        const inventory = app.getAlleyInventory();
+        const ref = modules.doc(firestore, 'users', uid);
+        const merged = await modules.runTransaction(firestore, async transaction => {
+          const snapshot = await transaction.get(ref);
+          if (!isCurrentAccount()) return null;
+          const remote = snapshot.exists() ? snapshot.data().alleyInventory : [];
+          const result = window.BowlingBalls.mergeInventory(remote, inventory);
+          if (JSON.stringify(result) !== JSON.stringify(remote || [])) transaction.set(ref, {alleyInventory: result}, {merge: true});
+          return result;
+        });
+        if (!isCurrentAccount()) return;
+        if (merged) {
+          await app.mergeAlleyInventory(merged, uid);
+          if (!isCurrentAccount()) return;
+          if (profile) profile.alleyInventory = merged;
         }
       }
       const localGames = app.getGames();
@@ -1354,6 +1374,7 @@
         },
         profile: profile ? { ...profile } : null,
         ballInventory: (await modules.getDoc(await userProfileRef())).data()?.ballInventory || [],
+        alleyInventory: (await modules.getDoc(await userProfileRef())).data()?.alleyInventory || [],
         games: games.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
         tombstones: tombstones.sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0)),
         groupMemberships: memberships

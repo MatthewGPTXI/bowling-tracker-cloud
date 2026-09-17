@@ -19,13 +19,13 @@
     return [...records.values()].sort((a, b) => key(a.name).localeCompare(key(b.name)));
   }
 
-  function fillSelect(input, selected = input.value, names) {
+  function fillSelect(input, selected = input.value, names, emptyLabel = 'No ball selected') {
     if (!input || input.tagName !== 'SELECT') { if (input) input.value = selected; return; }
     names = names || window.BowlingApp?.getBallInventory?.().filter(row => !row.removed).map(row => row.name) || [];
     const escape = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
     const current = names.find(name => key(name) === key(selected));
     const retained = selected && !current ? `<option value="${escape(selected)}">${escape(selected)} (not in inventory)</option>` : '';
-    input.innerHTML = '<option value="">No ball selected</option>' + names.map(name => `<option value="${escape(name)}">${escape(name)}</option>`).join('') + retained;
+    input.innerHTML = `<option value="">${escape(emptyLabel)}</option>` + names.map(name => `<option value="${escape(name)}">${escape(name)}</option>`).join('') + retained;
     input.value = current || selected || '';
   }
 
