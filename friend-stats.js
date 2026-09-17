@@ -125,7 +125,7 @@
     $('friendStatsCompare').setAttribute('aria-pressed', String(comparing));
     $('friendStatsCompare').hidden = self;
     const sample = needsRefresh ? 'This bowler must open the updated app and sync to refresh standard-only stats.'
-      : count === null ? 'Game count unavailable.' : count === 0 ? 'No standard games shared yet.' : `${count} standard game${count === 1 ? '' : 's'} shared.`;
+      : count === null ? 'Game count unavailable.' : count === 0 ? 'No games shared yet.' : `${count} game${count === 1 ? '' : 's'} shared.`;
     $('friendStatsStatus').textContent = (comparing ? 'Comparing overall stats. ' : '') + sample
       + (count !== null && count > 0 && count < 10 ? ' Fewer than 10 games: averages are provisional.' : '')
       + (comparing && own.games > 0 && own.games < 10 ? ' Your average is provisional: fewer than 10 games.' : '')

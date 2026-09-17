@@ -124,7 +124,8 @@
   }
 
   function setCloudButton(state, label) {
-    if (dom.cloudButtonLabel) dom.cloudButtonLabel.textContent = label;
+    if (dom.cloudButtonLabel) dom.cloudButtonLabel.textContent = 'Account & sync';
+    if (dom.openCloudBtn) dom.openCloudBtn.title = label;
     if (dom.cloudButtonDot) dom.cloudButtonDot.className = `status-dot ${state}`.trim();
   }
 
@@ -680,7 +681,7 @@
 
     syncing = true;
     setSyncBadge('Syncing…', 'working');
-    setStatus(`${reason}: reconciling local changes with your cloud history…`);
+    setStatus(`${reason}: syncing your games…`);
 
     try {
       const app = await waitForBowlingApp();
@@ -854,7 +855,7 @@
       if (unresolved.length) {
         renderSyncReview(issues,app.getGames().length,[...remoteMap.values()].filter(g=>!g.deleted).length);
         setSyncBadge('Review needed','pending');
-        setStatus(`Other games synced. ${unresolved.length} conflicting item${unresolved.length===1?'':'s'} still need review in Profile → Cloud.`);
+        setStatus(`Other games synced. ${unresolved.length} conflicting item${unresolved.length===1?'':'s'} still need review in Profile → Account & sync.`);
         return;
       }
       hideSyncReview();
@@ -1199,7 +1200,7 @@
     if (!currentUser || !profile) return;
     const displayName = dom.profileDisplayName.value.trim();
     if (!displayName) {
-      setStatus('Enter a leaderboard display name.', 'error');
+      setStatus('Enter a display name.', 'error');
       return;
     }
     try {
@@ -1229,7 +1230,7 @@
     const email = dom.email.value.trim();
     const password = dom.password.value;
     if (!displayName || !email || !password) {
-      setStatus('Enter a leaderboard name, email, and password.', 'error');
+      setStatus('Enter a display name, email, and password.', 'error');
       return;
     }
     if (password.length < 6) {
@@ -1494,7 +1495,7 @@
       await modules.signOut(auth);
       const app = await waitForBowlingApp();
       await app.activateGuest?.();
-      setStatus("Signed out. This account's offline history stays isolated on this device.", 'success');
+      setStatus("Signed out. Your account’s saved games stay separate from guest games.", 'success');
     } catch (error) {
       setStatus(friendlyError(error), 'error');
     }
