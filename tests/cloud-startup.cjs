@@ -45,7 +45,7 @@ const section = (start, end) => source.slice(source.indexOf('  ' + start), sourc
   const appSource = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
   let activate;
   const ready = new Promise(resolve => { activate = resolve; });
-  const local = { navigator: { onLine: true, serviceWorker: { register: async () => ({}), ready } },
+  const local = { window: {}, navigator: { onLine: true, serviceWorker: { register: async () => ({}), ready } },
     dom: { offlineStatus: { textContent: 'Checking offline support…' } }, offlineCacheReady: false, console };
   vm.createContext(local);
   vm.runInContext(appSource.slice(appSource.indexOf('  async function registerServiceWorker()'), appSource.indexOf('  async function applyRemoteChanges(')), local);

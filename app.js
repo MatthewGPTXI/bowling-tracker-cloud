@@ -87,6 +87,7 @@
     openFrames: $('openFramesInput'),
     strikes: $('strikesInput'),
     strikeOpp: $('strikeOppInput'),
+    entryDetail: $('entryDetailInput'),
     notes: $('notesInput'),
     entryStatus: $('entryStatus'),
     saveGameBtn: $('saveGameBtn'),
@@ -157,6 +158,20 @@
   }
 
   function sessionType(game) { return SESSION_TYPES.includes(game?.sessionType) ? game.sessionType : 'League'; }
+  function hasFrameStats(game) { return game?.scoreOnly !== true; }
+  function setEntryDetail(fields = dom) {
+    const scoreOnly = fields.entryDetail?.value === 'score-only';
+    for (const key of ['openFrames', 'strikes', 'strikeOpp']) {
+      const input = fields[key];
+      input.disabled = scoreOnly;
+      input.required = !scoreOnly;
+      const label = input.closest('label');
+      if (label) label.hidden = scoreOnly;
+    }
+  }
+  function seriesFields(row) {
+    return Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes','ball','entryDetail'].map(key => [key, row.querySelector(`[data-field="${key}"]`)]));
+  }
   function isNoTap(game) { return game?.noTap === true; }
   function standardGames(source = games) { return source.filter(game => !isNoTap(game)); }
   function scoringLabel(game) { return isNoTap(game) ? 'No-tap' : 'Standard'; }
@@ -743,8 +758,8 @@
     $('statsPeriodPanel').hidden = !comparison;
     if (!comparison) { $('periodComparison').textContent = ''; return; }
     const {current,previous,previousFrom,previousTo} = comparison;
-    const value = (s,key) => s.count ? s[key].toFixed(1) : '—';
-    $('periodComparison').innerHTML = `<p>Previous period: ${escapeHtml(fmtDate(previousFrom))} – ${escapeHtml(fmtDate(previousTo))}</p><div class="trend-table-wrap"><table class="trend-table"><thead><tr><th>Metric</th><th>Selected</th><th>Previous</th><th>Change</th></tr></thead><tbody>${[['Average','average'],['Strike %','strikePct'],['Open frames / game','openAvg']].map(([label,key]) => `<tr><th>${label}</th><td>${value(current,key)}</td><td>${value(previous,key)}</td><td>${current.count && previous.count ? (current[key]-previous[key] >= 0 ? '+' : '')+(current[key]-previous[key]).toFixed(1) : '—'}</td></tr>`).join('')}</tbody></table></div>`;
+    const value = (s,key) => s.count && s[key] !== null ? s[key].toFixed(1) : '—';
+    $('periodComparison').innerHTML = `<p>Previous period: ${escapeHtml(fmtDate(previousFrom))} – ${escapeHtml(fmtDate(previousTo))}</p><div class="trend-table-wrap"><table class="trend-table"><thead><tr><th>Metric</th><th>Selected</th><th>Previous</th><th>Change</th></tr></thead><tbody>${[['Average','average'],['Strike %','strikePct'],['Open frames / game','openAvg']].map(([label,key]) => `<tr><th>${label}</th><td>${value(current,key)}</td><td>${value(previous,key)}</td><td>${current.count && previous.count && current[key] !== null && previous[key] !== null ? (current[key]-previous[key] >= 0 ? '+' : '')+(current[key]-previous[key]).toFixed(1) : '—'}</td></tr>`).join('')}</tbody></table></div>`;
   }
 
   function updateSessionSuggestions() {
@@ -796,23 +811,25 @@
     const count = sourceGames.length;
     const sessions = buildSessions(sourceGames);
     const scores = sourceGames.map((g) => g.score);
-    const totalStrikes = sourceGames.reduce((sum, g) => sum + g.strikes, 0);
-    const strikeOpps = sourceGames.reduce((sum, g) => sum + g.strikeOpportunities, 0);
-    const totalOpen = sourceGames.reduce((sum, g) => sum + g.openFrames, 0);
+    const detailed = sourceGames.filter(hasFrameStats);
+    const frameCount = detailed.length;
+    const totalStrikes = detailed.reduce((sum, g) => sum + g.strikes, 0);
+    const strikeOpps = detailed.reduce((sum, g) => sum + g.strikeOpportunities, 0);
+    const totalOpen = detailed.reduce((sum, g) => sum + g.openFrames, 0);
     // Tenth-frame fill shots do not add frames to a ten-frame game.
-    const totalFrames = count * 10;
+    const totalFrames = frameCount * 10;
     const totalClosed = totalFrames - totalOpen;
-    const cleanGames = sourceGames.filter((g) => g.openFrames === 0).length;
+    const cleanGames = detailed.filter((g) => g.openFrames === 0).length;
     const sortedRecent = [...sourceGames].sort((a, b) => b.date.localeCompare(a.date) || gameOrder(b, a));
     const bestSession = sessions.length ? sessions.reduce((best, s) => s.average > best.average ? s : best) : null;
     const bestSeries = bestThreeGameSeries(sessions);
     const highGameObj = sourceGames.length ? sourceGames.reduce((best, g) => g.score > best.score ? g : best) : null;
-    const mostStrikesGame = sourceGames.length ? sourceGames.reduce((best, g) => {
+    const mostStrikesGame = detailed.length ? detailed.reduce((best, g) => {
       if (g.strikes > best.strikes) return g;
       if (g.strikes === best.strikes && Number(g.createdAt || 0) > Number(best.createdAt || 0)) return g;
       return best;
     }) : null;
-    const bestStrikePctGame = sourceGames.length ? sourceGames.reduce((best, g) => {
+    const bestStrikePctGame = detailed.length ? detailed.reduce((best, g) => {
       const pct = g.strikeOpportunities ? g.strikes / g.strikeOpportunities : 0;
       const bestPct = best.strikeOpportunities ? best.strikes / best.strikeOpportunities : 0;
       if (pct > bestPct) return g;
@@ -827,20 +844,21 @@
 
     return {
       count,
+      frameCount,
       sessions,
       average: count ? avg(scores) : 0,
       highGameObj,
       bestSeries,
       totalStrikes,
-      strikePct: strikeOpps ? (totalStrikes / strikeOpps) * 100 : 0,
-      openAvg: count ? totalOpen / count : 0,
-      openRate: count ? (totalOpen / (count * 10)) * 100 : 0,
+      strikePct: strikeOpps ? (totalStrikes / strikeOpps) * 100 : null,
+      openAvg: frameCount ? totalOpen / frameCount : null,
+      openRate: totalFrames ? totalOpen / totalFrames * 100 : null,
       totalFrames,
       totalClosed,
-      closedFramePct: totalFrames ? (totalClosed / totalFrames) * 100 : 0,
+      closedFramePct: totalFrames ? (totalClosed / totalFrames) * 100 : null,
       cleanGames,
-      cleanRate: count ? (cleanGames / count) * 100 : 0,
-      strikesPerGame: count ? totalStrikes / count : 0,
+      cleanRate: frameCount ? cleanGames / frameCount * 100 : null,
+      strikesPerGame: frameCount ? totalStrikes / frameCount : null,
       games200: sourceGames.filter((g) => g.score >= 200).length,
       games250: sourceGames.filter((g) => g.score >= 250).length,
       games300: sourceGames.filter((g) => g.score === 300).length,
@@ -862,8 +880,11 @@
       highGame: stats.highGameObj ? stats.highGameObj.score : 0,
       highSeries: stats.bestSeries ? stats.bestSeries.total : 0,
       strikePct: stats.strikePct,
-      cleanGames: stats.cleanGames,
-      totalStrikes: stats.totalStrikes,
+      cleanGames: stats.frameCount ? stats.cleanGames : null,
+      totalStrikes: stats.frameCount ? stats.totalStrikes : null,
+      frameStatsGames: stats.frameCount,
+      scoreOnlyGames: stats.count - stats.frameCount,
+      frameStatsUpdatedAt: updatedAt,
       bestSessionAvg: stats.bestSession ? stats.bestSession.average : 0,
       updatedAt,
       noTapGames: games.filter(isNoTap).length,
@@ -903,19 +924,19 @@
       ? `${fmtDate(stats.bestSeries.session.date)} · ${stats.bestSeries.session.name}`
       : 'Need 3 games in one session';
 
-    dom.strikePct.textContent = stats.count ? `${stats.strikePct.toFixed(1)}%` : '—';
-    dom.strikePctDetail.textContent = `${stats.totalStrikes} strike${stats.totalStrikes === 1 ? '' : 's'}`;
+    dom.strikePct.textContent = stats.frameCount ? `${stats.strikePct.toFixed(1)}%` : '—';
+    dom.strikePctDetail.textContent = stats.frameCount ? `${stats.totalStrikes} strikes · ${stats.frameCount} games with details` : 'No frame details recorded';
 
-    dom.openAvg.textContent = stats.count ? stats.openAvg.toFixed(2) : '—';
-    dom.openRateDetail.textContent = `${stats.openRate.toFixed(1)}% open-frame rate`;
+    dom.openAvg.textContent = stats.frameCount ? stats.openAvg.toFixed(2) : '—';
+    dom.openRateDetail.textContent = stats.frameCount ? `${stats.openRate.toFixed(1)}% open-frame rate` : 'No frame details recorded';
 
-    dom.closedFramePct.textContent = stats.count ? `${stats.closedFramePct.toFixed(1)}%` : '—';
-    dom.closedFrameDetail.textContent = stats.count
+    dom.closedFramePct.textContent = stats.frameCount ? `${stats.closedFramePct.toFixed(1)}%` : '—';
+    dom.closedFrameDetail.textContent = stats.frameCount
       ? `${stats.totalClosed} / ${stats.totalFrames} frames closed`
-      : 'No games match these filters';
+      : 'No frame details recorded';
 
-    dom.cleanGames.textContent = stats.cleanGames;
-    dom.cleanGamesDetail.textContent = `${stats.cleanRate.toFixed(1)}% of games`;
+    dom.cleanGames.textContent = stats.frameCount ? stats.cleanGames : '—';
+    dom.cleanGamesDetail.textContent = stats.frameCount ? `${stats.cleanRate.toFixed(1)}% of games with details` : 'No frame details recorded';
 
     dom.sessions.textContent = stats.sessions.length;
     dom.gamesAndMilestones.textContent = `${stats.count} games in the selected filters`;
@@ -923,7 +944,7 @@
     dom.more200.textContent = stats.games200;
     dom.more250.textContent = stats.games250;
     dom.more300.textContent = stats.games300;
-    dom.moreStrikeAvg.textContent = stats.count ? stats.strikesPerGame.toFixed(2) : '—';
+    dom.moreStrikeAvg.textContent = stats.frameCount ? stats.strikesPerGame.toFixed(2) : '—';
     dom.moreLast5.textContent = stats.count ? stats.last5.toFixed(1) : '—';
     dom.recordBestSession.textContent = stats.bestSession ? stats.bestSession.average.toFixed(1) : '—';
     dom.recordBestSessionDetail.textContent = stats.bestSession ? `${fmtDate(stats.bestSession.date)} · ${stats.bestSession.name}` : 'No sessions yet';
@@ -984,13 +1005,13 @@
                   <div class="game-row-info">
                     <p class="game-ball">${escapeHtml(Balls.summary(g))}</p>${g.alley ? `<p class="game-ball">Alley: ${escapeHtml(g.alley)}</p>` : ''}
                     ${isNoTap(g) ? '<span class="badge no-tap-badge">No-tap</span>' : ''}
-                    <p class="game-stats">${g.strikes} strikes · ${g.openFrames === 0 ? '✓ Clean game' : g.openFrames + ' open frames'}</p>
+                    <p class="game-stats">${hasFrameStats(g) ? `${g.strikes} strikes · ${g.openFrames === 0 ? '✓ Clean game' : g.openFrames + ' open frames'}` : 'Score only'}</p>
                   </div>
                   <button id="gameActionsToggle-${g.id}" class="text-btn game-actions-toggle" data-id="${g.id}" type="button" aria-expanded="false" aria-controls="gameActions-${g.id}" aria-label="Actions for game ${positions.get(g.id) + 1}">Actions</button>
                 </div>
                 ${g.notes ? `<p class="game-notes">${escapeHtml(g.notes)}</p>` : ''}
                 <div id="gameActions-${g.id}" class="game-detail-panel" hidden>
-                  <p class="game-stats">${g.strikes} / ${g.strikeOpportunities} strike opportunities · ${g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0'}% strike rate</p>
+                  <p class="game-stats">${hasFrameStats(g) ? `${g.strikes} / ${g.strikeOpportunities} strike opportunities · ${g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0'}% strike rate` : 'Frame details not recorded'}</p>
                   <div class="game-actions" role="group" aria-label="Game ${positions.get(g.id) + 1} actions">
                       <button class="text-btn edit-game" data-id="${g.id}" type="button">Edit game</button>
                       <button class="text-btn move-game" data-id="${g.id}" data-direction="-1" type="button" ${positions.get(g.id) === 0 ? 'disabled' : ''} aria-label="Move game ${positions.get(g.id)+1} earlier">↑ Earlier</button>
@@ -1069,6 +1090,7 @@
     const date = fields.date.value;
     const sessionName = fields.sessionName.value.trim();
     const type = sessionType({sessionType: fields.sessionType?.value});
+    const scoreOnly = fields.entryDetail?.value === 'score-only';
     const score = Number(fields.score.value);
     const openFrames = Number(fields.openFrames.value);
     const strikes = Number(fields.strikes.value);
@@ -1081,25 +1103,27 @@
     const alley = cleanAlley(fields.alley?.value);
     if (alley.length > 100) return {error: 'Alley names must be 100 characters or fewer.'};
 
-    if (!date || fields.score.value === '' || fields.openFrames.value === '' || fields.strikes.value === '' || fields.strikeOpp.value === '') {
-      return { error: 'Please fill in date, score, open frames, strikes, and strike opportunities.' };
+    if (!date || fields.score.value === '' || (!scoreOnly && (fields.openFrames.value === '' || fields.strikes.value === '' || fields.strikeOpp.value === ''))) {
+      return { error: scoreOnly ? 'Please fill in date and score.' : 'Please fill in date, score, open frames, strikes, and strike opportunities, or choose Score only.' };
     }
     if (!isValidDate(date)) return { error: 'Please enter a valid bowling date.' };
     if (!Number.isInteger(score) || score < 0 || score > 300) return { error: 'Score must be a whole number from 0 to 300.' };
-    if (!Number.isInteger(openFrames) || openFrames < 0 || openFrames > 10) return { error: 'Open frames must be a whole number from 0 to 10.' };
-    if (!Number.isInteger(strikes) || strikes < 0 || strikes > 12) return { error: 'Strikes must be a whole number from 0 to 12.' };
-    if (!Number.isInteger(strikeOpportunities) || strikeOpportunities < 10 || strikeOpportunities > 12) return { error: 'Strike opportunities must be a whole number from 10 to 12.' };
-    if (strikes > strikeOpportunities) return { error: 'Strikes cannot exceed strike opportunities.' };
-    if (score === 300 && strikes !== 12) return { error: 'A 300 game should be recorded as 12 strikes.' };
-    if (score === 300 && openFrames !== 0) return { error: 'A 300 game cannot have open frames.' };
-    if (strikes === 12 && score !== 300) return { error: '12 strikes must have a score of 300.' };
-    const closedFrames = 10 - openFrames;
-    if (strikes > (closedFrames ? closedFrames + 2 : 0)) return { error: 'The strike count is too high for this many open frames. Check both counts, including tenth-frame fill shots.' };
-    if (score < strikes * 10) return { error: 'The score is too low for this many strikes. Check the score and strike count.' };
-    if (openFrames === 0 && score < 100) return { error: 'A clean game must score at least 100. Check the score or open frames.' };
+    if (!scoreOnly) {
+      if (!Number.isInteger(openFrames) || openFrames < 0 || openFrames > 10) return { error: 'Open frames must be a whole number from 0 to 10.' };
+      if (!Number.isInteger(strikes) || strikes < 0 || strikes > 12) return { error: 'Strikes must be a whole number from 0 to 12.' };
+      if (!Number.isInteger(strikeOpportunities) || strikeOpportunities < 10 || strikeOpportunities > 12) return { error: 'Strike opportunities must be a whole number from 10 to 12.' };
+      if (strikes > strikeOpportunities) return { error: 'Strikes cannot exceed strike opportunities.' };
+      if (score === 300 && strikes !== 12) return { error: 'A 300 game should be recorded as 12 strikes.' };
+      if (score === 300 && openFrames !== 0) return { error: 'A 300 game cannot have open frames.' };
+      if (strikes === 12 && score !== 300) return { error: '12 strikes must have a score of 300.' };
+      const closedFrames = 10 - openFrames;
+      if (strikes > (closedFrames ? closedFrames + 2 : 0)) return { error: 'The strike count is too high for this many open frames. Check both counts, including tenth-frame fill shots.' };
+      if (score < strikes * 10) return { error: 'The score is too low for this many strikes. Check the score and strike count.' };
+      if (openFrames === 0 && score < 100) return { error: 'A clean game must score at least 100. Check the score or open frames.' };
 
+    }
     return {
-      value: { bowler, date, sessionName, sessionType: type, ball, balls, alley, noTap: fields.noTap?.value === 'no-tap', score, openFrames, strikes, strikeOpportunities, notes }
+      value: { bowler, date, sessionName, sessionType: type, ball, balls, alley, noTap: fields.noTap?.value === 'no-tap', score, scoreOnly, openFrames: scoreOnly ? null : openFrames, strikes: scoreOnly ? null : strikes, strikeOpportunities: scoreOnly ? null : strikeOpportunities, notes }
     };
   }
 
@@ -1110,9 +1134,10 @@
       && isNoTap(g) === isNoTap(candidate)
       && String(g.sessionName || '').trim().toLowerCase() === session
       && Number(g.score) === candidate.score
-      && Number(g.openFrames) === candidate.openFrames
+      && hasFrameStats(g) === hasFrameStats(candidate)
+      && (!hasFrameStats(candidate) || (Number(g.openFrames) === candidate.openFrames
       && Number(g.strikes) === candidate.strikes
-      && Number(g.strikeOpportunities || 10) === candidate.strikeOpportunities);
+      && Number(g.strikeOpportunities || 10) === candidate.strikeOpportunities)));
   }
 
   function unusualGameWarnings(candidate) {
@@ -1136,10 +1161,16 @@
       || !integerIn(game.id, 1, Number.MAX_SAFE_INTEGER)
       || typeof game.bowler !== 'string' || !game.bowler.trim()
       || !isValidDate(game.date)
-      || !integerIn(game.score, 0, 300) || !integerIn(game.openFrames, 0, 10) || !integerIn(game.strikes, 0, 12)) return false;
-    if (game.strikeOpportunities !== undefined && (!integerIn(game.strikeOpportunities, 10, 12)
-      || Number(game.strikeOpportunities) < Number(game.strikes))) return false;
-    if (Number(game.score) === 300 && Number(game.strikes) !== 12) return false;
+      || !integerIn(game.score, 0, 300)) return false;
+    if (game.scoreOnly !== undefined && typeof game.scoreOnly !== 'boolean') return false;
+    if (game.scoreOnly === true) {
+      if (['openFrames', 'strikes', 'strikeOpportunities'].some(key => game[key] != null)) return false;
+    } else {
+      if (!integerIn(game.openFrames, 0, 10) || !integerIn(game.strikes, 0, 12)) return false;
+      if (game.strikeOpportunities !== undefined && (!integerIn(game.strikeOpportunities, 10, 12)
+        || Number(game.strikeOpportunities) < Number(game.strikes))) return false;
+      if (Number(game.score) === 300 && Number(game.strikes) !== 12) return false;
+    }
     if (game.alley !== undefined && (typeof game.alley !== 'string' || cleanAlley(game.alley).length > 100)) return false;
     if (game.ball !== undefined && (typeof game.ball !== 'string' || cleanBall(game.ball).length > 100)) return false;
     if (game.balls !== undefined && Balls.error(game.balls)) return false;
@@ -1163,9 +1194,10 @@
       noTap: isNoTap(game),
       ...(game.gameOrder !== undefined ? {gameOrder: Number(game.gameOrder)} : {}),
       score: Number(game.score),
-      openFrames: Number(game.openFrames),
-      strikes,
-      strikeOpportunities: Math.min(12, Math.max(Number(game.strikeOpportunities || 10), strikes, 10)),
+      scoreOnly: game.scoreOnly === true,
+      openFrames: hasFrameStats(game) ? Number(game.openFrames) : null,
+      strikes: hasFrameStats(game) ? strikes : null,
+      strikeOpportunities: hasFrameStats(game) ? Math.min(12, Math.max(Number(game.strikeOpportunities || 10), strikes, 10)) : null,
       notes: String(game.notes || ''),
       createdAt: Number(game.createdAt || Date.now()),
       updatedAt: Number(game.updatedAt || game.createdAt || Date.now())
@@ -1241,6 +1273,8 @@
     dom.openFrames.value = '';
     dom.strikes.value = '';
     dom.strikeOpp.value = '10';
+    dom.entryDetail.value = preserveSession && dom.entryDetail.value === 'score-only' ? 'score-only' : 'full';
+    setEntryDetail();
     dom.notes.value = '';
     Balls.set(dom.ball, []);
     fillAlleySelect(dom.alley, preserveSession ? dom.alley.value : '');
@@ -1272,9 +1306,11 @@
     dom.sessionType.value = sessionType(game);
     updateSessionSuggestions();
     dom.score.value = game.score;
-    dom.openFrames.value = game.openFrames;
-    dom.strikes.value = game.strikes;
-    dom.strikeOpp.value = game.strikeOpportunities;
+    dom.openFrames.value = game.openFrames ?? '';
+    dom.strikes.value = game.strikes ?? '';
+    dom.strikeOpp.value = game.strikeOpportunities ?? 10;
+    dom.entryDetail.value = hasFrameStats(game) ? 'full' : 'score-only';
+    setEntryDetail();
     dom.notes.value = game.notes || '';
     Balls.set(dom.ball, Balls.list(game));
     fillAlleySelect(dom.alley, game.alley || '');
@@ -1415,13 +1451,13 @@
 
   function exportCsv() {
     const rows = [
-      ['Date','Bowler','Session Type','Session ID','Game Order','Ball','Score','Open Frames','Strikes','Strike Opportunities','Strike %','Clean Game','Notes','Scoring','Ball Usage','Alley']
+      ['Date','Bowler','Session Type','Session ID','Game Order','Ball','Score','Open Frames','Strikes','Strike Opportunities','Strike %','Clean Game','Notes','Scoring','Ball Usage','Alley','Entry Detail']
     ];
     buildSessions(games).sort((a,b) => a.date.localeCompare(b.date)).forEach(session => session.games.forEach((g,index) => {
       rows.push([
         g.date, g.bowler, sessionType(g), sessionKey(g), index+1, Balls.list(g)[0]?.name || '', g.score, g.openFrames, g.strikes, g.strikeOpportunities,
-        g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0',
-        g.openFrames === 0 ? 'Yes' : 'No', g.notes || '', scoringLabel(g), JSON.stringify(Balls.list(g)), cleanAlley(g.alley)
+        hasFrameStats(g) ? (g.strikeOpportunities ? ((g.strikes / g.strikeOpportunities) * 100).toFixed(1) : '0.0') : '',
+        hasFrameStats(g) ? (g.openFrames === 0 ? 'Yes' : 'No') : '', g.notes || '', scoringLabel(g), JSON.stringify(Balls.list(g)), cleanAlley(g.alley), hasFrameStats(g) ? 'Full stats' : 'Score only'
       ]);
     }));
     const csv = '\uFEFF' + rows.map((row) => row.map(csvEscape).join(',')).join('\n');
@@ -1471,7 +1507,7 @@
       $('importPreviewSummary').textContent = `${rows.filter(r=>r.kind==='addition').length} additions · ${rows.filter(r=>r.kind==='duplicate').length} duplicates (skipped) · ${rows.filter(r=>r.kind==='conflict').length} conflicts`;
       if (alleys.length) $('importPreviewSummary').textContent += ' · Saved alleys will be merged';
       if (inventory.length) $('importPreviewSummary').textContent += ' · Saved ball inventory will be merged';
-      $('importPreviewRows').innerHTML = rows.map(r => `<div class="import-row"><strong>${escapeHtml(r.game?.date || r.local?.date || '')} · ${r.game ? r.game.score+' points · '+scoringLabel(r.game) : 'Backup deletion'}</strong>${r.game ? `<p>Backup balls: ${escapeHtml(Balls.summary(r.game))}</p><p>Backup alley: ${escapeHtml(r.game.alley || 'None')}</p>` : ''}<p>${r.kind}${r.local ? ' · Current: '+r.local.score+' points · '+scoringLabel(r.local) : r.tombstone ? ' · Deleted on this device' : ''}</p>${r.local ? `<p>Current balls: ${escapeHtml(Balls.summary(r.local))}</p><p>Current alley: ${escapeHtml(r.local.alley || 'None')}</p>` : ''}${r.kind==='conflict' ? `<label>Resolution<select data-import-id="${r.id}"><option value="keep">Keep current data</option><option value="backup">${r.deletion ? 'Apply backup deletion' : 'Use backup game'}</option></select></label>` : ''}</div>`).join('');
+      $('importPreviewRows').innerHTML = rows.map(r => `<div class="import-row"><strong>${escapeHtml(r.game?.date || r.local?.date || '')} · ${r.game ? r.game.score+' points · '+scoringLabel(r.game)+(hasFrameStats(r.game) ? ' · Full stats' : ' · Score only') : 'Backup deletion'}</strong>${r.game ? `<p>Backup balls: ${escapeHtml(Balls.summary(r.game))}</p><p>Backup alley: ${escapeHtml(r.game.alley || 'None')}</p>` : ''}<p>${r.kind}${r.local ? ' · Current: '+r.local.score+' points · '+scoringLabel(r.local)+(hasFrameStats(r.local) ? ' · Full stats' : ' · Score only') : r.tombstone ? ' · Deleted on this device' : ''}</p>${r.local ? `<p>Current balls: ${escapeHtml(Balls.summary(r.local))}</p><p>Current alley: ${escapeHtml(r.local.alley || 'None')}</p>` : ''}${r.kind==='conflict' ? `<label>Resolution<select data-import-id="${r.id}"><option value="keep">Keep current data</option><option value="backup">${r.deletion ? 'Apply backup deletion' : 'Use backup game'}</option></select></label>` : ''}</div>`).join('');
       setStatus($('importPreviewStatus'),''); $('importPreviewDialog').showModal();
     } catch (error) { setStatus(dom.settingsStatus,`Import failed: ${error.message}`,'error'); }
     finally { dom.importJsonInput.value = ''; }
@@ -1507,7 +1543,8 @@
       return;
     }
     try {
-      await navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' });
+      window.BowlingUpdates?.start(registration);
       await navigator.serviceWorker.ready;
       offlineCacheReady = true;
       dom.offlineStatus.textContent = navigator.onLine ? 'Online · ready for offline use' : 'Offline · saved games available';
@@ -1607,17 +1644,22 @@
     const row = document.createElement('fieldset');
     row.className = 'series-row';
     row.innerHTML = `<legend>Game</legend><div class="form-grid">
+      <label>Record<select data-field="entryDetail"><option value="full">Score + frame stats</option><option value="score-only">Score only</option></select></label>
       <label>Score<input data-field="score" type="number" min="0" max="300" step="1" inputmode="numeric" required></label>
       <label>Open frames<input data-field="openFrames" type="number" min="0" max="10" step="1" inputmode="numeric" required></label>
       <label>Strikes<input data-field="strikes" type="number" min="0" max="12" step="1" inputmode="numeric" required></label>
       <label>Strike opportunities<input data-field="strikeOpp" type="number" min="10" max="12" step="1" inputmode="numeric" value="10" required></label>
       <label class="series-notes">Notes <small>optional</small><input data-field="notes" type="text"></label>
     </div><details class="advanced-options" data-ball-advanced><summary>Advanced</summary><div class="ball-editor" data-ball-editor><div class="ball-usage-row" data-ball-first><label class="ball-name-field">Ball <small>optional</small><select data-field="ball" data-ball-select><option value="">No ball selected</option></select></label></div></div></details><button class="text-btn danger-text remove-series-row" type="button">Remove game</button>`;
+    const fields = seriesFields(row);
+    fields.entryDetail.value = dom.entryDetail.value || 'full';
+    setEntryDetail(fields);
+    fields.entryDetail.addEventListener('change', () => { setEntryDetail(fields); persistDrafts(); });
     row.querySelector('.remove-series-row').addEventListener('click', () => {
       if ($('seriesRows').children.length > 1) { row.remove(); numberSeriesRows(); updateSeriesPreview(); persistDrafts(); }
     });
     row.querySelector('[data-field="score"]').addEventListener('input', (event) => {
-      if (event.target.value === '300') {
+      if (event.target.value === '300' && fields.entryDetail.value !== 'score-only') {
         for (const [field, value] of [['openFrames', 0], ['strikes', 12], ['strikeOpp', 12]]) row.querySelector(`[data-field="${field}"]`).value = value;
       }
     });
@@ -1671,6 +1713,7 @@
     for (const [i, row] of [...$('seriesRows').children].entries()) {
       const fields = { date: $('seriesDate'), sessionName: $('seriesName'), sessionType: $('seriesType'), noTap: $('seriesNoTap'), alley: $('seriesAlley') };
       for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball']) fields[field] = row.querySelector(`[data-field="${field}"]`);
+      fields.entryDetail = row.querySelector('[data-field="entryDetail"]');
       const result = validateGameForm(fields);
       if (result.error) { setStatus($('seriesStatus'), `Game ${i + 1}: ${result.error}`, 'error'); return; }
       values.push(result.value);
@@ -1894,7 +1937,7 @@
     try {
       if (hasEntryDraft()) localStorage.setItem(draftKey('entry'), JSON.stringify({version:1, values:JSON.parse(entrySnapshot()), baseline:entryBaseline, base:entryBaseGame}));
       if ($('seriesDialog').open) {
-        const rows = [...$('seriesRows').children].map(row => ({...Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes','ball'].map(field => [field,row.querySelector(`[data-field="${field}"]`).value])), balls: Balls.draft(row.querySelector('[data-field="ball"]'))}));
+        const rows = [...$('seriesRows').children].map(row => ({...Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes','ball','entryDetail'].map(field => [field,row.querySelector(`[data-field="${field}"]`).value])), balls: Balls.draft(row.querySelector('[data-field="ball"]'))}));
         const draft = {version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,alley:$('seriesAlley').value,noTap:$('seriesNoTap').value === 'no-tap',rows};
         if (seriesHasInput(draft)) localStorage.setItem(draftKey('series'), JSON.stringify(draft));
         else clearDraft('series');
@@ -1914,6 +1957,8 @@
         dom.noTap.value = draft.values[10] === 'no-tap' ? 'no-tap' : 'standard';
         Balls.set(dom.ball, Array.isArray(draft.values[11]) ? draft.values[11] : [{name: draft.values[9] || ''}]);
         fillAlleySelect(dom.alley, draft.values[12] || '');
+        dom.entryDetail.value = draft.values[13] === 'score-only' ? 'score-only' : 'full';
+        setEntryDetail();
         entryBaseline = draft.baseline;
         // Older drafts lack ball and/or scoring fields. Keep their original values.
         try {
@@ -1922,6 +1967,7 @@
           if (baseline.length === 10) baseline.push('standard');
           if (baseline.length === 11) baseline.push([{name: baseline[9] || '', frames: ''}]);
           if (baseline.length === 12) baseline.push('');
+          if (baseline.length === 13) baseline.push('full');
           entryBaseline = JSON.stringify(baseline);
         } catch (_) {}
         $('gameAdvanced').open = !!dom.ball.value || !!dom.alley.value || dom.noTap.value === 'no-tap';
@@ -1939,6 +1985,8 @@
         draft.rows.forEach(values => {
           const row = addSeriesRow();
           for (const field of ['score','openFrames','strikes','strikeOpp','notes','ball']) row.querySelector(`[data-field="${field}"]`).value = values[field] ?? '';
+          row.querySelector('[data-field="entryDetail"]').value = values.entryDetail === 'score-only' ? 'score-only' : 'full';
+          setEntryDetail(seriesFields(row));
           Balls.set(row.querySelector('[data-field="ball"]'), Array.isArray(values.balls) ? values.balls : [{name: values.ball || ''}]);
           row.querySelector('[data-ball-advanced]').open = !!values.ball || (values.balls?.length || 0) > 1;
         });
@@ -1949,7 +1997,7 @@
   }
 
   function entrySnapshot() {
-    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball', 'noTap'].map((key) => dom[key].value), Balls.draft(dom.ball), dom.alley.value]);
+    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball', 'noTap'].map((key) => dom[key].value), Balls.draft(dom.ball), dom.alley.value, dom.entryDetail.value || 'full']);
   }
   function rememberEntry() { entryBaseline = entrySnapshot(); renderEntrySaveState(); }
   function renderEntrySaveState() {
@@ -2065,8 +2113,9 @@
     dom.sessionType.addEventListener('change', () => { updateEntryContext(); persistDrafts(); });
     dom.date.addEventListener('change', () => { updateSessionSuggestions(); persistDrafts(); });
 
+    dom.entryDetail.addEventListener('change', () => { setEntryDetail(); persistDrafts(); renderEntrySaveState(); });
     dom.score.addEventListener('input', () => {
-      if (Number(dom.score.value) === 300) {
+      if (Number(dom.score.value) === 300 && dom.entryDetail.value !== 'score-only') {
         dom.strikes.value = '12';
         dom.strikeOpp.value = '12';
         dom.openFrames.value = '0';
@@ -2152,6 +2201,9 @@
   }
 
   const api = {
+    canApplyUpdate: () => api.ready && !mutationBusy && !restoringDraft && !editingGameId && !hasEntryDraft()
+      && !undoDeletion && !selectedPhotoUrl && !document.querySelector('dialog[open]')
+      && !window.BowlingCloud?.isBusy?.(),
     version: APP_VERSION,
     ready: false,
     startupError: null,

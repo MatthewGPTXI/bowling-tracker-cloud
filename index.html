@@ -90,6 +90,7 @@
             <input id="dateInput" type="date">
           </label>
           <input id="sessionNameInput" type="hidden"><label>Session type<select id="sessionTypeInput"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select><small class="field-help">Applies to every game in this session.</small></label>
+          <label>Record<select id="entryDetailInput"><option value="full">Score + frame stats</option><option value="score-only">Score only</option></select></label>
           <label>
             <span>Game score</span>
             <input id="scoreInput" type="number" min="0" max="300" inputmode="numeric" placeholder="0–300">
@@ -533,6 +534,7 @@
 
   <script src="./version.js" defer></script>
   <script src="./balls.js" defer></script>
+  <script src="./updates.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./firebase-config.js" defer></script>
   <script src="./friend-stats.js" defer></script>

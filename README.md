@@ -1,6 +1,18 @@
 # Bowling Tracker
 
-## Latest release: v29 — September 15, 2026
+## Latest release: v32 — September 24, 2026
+
+- **Automatic updates:** installed and browser apps check on launch, return to the foreground, reconnect, and every five minutes while visible. A network-only build probe and service-worker version handshake detect new releases. Once the complete offline cache is ready, the app refreshes silently when there is no entry/edit, open dialog, photo reference, save, sync, focused input, or pending Undo. Failed checks leave the offline app available. A reload guard prevents loops. No update prompt is added.
+- **First rollout:** v31.1 and earlier do not contain the new resume listener. Open the installed app online, then fully close and reopen it if its old screen remains. Opening Safari/Chrome separately or reinstalling is unnecessary. A closed or suspended app cannot be forced to execute immediately; future checks run when the app opens or resumes.
+- **Score-only entry:** choose Record → Score only in single-game entry or for any game in a series. New series rows inherit the single-game selection. The frame fields disappear and are saved as unknown, not zero. Switch back to Score + frame stats to add details later.
+- Score-only standard games contribute to averages, trends, high scores, score milestones, and consecutive series. Strike %, strikes/game, open/closed-frame rates, clean-game rates and frame records use only games with recorded details, including friend comparisons and leaderboards. A history without frame details displays — for those metrics. No-tap exclusions still apply.
+- The entry choice and unknown values survive drafts, edits, account-scoped storage, JSON backups/imports, CSV exports, cloud payloads, and conflict checks. No database migration, Firebase configuration, or security-rule update is required. Existing games remain unchanged.
+
+Validation: all 15 Node suites pass, including new score-only and automatic-update regressions. These cover simulated DOM/storage/Firebase and service-worker interfaces. Real installed iOS/Android lifecycle behavior and authenticated production Firebase transactions were not exercised here; the browser-runtime download was unavailable.
+
+Release files: keep `version.js` and `build.json` on the same version for each deployment.
+
+## Previous release: v29 — September 15, 2026
 
 Built directly on the verified live September 11 v28 sync-reconciliation release (`5bf1e1c`), including the earlier pre-Discord rollback. The old page labels v24/v26 were stale; `version.js` now supplies both the visible release label and offline cache version. There is no update prompt.
 

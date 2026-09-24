@@ -371,14 +371,15 @@
       sessionType: ['League','Practice','Tournament'].includes(game.sessionType) ? game.sessionType : 'League',
       ...(game.gameOrder !== undefined ? {gameOrder:Number(game.gameOrder)} : {}),
       score: Number(game.score),
-      openFrames: Number(game.openFrames),
-      strikes: Number(game.strikes),
-      strikeOpportunities: Number(game.strikeOpportunities || 10),
+      scoreOnly: game.scoreOnly === true,
+      openFrames: game.scoreOnly === true ? null : Number(game.openFrames),
+      strikes: game.scoreOnly === true ? null : Number(game.strikes),
+      strikeOpportunities: game.scoreOnly === true ? null : Number(game.strikeOpportunities || 10),
       notes: String(game.notes || ''),
       createdAt: Number(game.createdAt || Date.now()),
       updatedAt: Number(game.updatedAt || Date.now()),
       deleted: false,
-      schemaVersion: 4
+      schemaVersion: 5
     };
   }
 
@@ -389,7 +390,7 @@
       updatedAt: Number(tombstone.updatedAt || Date.now()),
       deletedAt: Number(tombstone.deletedAt || tombstone.updatedAt || Date.now()),
       deleted: true,
-      schemaVersion: 4
+      schemaVersion: 5
     };
   }
 
@@ -407,9 +408,10 @@
       sessionType: game?.sessionType || 'League',
       gameOrder: Number(game?.gameOrder ?? game?.createdAt ?? game?.id ?? 0),
       score: Number(game?.score || 0),
-      openFrames: Number(game?.openFrames || 0),
-      strikes: Number(game?.strikes || 0),
-      strikeOpportunities: Number(game?.strikeOpportunities || 10),
+      scoreOnly: game?.scoreOnly === true,
+      openFrames: game?.scoreOnly === true ? null : Number(game?.openFrames || 0),
+      strikes: game?.scoreOnly === true ? null : Number(game?.strikes || 0),
+      strikeOpportunities: game?.scoreOnly === true ? null : Number(game?.strikeOpportunities || 10),
       notes: String(game?.notes || '').trim()
     };
   }
@@ -426,6 +428,7 @@
       value.date,
       value.sessionName,
       value.noTap,
+      value.scoreOnly,
       value.score,
       value.openFrames,
       value.strikes,
@@ -439,7 +442,7 @@
       <strong>${escapeHtml(label)}</strong>
       ${game.gameOrder !== undefined ? `Game order: ${escapeHtml(game.gameOrder)}<br>` : ''}${escapeHtml(window.BowlingBalls.summary(game))}<br>${game.alley ? `Alley: ${escapeHtml(game.alley)}<br>` : ''}${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
       ${game.noTap === true ? 'No-tap · excluded from standard stats' : 'Standard scoring'}<br>
-      Score ${Number(game.score)} · ${Number(game.openFrames)} open · ${Number(game.strikes)}/${Number(game.strikeOpportunities || 10)} strikes
+      Score ${Number(game.score)} · ${game.scoreOnly === true ? 'Score only' : `${Number(game.openFrames)} open · ${Number(game.strikes)}/${Number(game.strikeOpportunities || 10)} strikes`}
       ${game.notes ? `<br>${escapeHtml(game.notes)}` : ''}
     </div>`;
   }
@@ -1170,8 +1173,11 @@
     const metric = dom.metricSelect.value || 'average';
     const info = metricInfo[metric] || metricInfo.average;
     dom.leaderboardMetricHeading.textContent = info.label;
-    const needsRefresh = member => Number(member.noTapGames || 0) > 0 && member.standardStatsUpdatedAt !== member.updatedAt;
-    const eligible = member => !needsRefresh(member) && Number(member.games || 0) > 0;
+    const needsRefresh = member => (Number(member.noTapGames || 0) > 0 && member.standardStatsUpdatedAt !== member.updatedAt)
+      || (Number(member.scoreOnlyGames || 0) > 0 && member.frameStatsUpdatedAt !== member.updatedAt);
+    const frameMetric = ['strikePct', 'cleanGames', 'totalStrikes'].includes(metric);
+    const eligible = member => !needsRefresh(member) && Number(member.games || 0) > 0
+      && (!frameMetric || (member[metric] != null && member.frameStatsGames !== 0));
     const sorted = [...members].sort((a, b) => Number(eligible(b)) - Number(eligible(a))
       || (eligible(a) && eligible(b) ? Number(b[metric] || 0) - Number(a[metric] || 0) : 0)
       || String(a.displayName || '').localeCompare(String(b.displayName || '')));
@@ -1189,7 +1195,7 @@
       return `
         <tr class="${you ? 'you-row' : ''}">
           <td><span class="rank-badge">${ranked ? ++rank : '—'}</span></td>
-          <td><button class="leaderboard-bowler" type="button" data-member-uid="${escapeHtml(member.uid)}" aria-haspopup="dialog" aria-controls="friendStatsDialog"><strong>${escapeHtml(member.displayName || 'Bowler')}${you ? ' · You' : ''}</strong><span class="bowler-stats-link">View stats ›</span></button>${stale ? '<span class="provisional">Sync the updated app to exclude no-tap</span>' : !ranked ? '<span class="provisional">No standard games</span>' : provisional ? '<span class="provisional">Provisional</span>' : ''}</td>
+          <td><button class="leaderboard-bowler" type="button" data-member-uid="${escapeHtml(member.uid)}" aria-haspopup="dialog" aria-controls="friendStatsDialog"><strong>${escapeHtml(member.displayName || 'Bowler')}${you ? ' · You' : ''}</strong><span class="bowler-stats-link">View stats ›</span></button>${stale ? '<span class="provisional">Open the updated app and sync</span>' : !ranked ? `<span class="provisional">${frameMetric && Number(member.games || 0) > 0 ? 'No frame details' : 'No standard games'}</span>` : provisional ? '<span class="provisional">Provisional</span>' : ''}</td>
           <td class="leader-value">${ranked ? escapeHtml(info.format(member[metric])) : '—'}</td>
           <td>${stale ? '—' : Number(member.games || 0)}</td>
         </tr>`;
@@ -1607,6 +1613,7 @@
   }
 
   window.BowlingCloud = {
+    isBusy: () => syncing,
     isSignedIn: () => Boolean(currentUser),
     syncNow: () => syncAll('Manual sync')
   };

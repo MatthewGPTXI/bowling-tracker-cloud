@@ -8,6 +8,7 @@ const APP_ASSETS = [
   './styles.css',
   './balls.js',
   './app.js',
+  './updates.js',
   './firebase-config.js',
   './cloud.js',
   './friend-stats.js',
@@ -26,12 +27,18 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(
-      keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key))
-    ))
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    await Promise.all((await caches.keys())
+      .filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+      .map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('message', event => {
+  if (event.data?.type === 'BOWLING_VERSION') {
+    event.ports[0]?.postMessage({version: self.BOWLING_VERSION});
+  }
 });
 
 self.addEventListener('fetch', (event) => {
@@ -40,6 +47,12 @@ self.addEventListener('fetch', (event) => {
 
   // Firebase SDK/API requests are cross-origin and should go directly to Firebase.
   if (requestUrl.origin !== self.location.origin) return;
+
+  // Release probes must never be satisfied by an offline or stale HTTP cache.
+  if (requestUrl.pathname === new URL('./build.json', self.registration.scope).pathname) {
+    event.respondWith(fetch(new Request(event.request, {cache: 'no-store'})));
+    return;
+  }
 
   // Always check the network first for Firebase config so a newly pasted
   // project configuration is not trapped behind an older offline cache.

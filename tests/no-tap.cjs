@@ -128,7 +128,7 @@ const setScores = () => {
   await t.exportBackup(); const backup = JSON.parse(downloads.at(-1).contents);
   assert.equal(backup.games.length, 2); assert.equal(backup.games[1].noTap, true);
   t.exportCsv(); const csv = downloads.at(-1).contents.split('\n');
-  assert(csv[0].endsWith(',Scoring,Ball Usage,Alley')); assert(csv[1].includes(',Standard,')); assert(csv[2].includes(',No-tap,')); assert.equal(csv.length, 3);
+  assert(csv[0].endsWith(',Scoring,Ball Usage,Alley,Entry Detail')); assert(csv[1].includes(',Standard,')); assert(csv[2].includes(',No-tap,')); assert.equal(csv.length, 3);
   assert.equal(t.buildImportPlan([{ ...standard[0], noTap: false }], [], data, [])[0].kind, 'duplicate');
   assert.equal(t.buildImportPlan([{ ...standard[0], noTap: true }], [], data, [])[0].kind, 'conflict');
   await t.importBackupFile({ text: async () => JSON.stringify({ games: [{ ...standard[0], noTap: true }] }) });
@@ -175,7 +175,7 @@ const setScores = () => {
   const board = pub.dom.leaderboardBody.innerHTML;
   assert.equal((board.match(/rank-badge">1</g) || []).length, 1);
   assert.equal((board.match(/rank-badge">—</g) || []).length, 2);
-  assert(!board.includes('210.0')); assert(board.includes('No standard games')); assert(board.includes('Sync the updated app'));
+  assert(!board.includes('210.0')); assert(board.includes('No standard games')); assert(board.includes('Open the updated app and sync'));
   t.clearUndo();
   console.log('PASS: no-tap tagging/untagging, standard-only stats/records/trends/periods, consecutive series, independent history search/filter and ordering, legacy/new drafts, series saves, JSON/CSV/import conflicts, remote downloads, empty standard histories, friend comparisons and stale/unranked summaries.');
 })().catch(error => { console.error(error); t.clearUndo(); process.exitCode = 1; });

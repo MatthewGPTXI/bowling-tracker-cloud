@@ -41,8 +41,9 @@
     && member.details.updatedAt === member.updatedAt ? member.details : null;
   const hasCurrentAccount = () => context && window.BowlingApp?.ready
     && window.BowlingApp.getLocalScopeInfo().uid === context.uid;
-  const needsStandardRefresh = member => Number(member?.noTapGames || 0) > 0
-    && member.standardStatsUpdatedAt !== member.updatedAt;
+  const needsStandardRefresh = member => (Number(member?.noTapGames || 0) > 0
+    && member.standardStatsUpdatedAt !== member.updatedAt) || (Number(member?.scoreOnlyGames || 0) > 0
+    && member.frameStatsUpdatedAt !== member.updatedAt);
 
   function metricValue(member, metric) {
     if (!member || needsStandardRefresh(member)) return null;
@@ -51,8 +52,10 @@
     const details = currentDetails(member);
     if (metric.key === 'highSeries' && (games < 3 || details?.hasSeries === false
       || (!details?.hasSeries && !member.highSeries))) return null;
-    if (metric.key === 'cleanRate') return finite(member.cleanGames) === null ? null : member.cleanGames / games * 100;
-    if (metric.key === 'strikesPerGame') return finite(member.totalStrikes) === null ? null : member.totalStrikes / games;
+    const frameGames = finite(member.frameStatsGames) ?? games;
+    if (['strikePct','openAvg','cleanGames','cleanRate','totalStrikes','strikesPerGame','mostStrikes','bestStrikePct'].includes(metric.key) && !frameGames) return null;
+    if (metric.key === 'cleanRate') return finite(member.cleanGames) === null ? null : member.cleanGames / frameGames * 100;
+    if (metric.key === 'strikesPerGame') return finite(member.totalStrikes) === null ? null : member.totalStrikes / frameGames;
     return finite(metric.details ? details?.[metric.key] : member[metric.key]);
   }
 
@@ -130,6 +133,7 @@
       + (count !== null && count > 0 && count < 10 ? ' Fewer than 10 games: averages are provisional.' : '')
       + (comparing && own.games > 0 && own.games < 10 ? ' Your average is provisional: fewer than 10 games.' : '')
       + (!needsRefresh && Number(member.noTapGames || 0) > 0 ? ` ${Number(member.noTapGames)} no-tap games excluded.` : '')
+      + (Number(member.scoreOnlyGames || 0) > 0 ? ' Score-only games excluded from frame stats.' : '')
       + (!navigator.onLine ? ' Offline · using the last loaded summary.' : '');
 
     if (comparing) {
