@@ -17,7 +17,6 @@
   let entryBaseGame = null;
   let pendingImport = null;
 
-  let activeView = 'home';
   let statsPreset = 'all';
   let historyLimit = 10;
   const expandedSessions = new Map();
@@ -190,7 +189,6 @@
   }
   function renderBallOptions() {
     const names = ballNames(), selected = $('statsBall').value;
-    $('ballOptions').innerHTML = names.map(name => `<option value="${escapeHtml(name)}"></option>`).join('');
     document.querySelectorAll('[data-ball-select]').forEach(input => Balls.fillSelect(input));
     $('statsBall').innerHTML = '<option value="">All balls</option><option value="none">No ball recorded</option>' + names.map(name => `<option value="ball:${escapeHtml(ballKey(name))}">${escapeHtml(name)}</option>`).join('');
     $('statsBall').value = selected === 'none' || names.some(name => 'ball:'+ballKey(name) === selected) ? selected : '';
@@ -221,13 +219,16 @@
       let merged;
       request.onsuccess = () => {
         merged = Balls.mergeInventory(seeds, request.result?.value, records);
-        store.put({key: 'ballInventory', value: merged});
+        if (JSON.stringify(request.result?.value) !== JSON.stringify(merged)) store.put({key: 'ballInventory', value: merged});
       };
       tx.oncomplete = () => {
         if (db !== targetDb) { resolve(false); return; }
+        const changed = JSON.stringify(ballInventory) !== JSON.stringify(merged);
         ballInventory = merged;
-        renderBallOptions();
-        window.dispatchEvent(new CustomEvent('bowling:inventory-changed'));
+        if (changed) {
+          renderBallOptions();
+          window.dispatchEvent(new CustomEvent('bowling:inventory-changed'));
+        }
         resolve(true);
       };
       tx.onabort = tx.onerror = () => reject(tx.error || new Error('Could not save ball inventory.'));
@@ -292,13 +293,16 @@
       let merged;
       request.onsuccess = () => {
         merged = Balls.mergeInventory(seeds, request.result?.value, records);
-        store.put({key: 'alleyInventory', value: merged});
+        if (JSON.stringify(request.result?.value) !== JSON.stringify(merged)) store.put({key: 'alleyInventory', value: merged});
       };
       tx.oncomplete = () => {
         if (db !== targetDb) { resolve(false); return; }
+        const changed = JSON.stringify(alleyInventory) !== JSON.stringify(merged);
         alleyInventory = merged;
-        renderAlleyOptions();
-        window.dispatchEvent(new CustomEvent('bowling:alley-inventory-changed'));
+        if (changed) {
+          renderAlleyOptions();
+          window.dispatchEvent(new CustomEvent('bowling:alley-inventory-changed'));
+        }
         resolve(true);
       };
       tx.onabort = tx.onerror = () => reject(tx.error || new Error('Could not save alley inventory.'));
@@ -400,32 +404,12 @@
     return idbRequest(GAME_STORE, 'readonly', (store) => store.getAll());
   }
 
-  async function putGame(game) {
-    return idbRequest(GAME_STORE, 'readwrite', (store) => store.put(game));
-  }
-
-  async function deleteGameRecord(id) {
-    return idbRequest(GAME_STORE, 'readwrite', (store) => store.delete(id));
-  }
-
-  async function clearGames() {
-    return idbRequest(GAME_STORE, 'readwrite', (store) => store.clear());
-  }
-
   async function getAllTombstones() {
     return idbRequest(TOMBSTONE_STORE, 'readonly', (store) => store.getAll());
   }
 
   async function getTombstone(id) {
     return idbRequest(TOMBSTONE_STORE, 'readonly', (store) => store.get(id));
-  }
-
-  async function putTombstone(tombstone) {
-    return idbRequest(TOMBSTONE_STORE, 'readwrite', (store) => store.put(tombstone));
-  }
-
-  async function deleteTombstone(id) {
-    return idbRequest(TOMBSTONE_STORE, 'readwrite', (store) => store.delete(id));
   }
 
   async function getSetting(key) {
@@ -694,6 +678,21 @@
     return best;
   }
 
+  function completedSeriesTotals(source) {
+    const selected = new Set(source.map(game => game.id));
+    const totals = [];
+    // Count non-overlapping triples, preserving gaps from every excluded game.
+    for (const session of buildSessions(games)) {
+      let count = 0, total = 0;
+      for (const game of session.games) {
+        if (isNoTap(game) || !selected.has(game.id)) { count = 0; total = 0; continue; }
+        total += game.score;
+        if (++count === 3) { totals.push(total); count = 0; total = 0; }
+      }
+    }
+    return totals;
+  }
+
   function filteredGames() {
     const scoring = $('historyScoring').value;
     const noTapQuery = /\bno[\s-]?tap\b/i.test($('sessionSearch').value);
@@ -910,7 +909,11 @@
   }
 
   function renderStats() {
-    const stats = calculateStats(statsGames());
+    const selected = statsGames();
+    const stats = calculateStats(selected);
+    const series = completedSeriesTotals(selected);
+    $('statAverageSeries').textContent = series.length ? avg(series).toFixed(1) : '—';
+    $('statAverageSeriesDetail').textContent = series.length ? `${series.length} completed 3-game series` : 'Need 3 games in one session';
     dom.average.textContent = stats.count ? stats.average.toFixed(1) : '—';
     dom.averageDetail.textContent = `${stats.count} game${stats.count === 1 ? '' : 's'}`;
 
@@ -1040,6 +1043,7 @@
     dom.sessionsList.querySelectorAll('.delete-game').forEach((button) => {
       button.addEventListener('click', () => confirmDelete(Number(button.dataset.id)));
     });
+    window.dispatchEvent(new CustomEvent('bowling:history-rendered'));
   }
 
   function setGameActions(id, open) {
@@ -1140,14 +1144,6 @@
       && Number(g.strikeOpportunities || 10) === candidate.strikeOpportunities)));
   }
 
-  function unusualGameWarnings(candidate) {
-    const warnings = [];
-    if (candidate.strikes > 0 && candidate.score < 10) warnings.push('the score is under 10 but strikes are recorded');
-    if (candidate.strikes === 12 && candidate.score !== 300) warnings.push('12 strikes are recorded but the score is not 300');
-    if (candidate.openFrames === 0 && candidate.score < 100) warnings.push('the game is marked clean with a score under 100');
-    return warnings;
-  }
-
   function isValidDate(value) {
     if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) return false;
     const parsed = new Date(`${value}T12:00:00Z`);
@@ -1217,12 +1213,6 @@
       setStatus(dom.entryStatus, 'Duplicate save cancelled.');
       return;
     }
-    const warnings = unusualGameWarnings(validated.value);
-    if (warnings.length && !window.confirm(`This game looks unusual because ${warnings.join(' and ')}. Save it anyway?`)) {
-      setStatus(dom.entryStatus, 'Save cancelled so you can review the game details.');
-      return;
-    }
-
     const now = Date.now();
     const existing = editingGameId ? games.find((g) => g.id === editingGameId) : null;
     if (editingGameId && (!existing || JSON.stringify(existing) !== JSON.stringify(entryBaseGame))) {
@@ -1349,6 +1339,31 @@
     } catch (error) {
       setStatus(dom.entryStatus, 'Could not delete the game. Please try again.', 'error');
     } finally { mutationBusy = false; }
+  }
+
+  async function clearAllHistory() {
+    if (mutationBusy) return;
+    if (!games.length) { setStatus(dom.settingsStatus, 'There is no bowling history to delete.'); return; }
+    const cloudNote = window.BowlingCloud?.isSignedIn?.() ? ' The deletions will also sync to your cloud account.' : '';
+    if (!window.confirm(`Delete every saved bowling game?${cloudNote} This cannot be undone unless you have an exported backup.`)) return;
+    const targetDb = db, bases = clone(games), now = Date.now();
+    const tombstones = bases.map(game => ({id: game.id, updatedAt: Math.max(now, Number(game.updatedAt || 0) + 1)}));
+    mutationBusy = true;
+    dom.clearAllBtn.disabled = true;
+    try {
+      await commitGames([], tombstones, targetDb);
+      if (db !== targetDb) return;
+      clearUndo();
+      const refreshed = await getAllFromDb(targetDb, GAME_STORE);
+      if (db !== targetDb) return;
+      games = refreshed;
+      if (editingGameId) resetEntryForm();
+      renderAll();
+      emitDataChanged({type: 'batch-delete', tombstones, bases});
+      setStatus(dom.settingsStatus, 'All bowling history deleted.', 'success');
+    } catch (error) {
+      if (db === targetDb) setStatus(dom.settingsStatus, 'Could not delete history. Please try again.', 'error');
+    } finally { mutationBusy = false; dom.clearAllBtn.disabled = false; }
   }
 
   function setEntryMode(photoMode) {
@@ -1648,7 +1663,7 @@
       <label>Score<input data-field="score" type="number" min="0" max="300" step="1" inputmode="numeric" required></label>
       <label>Open frames<input data-field="openFrames" type="number" min="0" max="10" step="1" inputmode="numeric" required></label>
       <label>Strikes<input data-field="strikes" type="number" min="0" max="12" step="1" inputmode="numeric" required></label>
-      <label>Strike opportunities<input data-field="strikeOpp" type="number" min="10" max="12" step="1" inputmode="numeric" value="10" required></label>
+      <label>Strike opportunities<select data-field="strikeOpp" required><option value="10">10</option><option value="11">11</option><option value="12">12</option></select></label>
       <label class="series-notes">Notes <small>optional</small><input data-field="notes" type="text"></label>
     </div><details class="advanced-options" data-ball-advanced><summary>Advanced</summary><div class="ball-editor" data-ball-editor><div class="ball-usage-row" data-ball-first><label class="ball-name-field">Ball <small>optional</small><select data-field="ball" data-ball-select><option value="">No ball selected</option></select></label></div></div></details><button class="text-btn danger-text remove-series-row" type="button">Remove game</button>`;
     const fields = seriesFields(row);
@@ -1720,8 +1735,6 @@
     }
     const duplicate = values.some((value) => possibleDuplicate(value));
     if (duplicate && !window.confirm('One or more games match saved games in this session. Save this series anyway?')) return;
-    const warnings = values.flatMap((value, i) => unusualGameWarnings(value).map((warning) => `Game ${i + 1}: ${warning}`));
-    if (warnings.length && !window.confirm(`${warnings.join('\n')}\nSave this series anyway?`)) return;
     mutationBusy = true;
     $('saveSeriesBtn').disabled = true;
     const targetDb = db;
@@ -1839,8 +1852,9 @@
     $('chartDescription').textContent = mode === 'recent'
       ? 'Average of up to 10 recent games at each date, within the selected filters.'
       : 'Your running average within the selected filters.';
-    const stats = progressStats(statsGames(), mode);
-    const last5Count = Math.min(5, statsGames().length);
+    const source = statsGames();
+    const stats = progressStats(source, mode);
+    const last5Count = Math.min(5, source.length);
     $('last5Count').textContent = last5Count < 5 ? `${last5Count} of 5 games recorded` : 'Most recent 5 games';
     for (const count of [10, 30]) {
       const stat = stats[`last${count}`];
@@ -1869,7 +1883,6 @@
 
   function showView(view, focus = true) {
     if (!['home', 'sessions', 'stats', 'friends'].includes(view)) return;
-    activeView = view;
     document.querySelectorAll('.app-view').forEach((panel) => { panel.hidden = panel.id !== `view-${view}`; });
     document.querySelectorAll('.app-nav [data-go-view]').forEach((button) => {
       if (button.dataset.goView === view) button.setAttribute('aria-current', 'page');
@@ -1890,8 +1903,8 @@
   }
 
   function renderHome() {
-    const stats = calculateStats(games);
-    $('homeRecap').innerHTML = `<div><strong>${stats.count ? stats.average.toFixed(1) : '—'}</strong><span>Average</span></div><div><strong>${stats.count}</strong><span>Games</span></div>`;
+    const source = standardGames();
+    $('homeRecap').innerHTML = `<div><strong>${source.length ? avg(source.map(game => game.score)).toFixed(1) : '—'}</strong><span>Average</span></div><div><strong>${source.length}</strong><span>Games</span></div>`;
     const latest = buildSessions(games).sort(latestSessionOrder)[0];
     $('latestSessionShortcut').classList.toggle('hidden', !latest);
     if (latest) {
@@ -2165,24 +2178,7 @@
       const file = dom.importJsonInput.files?.[0];
       if (file) importBackupFile(file);
     });
-    dom.clearAllBtn.addEventListener('click', async () => {
-      if (!games.length) {
-        setStatus(dom.settingsStatus, 'There is no bowling history to delete.');
-        return;
-      }
-      const cloudNote = window.BowlingCloud?.isSignedIn?.()
-        ? ' The deletions will also sync to your cloud account.'
-        : '';
-      if (!window.confirm(`Delete every saved bowling game?${cloudNote} This cannot be undone unless you have an exported backup.`)) return;
-      clearUndo();
-      const now = Date.now();
-      for (const game of games) await putTombstone({ id: game.id, updatedAt: now });
-      await clearGames();
-      games = [];
-      renderAll();
-      emitDataChanged({ type: 'bulk' });
-      setStatus(dom.settingsStatus, 'All bowling history deleted.', 'success');
-    });
+    dom.clearAllBtn.addEventListener('click', clearAllHistory);
 
     window.addEventListener('beforeinstallprompt', (event) => {
       event.preventDefault();

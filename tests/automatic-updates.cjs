@@ -9,7 +9,7 @@ function harness(initial='32',savedGuard=null){
   const registration={update:async()=>{updates++;if(fail)throw Error('offline')}};
   const c={console,Date:class extends Date{static now(){return now}},AbortController,
     MessageChannel:class{constructor(){this.port1={close(){}};this.port2={peer:this.port1}}},
-    setTimeout,clearTimeout,setInterval:(fn,ms)=>timers.push({fn,ms}),
+    setTimeout:(fn,ms)=>{const timer={fn,ms};timers.push(timer);return timer},clearTimeout:timer=>{if(timer)timer.cleared=true},setInterval:(fn,ms)=>timers.push({fn,ms,interval:true}),
     sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},
     navigator:{onLine:true,serviceWorker:{controller:worker,addEventListener:listen}},
     location:{pathname:'/bowling/',reload(){reloads++}},
@@ -23,10 +23,10 @@ function harness(initial='32',savedGuard=null){
     reloads:()=>reloads,updates:()=>updates};
 }
 (async()=>{
-  let h=harness();h.start();await tick();assert.equal(h.reloads(),0,'First install must not reload');assert(h.updates()>0);
+  let h=harness();h.start();await tick();assert.equal(h.reloads(),0,'First install must not reload');assert.equal(h.updates(),1,'One worker update per check');assert(!h.timers.some(t=>t.ms===2000&&!t.cleared),'No idle update polling');
   const before=h.updates();await h.emit('pageshow');assert.equal(h.updates(),before,'Duplicate resume events are throttled');
   h.time();await h.emit('pageshow');assert(h.updates()>before);
-  h.safe(false);h.version('33');await h.emit('controllerchange');assert.equal(h.reloads(),0,'Active draft/save/dialog must survive');
+  h.safe(false);h.version('33');await h.emit('controllerchange');assert.equal(h.reloads(),0,'Active draft/save/dialog must survive');assert(h.timers.some(t=>t.ms===2000&&!t.cleared),'Pending update retries after entry is safe');
   h.safe(true);h.focus(true);await h.emit('bowling:rendered');assert.equal(h.reloads(),0,'Focused entry is protected');
   h.focus(false);await h.emit('bowling:rendered');assert.equal(h.reloads(),1);
   await h.emit('controllerchange');assert.equal(h.reloads(),1,'Only one refresh per document');

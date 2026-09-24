@@ -104,8 +104,8 @@
             <input id="strikesInput" type="number" min="0" max="12" inputmode="numeric" placeholder="0–12">
           </label>
           <label>
-            <span>Strike opportunities <small>10–12</small></span>
-            <input id="strikeOppInput" type="number" min="10" max="12" inputmode="numeric" value="10">
+            <span>Strike opportunities</span>
+            <select id="strikeOppInput"><option value="10">10</option><option value="11">11</option><option value="12">12</option></select>
             <small class="field-help">Use 11 or 12 if you had extra shots in the tenth frame.</small>
           </label>
           <label>
@@ -118,7 +118,6 @@
           <label>Alley <small>optional</small><select id="alleyInput" data-alley-select><option value="">No alley selected</option></select><small class="field-help">Manage your alleys in Profile → Alleys.</small></label>
           <div id="gameBallEditor" class="ball-editor"><div id="gameBallFirst" class="ball-usage-row"><label class="ball-name-field">Ball <small>optional</small><select id="ballInput" data-ball-select><option value="">No ball selected</option></select><small class="field-help">Manage your balls in Profile → Ball inventory.</small></label></div></div>
         </details>
-        <datalist id="ballOptions"></datalist>
         <div class="entry-actions">
           <button id="saveGameBtn" class="btn primary" type="button">Save game</button>
           <button id="cancelEditBtn" class="btn secondary hidden" type="button">Cancel edit</button>
@@ -198,6 +197,11 @@
           <span class="stat-label">High 3-game series</span>
           <strong id="statHighSeries" class="stat-value">—</strong>
           <span id="statHighSeriesDetail" class="stat-detail">Need 3 games in one session</span>
+        </article>
+        <article id="statAverageSeriesCard" class="stat-card">
+          <span class="stat-label">Average series</span>
+          <strong id="statAverageSeries" class="stat-value">—</strong>
+          <span id="statAverageSeriesDetail" class="stat-detail">Need 3 games in one session</span>
         </article>
         <article class="stat-card">
           <span class="stat-label">Strike %</span>
@@ -539,5 +543,6 @@
   <script src="./firebase-config.js" defer></script>
   <script src="./friend-stats.js" defer></script>
   <script src="./cloud.js" defer></script>
+  <script src="./profile.js" defer></script>
 <dialog id="importPreviewDialog"><div class="dialog-header"><h2>Review backup import</h2></div><p id="importPreviewSummary"></p><p>Duplicates are skipped. Conflicts keep your current data unless you choose the backup version.</p><div id="importPreviewRows"></div><p id="importPreviewStatus" role="status"></p><div class="button-row"><button id="cancelImportBtn" class="btn secondary" type="button">Cancel</button><button id="confirmImportBtn" class="btn primary" type="button">Import selected changes</button></div></dialog></body>
 </html>

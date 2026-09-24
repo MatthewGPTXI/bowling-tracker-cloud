@@ -1,7 +1,6 @@
 (() => {
   'use strict';
 
-  const STYLE_ID = 'bowling-profile-goal-styles';
   const VIEW_ID = 'view-profile';
   const NAV_ID = 'nav-profile';
   let goalInputDirty = false;
@@ -48,57 +47,6 @@
   function currentAverage() {
     const games = standardGames();
     return games.length ? games.reduce((sum, game) => sum + Number(game.score), 0) / games.length : null;
-  }
-
-  function installStyles() {
-    if ($(STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = `
-      .app-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-      .profile-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-      .profile-summary-card { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: #0e1727; display: grid; gap: 7px; }
-      .profile-summary-card span { color: var(--muted); font-size: .78rem; }
-      .profile-summary-card strong { font-size: 1.45rem; overflow-wrap: anywhere; }
-      .profile-summary-card small { color: var(--muted); line-height: 1.35; }
-      .profile-goal-row { display: grid; grid-template-columns: minmax(0, 240px) auto auto; gap: 10px; align-items: end; }
-      .profile-goal-row label { min-width: 0; }
-      .profile-goal-row .btn { white-space: nowrap; }
-      .profile-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-      .profile-actions .btn { min-width: 150px; }
-      .goal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-      .goal-help { position: relative; flex-shrink: 0; }
-      .goal-help > summary { list-style: none; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 999px; display: grid; place-items: center; cursor: pointer; color: var(--accent-2); background: var(--panel-2); font-weight: 900; }
-      .goal-help > summary::-webkit-details-marker { display: none; }
-      .goal-help-copy { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: #0d1524; color: var(--muted); font-size: .82rem; line-height: 1.5; }
-      .goal-color-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-      .goal-color-chip { border-radius: 999px; padding: 6px 10px; border: 1px solid var(--line); font-size: .75rem; font-weight: 800; }
-      .goal-color-chip.good { color: var(--accent-2); border-color: #315b50; background: var(--success-bg); }
-      .goal-color-chip.bad { color: var(--danger); border-color: #6b3038; background: var(--danger-bg); }
-      .goal-color-chip.neutral { color: var(--muted); }
-      .game-average-status { display: block; margin-top: 4px; font-size: .72rem; font-weight: 750; line-height: 1.2; }
-      .game-average-status.above { color: var(--accent-2); }
-      .game-average-status.below { color: var(--danger); }
-      .game-average-status.at-average { color: var(--muted); }
-      .history-color-help { margin: 8px 0 12px; }
-      .history-color-help > summary { width: fit-content; min-height: 36px; display: inline-flex; align-items: center; gap: 7px; color: var(--muted); cursor: pointer; font-size: .78rem; font-weight: 700; }
-      .history-color-help .help-mark { width: 22px; height: 22px; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 999px; color: var(--accent-2); }
-      .history-color-help p { margin-top: 6px; color: var(--muted); font-size: .78rem; line-height: 1.45; }
-      @media (max-width: 700px) {
-        .app-nav button { font-size: .68rem; }
-        .profile-summary-grid { grid-template-columns: 1fr 1fr; }
-        .profile-summary-card:first-child { grid-column: 1 / -1; }
-        .profile-goal-row { grid-template-columns: 1fr 1fr; }
-        .profile-goal-row label { grid-column: 1 / -1; }
-        .profile-goal-row .btn { width: 100%; }
-      }
-      @media (max-width: 380px) {
-        .app-nav button { font-size: .63rem; }
-        .profile-summary-grid { grid-template-columns: 1fr; }
-        .profile-summary-card:first-child { grid-column: auto; }
-      }
-    `;
-    document.head.appendChild(style);
   }
 
   function profileMarkup() {
@@ -173,7 +121,6 @@
   }
 
   function ensureProfileUI() {
-    installStyles();
     const nav = document.querySelector('.app-nav');
     const main = $('mainContent');
     if (!nav || !main) return false;
@@ -309,9 +256,9 @@
     if (!ensureProfileUI()) return;
     renderInventory();
     renderAlleyInventory();
-    const average = currentAverage();
-    const goal = readGoal();
     const games = standardGames();
+    const average = games.length ? games.reduce((sum, game) => sum + Number(game.score), 0) / games.length : null;
+    const goal = readGoal();
     const name = app()?.getProfileName?.() || 'Bowler';
     const scope = app()?.getLocalScopeInfo?.();
 
@@ -520,6 +467,22 @@
         status.title = `Current standard-game average: ${average.toFixed(1)}`;
       }
     });
+
+    list.querySelectorAll('.session-card').forEach(card => {
+      const badges = card.querySelector('.session-badges');
+      if (!badges) return;
+      const visible = [...card.querySelectorAll('.game-row')]
+        .map(row => byId.get(Number(row.querySelector('.game-actions-toggle')?.dataset.id)))
+        .filter(game => game && game.noTap !== true);
+      let status = badges.querySelector('.session-average-status');
+      if (average === null || visible.length < 2) { status?.remove(); return; }
+      const sessionAverage = visible.reduce((sum, game) => sum + Number(game.score), 0) / visible.length;
+      if (!status) { status = document.createElement('span'); badges.appendChild(status); }
+      const direction = sessionAverage > average ? 'above' : sessionAverage < average ? 'below' : 'at-average';
+      status.className = `badge session-average-status ${direction}`;
+      status.textContent = direction === 'above' ? 'Above average' : direction === 'below' ? 'Below average' : 'At average';
+      status.title = `Session average: ${sessionAverage.toFixed(1)} · Current average: ${average.toFixed(1)}`;
+    });
   }
 
   function renderHomeGoal() {
@@ -539,9 +502,10 @@
     if (!ensureProfileUI()) return;
     renderProfile();
     renderHomeGoal();
-    setTimeout(renderGameBenchmarks, 0);
+    renderGameBenchmarks();
   }
 
+  window.addEventListener('bowling:history-rendered', renderGameBenchmarks);
   window.addEventListener('bowling:ready', refresh);
   window.addEventListener('bowling:rendered', refresh);
   window.addEventListener('bowling:local-account-changed', () => {

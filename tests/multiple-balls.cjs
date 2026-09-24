@@ -36,7 +36,7 @@ const breakdown = [{name: 'Venom', frames: 4}, {name: 'Mercy', frames: 6}];
   firstFrame.value = '4'; await firstFrame.fire('input'); await t.saveGameFromForm();
   assert.deepEqual(plain(db.stores.games.get(1).balls), breakdown); assert.equal(db.stores.games.get(1).ball, 'Venom');
   app.renderAll(); assert($('sessionsList').innerHTML.includes('Venom · 4 frames / Mercy · 6 frames'));
-  assert($('ballOptions').innerHTML.includes('Mercy'));
+  assert($('statsBall').innerHTML.includes('Mercy'));
   $('statsBall').value = 'ball:mercy'; await $('statsBall').fire('change');
   assert.equal($('statAverage').textContent, '180.0'); assert.equal($('statClosedFramePct').textContent, '70.0%'); assert(!$('statsBallNote').hidden);
   $('statsBall').value = 'none'; await $('statsBall').fire('change'); assert.equal(t.statsGames().length, 0);

@@ -420,22 +420,6 @@
     return JSON.stringify(comparableGame(a)) === JSON.stringify(comparableGame(b));
   }
 
-  function duplicateSignature(game) {
-    const value = comparableGame(game);
-    // Notes are intentionally excluded. Two independently entered copies of the
-    // same game often have different notes, while the bowling result is identical.
-    return [
-      value.date,
-      value.sessionName,
-      value.noTap,
-      value.scoreOnly,
-      value.score,
-      value.openFrames,
-      value.strikes,
-      value.strikeOpportunities
-    ].join('|');
-  }
-
   function gameReviewHtml(label, game) {
     if (!game) return `<div class="sync-review-game"><strong>${escapeHtml(label)}</strong>Deleted</div>`;
     return `<div class="sync-review-game">
@@ -550,22 +534,7 @@
         </div>`;
       }
 
-      return `<div class="sync-review-item" data-sync-issue="${escapeHtml(issue.key)}">
-        <div class="sync-review-title">Sync item</div>
-        <div class="sync-review-copy">These have different internal IDs but the same date, session, score, open frames and strike totals. They may be two copies of the same real game.</div>
-        <div class="sync-review-compare">
-          ${gameReviewHtml('This device', issue.local)}
-          ${gameReviewHtml('Cloud', issue.remote)}
-        </div>
-        <label>Keep
-          <select data-sync-choice>
-            <option value="">Choose…</option>
-            <option value="local">This device copy only</option>
-            <option value="cloud">Cloud copy only</option>
-            <option value="both">Both games are real — keep both</option>
-          </select>
-        </label>
-      </div>`;
+      return '';
     }).join('');
   }
 
@@ -599,6 +568,7 @@
   function queueLocalChange(detail, uid) {
     let values;
     if (detail.type === 'batch-upsert') values = (detail.games || []).map(cloudGamePayload);
+    else if (detail.type === 'batch-delete') values = (detail.tombstones || []).map(cloudDeletePayload);
     else if (detail.type === 'upsert' && detail.game) values = [cloudGamePayload(detail.game)];
     else if (detail.type === 'delete' && detail.tombstone) values = [cloudDeletePayload(detail.tombstone)];
     else return;
@@ -690,40 +660,29 @@
       const app = await waitForBowlingApp();
       if (!isCurrentAccount()) return;
       if (app.getLocalScopeInfo && app.getLocalScopeInfo().uid !== uid) return;
-      if (app.getBallInventory) {
-        const inventory = app.getBallInventory();
+      const inventories = [
+        ['ballInventory', app.getBallInventory, app.mergeBallInventory],
+        ['alleyInventory', app.getAlleyInventory, app.mergeAlleyInventory]
+      ].filter(([, get]) => get).map(([key, get, merge]) => ({key, local: get(), merge}));
+      if (inventories.length) {
         const ref = modules.doc(firestore, 'users', uid);
         const merged = await modules.runTransaction(firestore, async transaction => {
           const snapshot = await transaction.get(ref);
           if (!isCurrentAccount()) return null;
-          const remote = snapshot.exists() ? snapshot.data().ballInventory : [];
-          const result = window.BowlingBalls.mergeInventory(remote, inventory);
-          if (JSON.stringify(result) !== JSON.stringify(remote || [])) transaction.set(ref, {ballInventory: result}, {merge: true});
+          const remote = snapshot.exists() ? snapshot.data() : {};
+          const result = {}, changed = {};
+          for (const {key, local} of inventories) {
+            result[key] = window.BowlingBalls.mergeInventory(remote[key], local);
+            if (JSON.stringify(result[key]) !== JSON.stringify(remote[key] || [])) changed[key] = result[key];
+          }
+          if (Object.keys(changed).length) transaction.set(ref, changed, {merge: true});
           return result;
         });
         if (!isCurrentAccount()) return;
-        if (merged) {
-          await app.mergeBallInventory(merged, uid);
+        if (merged) for (const {key, merge} of inventories) {
+          await merge(merged[key], uid);
           if (!isCurrentAccount()) return;
-          if (profile) profile.ballInventory = merged;
-        }
-      }
-      if (app.getAlleyInventory) {
-        const inventory = app.getAlleyInventory();
-        const ref = modules.doc(firestore, 'users', uid);
-        const merged = await modules.runTransaction(firestore, async transaction => {
-          const snapshot = await transaction.get(ref);
-          if (!isCurrentAccount()) return null;
-          const remote = snapshot.exists() ? snapshot.data().alleyInventory : [];
-          const result = window.BowlingBalls.mergeInventory(remote, inventory);
-          if (JSON.stringify(result) !== JSON.stringify(remote || [])) transaction.set(ref, {alleyInventory: result}, {merge: true});
-          return result;
-        });
-        if (!isCurrentAccount()) return;
-        if (merged) {
-          await app.mergeAlleyInventory(merged, uid);
-          if (!isCurrentAccount()) return;
-          if (profile) profile.alleyInventory = merged;
+          if (profile) profile[key] = merged[key];
         }
       }
       const localGames = app.getGames();
@@ -745,7 +704,7 @@
       const cloudWrites = [];
       const localUpserts = [];
       const localDeletes = [];
-      const handledIds = new Set(unresolved.flatMap(issue => issue.type === 'duplicate' ? [issue.localId,issue.remoteId] : [issue.id]));
+      const handledIds = new Set(unresolved.map(issue => issue.id));
       const resolutionTime = Date.now();
 
       // Apply explicit user choices first. Standard reconciliation below skips
@@ -781,30 +740,6 @@
           continue;
         }
 
-        if (issue.type === 'duplicate') {
-          handledIds.add(issue.localId);
-          handledIds.add(issue.remoteId);
-          if (choice === 'local') {
-            const resolvedLocal = { ...issue.local, updatedAt: resolutionTime };
-            const deleteRemote = { id: issue.remoteId, updatedAt: resolutionTime };
-            cloudWrites.push({ ref: cloudGameRef(issue.localId), data: cloudGamePayload(resolvedLocal) });
-            cloudWrites.push({ ref: cloudGameRef(issue.remoteId), data: cloudDeletePayload(deleteRemote) });
-            localDeletes.push(deleteRemote);
-          } else if (choice === 'cloud') {
-            const deleteLocal = { id: issue.localId, updatedAt: resolutionTime };
-            const resolvedRemote = { ...issue.remote, updatedAt: resolutionTime };
-            localDeletes.push(deleteLocal);
-            localUpserts.push(resolvedRemote);
-            cloudWrites.push({ ref: cloudGameRef(issue.localId), data: cloudDeletePayload(deleteLocal) });
-            cloudWrites.push({ ref: cloudGameRef(issue.remoteId), data: cloudGamePayload(resolvedRemote) });
-          } else {
-            const resolvedLocal = { ...issue.local, updatedAt: resolutionTime };
-            const resolvedRemote = { ...issue.remote, updatedAt: resolutionTime };
-            localUpserts.push(resolvedRemote);
-            cloudWrites.push({ ref: cloudGameRef(issue.localId), data: cloudGamePayload(resolvedLocal) });
-            cloudWrites.push({ ref: cloudGameRef(issue.remoteId), data: cloudGamePayload(resolvedRemote) });
-          }
-        }
       }
 
       for (const [id, remote] of remoteMap.entries()) {
@@ -850,8 +785,6 @@
       if (localUpserts.length || localDeletes.length) {
         await app.applyRemoteChanges({ upserts: localUpserts, deletes: localDeletes, expectedUid: uid });
       }
-      if (!isCurrentAccount()) return;
-
       if (!isCurrentAccount()) return;
       await publishAllSummaries();
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
@@ -1051,27 +984,28 @@
       return;
     }
 
+    const uid = currentUser.uid, revision = authRevision, targetProfile = profile;
+    const isCurrent = () => currentUser?.uid === uid && authRevision === revision && profile === targetProfile;
     const loaded = [];
-    const validIds = [];
-    for (const groupId of profile.groupIds || []) {
+    for (const groupId of [...new Set(targetProfile.groupIds || [])]) {
       try {
         const snap = await modules.getDoc(modules.doc(firestore, 'groups', groupId));
-        if (snap.exists()) {
-          loaded.push({ id: groupId, ...snap.data() });
-          validIds.push(groupId);
-        }
+        if (!isCurrent()) return;
+        if (snap.exists()) loaded.push({ ...snap.data(), id: groupId });
       } catch (error) {
+        if (!isCurrent()) return;
+        // Retain an already loaded group during a transient read failure.
+        const cached = groups.find(group => group.id === groupId);
+        if (cached) loaded.push(cached);
         console.warn('Could not load group', groupId, error);
       }
     }
+    if (!isCurrent()) return;
     groups = loaded;
-    if (validIds.length !== (profile.groupIds || []).length) {
-      await setProfileGroupIds(validIds, profile.activeGroupId);
-    }
-    const nextGroupId = validIds.includes(profile.activeGroupId) ? profile.activeGroupId : (validIds[0] || '');
+    const nextGroupId = loaded.some(group => group.id === targetProfile.activeGroupId)
+      ? targetProfile.activeGroupId : (loaded[0]?.id || '');
     if (nextGroupId !== selectedGroupId) resetLeaderboardView();
     selectedGroupId = nextGroupId;
-    profile.activeGroupId = selectedGroupId;
     renderGroups();
     renderLeaderboardShell();
     if (selectedGroupId) await loadLeaderboard();
@@ -1326,11 +1260,19 @@
       return;
     }
 
+    const user = currentUser, revision = authRevision;
+    const isCurrent = () => currentUser?.uid === user.uid && authRevision === revision;
+    const savedProfile = profile ? {...profile} : null;
     try {
       dom.downloadCloudBackupBtn.disabled = true;
       setStatus('Reading your cloud bowling history…');
 
-      const gameSnap = await modules.getDocs(modules.collection(firestore, 'users', currentUser.uid, 'games'));
+      const [gameSnap, profileSnap] = await Promise.all([
+        modules.getDocs(modules.collection(firestore, 'users', user.uid, 'games')),
+        modules.getDoc(modules.doc(firestore, 'users', user.uid))
+      ]);
+      if (!isCurrent()) return;
+      const cloudProfile = profileSnap.exists() ? profileSnap.data() : savedProfile;
       const games = [];
       const tombstones = [];
       gameSnap.forEach((item) => {
@@ -1346,21 +1288,22 @@
       });
 
       const memberships = [];
-      for (const groupId of [...new Set(profile?.groupIds || [])]) {
+      for (const groupId of [...new Set(cloudProfile?.groupIds || [])]) {
         try {
           const groupRef = modules.doc(firestore, 'groups', groupId);
-          const memberRef = modules.doc(firestore, 'groups', groupId, 'members', currentUser.uid);
+          const memberRef = modules.doc(firestore, 'groups', groupId, 'members', user.uid);
           const [groupSnap, memberSnap] = await Promise.all([
             modules.getDoc(groupRef),
             modules.getDoc(memberRef)
           ]);
+          if (!isCurrent()) return;
           if (groupSnap.exists() || memberSnap.exists()) {
             const groupData = groupSnap.exists() ? groupSnap.data() : {};
             memberships.push({
               id: groupId,
               name: groupData.name || groupId,
               code: groupData.code || groupId,
-              ownedByAccount: groupData.ownerUid === currentUser.uid,
+              ownedByAccount: groupData.ownerUid === user.uid,
               member: memberSnap.exists() ? memberSnap.data() : null
             });
           }
@@ -1369,19 +1312,20 @@
         }
       }
 
+      if (!isCurrent()) return;
       const payload = {
         app: 'Bowling Tracker',
         version: window.BowlingApp?.version || 'unknown',
         backupType: 'firebase-cloud',
         exportedAt: new Date().toISOString(),
-        profileName: profile?.displayName || currentUser.displayName || 'Bowler',
+        profileName: cloudProfile?.displayName || user.displayName || 'Bowler',
         account: {
-          email: currentUser.email || '',
-          displayName: profile?.displayName || currentUser.displayName || ''
+          email: user.email || '',
+          displayName: cloudProfile?.displayName || user.displayName || ''
         },
-        profile: profile ? { ...profile } : null,
-        ballInventory: (await modules.getDoc(await userProfileRef())).data()?.ballInventory || [],
-        alleyInventory: (await modules.getDoc(await userProfileRef())).data()?.alleyInventory || [],
+        profile: cloudProfile,
+        ballInventory: cloudProfile?.ballInventory || [],
+        alleyInventory: cloudProfile?.alleyInventory || [],
         games: games.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
         tombstones: tombstones.sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0)),
         groupMemberships: memberships
@@ -1391,7 +1335,7 @@
       setStatus(`Cloud backup downloaded: ${games.length} live game${games.length === 1 ? '' : 's'} plus ${tombstones.length} deletion record${tombstones.length === 1 ? '' : 's'}.`, 'success');
     } catch (error) {
       console.error(error);
-      setStatus(`Cloud backup failed. ${friendlyError(error)}`, 'error');
+      if (isCurrent()) setStatus(`Cloud backup failed. ${friendlyError(error)}`, 'error');
     } finally {
       if (dom.downloadCloudBackupBtn) dom.downloadCloudBackupBtn.disabled = false;
     }

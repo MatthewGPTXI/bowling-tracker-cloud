@@ -1,5 +1,24 @@
 # Bowling Tracker validation
 
+## v33 code cleanup — September 24, 2026
+
+Reviewed every runtime JavaScript file, the HTML/CSS shell, offline worker and manifest, Firebase configuration, and the checked-in Firestore rules against the v32 source (`de411db`).
+
+Confirmed and fixed:
+
+- Average series ignored the alley selector and closed gaps left by excluded no-tap games.
+- Two independent game-color renderers competed; search-only history redraws could replace goal labels with average labels.
+- A whole-body MutationObserver repeatedly searched for input enhancements after unrelated DOM changes.
+- A failed group read could remove that group ID from the user's cloud profile.
+- Cloud backup read the same profile twice and could mix account context across asynchronous requests.
+- Delete all history wrote deletion markers one by one before clearing games, without an atomic failure boundary or durable per-record conflict bases.
+
+Removed unused compatibility scaffolding, moved Profile styles into the stylesheet and its script into the deferred script list, eliminated duplicate update requests and perpetual two-second idle polling, combined inventory cloud reads, and skipped unchanged inventory writes/events. Runtime JavaScript dropped from 259,103 to 241,822 bytes before compression (6.7%). Combined HTML/CSS/JavaScript dropped by 13,466 bytes.
+
+Validation: 16 Node suites pass. New regressions cover series filtering/gaps/non-overlap, score-only series, goal label refreshes, atomic reset failure and cancellation, durable bulk-delete bases, failed group reads, stale account responses, and a single-read isolated cloud backup. Existing suites cover startup, edits, drafts, imports/exports, inventories, sync conflicts/retries, friend stats, no-tap handling, and safe automatic updates. Syntax, static asset references, unique HTML IDs and release-version consistency are checked.
+
+Tests use simulated browser/storage/Firebase APIs and never modify production bowling records. Browser-runtime installation failed because its downloaded archive was invalid; actual browser rendering, installed-phone lifecycle behavior and live authenticated Firebase transactions remain unverified in this release. Historical notes below describe older releases, not current deployment status.
+
 ## v24 connection review — September 9, 2026
 
 All nine Node suites pass, including tests/cloud-startup.cjs. A reproduced partial-initialization failure previously left firebaseApp set while persistence and the auth observer were unfinished; subsequent attempts falsely returned success. Initialization now tracks completion separately, reuses the app, and serializes retries without duplicate observers. Focus retries failed startup. Startup errors remain visible, signed-in offline users no longer get a green connection indicator, and sync errors are not overwritten by sign-in completion. Offline readiness waits for service-worker activation rather than registration alone.

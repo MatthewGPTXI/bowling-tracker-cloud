@@ -25,7 +25,6 @@ const section=(start,end)=>source.slice(source.indexOf('  '+start),source.indexO
  const newer={...third,score:175,updatedAt:4},newest={...third,score:185,updatedAt:5};local.set(3,newest);c.queueLocalChange({type:'upsert',game:newer,bases:[third]},'a');c.queueLocalChange({type:'upsert',game:newest,bases:[newer]},'a');await c.performSyncAll();assert.equal(remote.get(3).score,185,'Retry keeps earliest base and latest edit');
  assert(!c.sameGameContent({...base,ball:'A'},{...base,ball:'B'}));assert(c.sameGameContent(base,{...base,ball:''}));
  assert(!c.sameGameContent({...base,noTap:true},{...base,noTap:false}));assert(c.sameGameContent(base,{...base,noTap:false}));
- assert.notEqual(c.duplicateSignature({...base,noTap:true}),c.duplicateSignature(base),'Standard and no-tap games are not duplicates');
  assert.equal(c.cloudGamePayload({...base,noTap:true}).noTap,true);assert.equal(c.cloudGamePayload(base).noTap,false);
  const beforeTag=local.get(3),tagged={...beforeTag,noTap:true,updatedAt:beforeTag.updatedAt+1};
  local.set(3,tagged);c.queueLocalChange({type:'upsert',game:tagged,bases:[beforeTag]},'a');c.navigator.onLine=false;await c.performSyncAll();

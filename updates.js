@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const currentVersion = String(window.BOWLING_VERSION);
-  let registration, checking = false, pendingVersion = '', reloading = false, lastCheck = 0;
+  let registration, checking = false, pendingVersion = '', reloading = false, lastCheck = 0, retryTimer;
   const guardKey = 'bowling-update-reload:' + location.pathname;
 
   function workerVersion(worker) {
@@ -16,7 +16,10 @@
   }
 
   async function applyWhenSafe() {
+    clearTimeout(retryTimer);
     if (!pendingVersion || reloading || document.visibilityState !== 'visible') return;
+    // Only poll for an idle moment while an installed update is waiting.
+    retryTimer = setTimeout(applyWhenSafe, 2000);
     if (!window.BowlingApp?.canApplyUpdate?.()) return;
     if (document.activeElement?.matches('input, select, textarea, [contenteditable="true"]')) return;
     // Only reload once the complete new offline release controls this page.
@@ -29,6 +32,7 @@
       sessionStorage.setItem(guardKey, JSON.stringify({version, time: Date.now()}));
     } catch (_) { /* Storage restrictions must not prevent an update. */ }
     reloading = true;
+    clearTimeout(retryTimer);
     location.reload();
   }
 
@@ -45,16 +49,8 @@
     if (Date.now() - lastCheck < 3000) { await applyWhenSafe(); return; }
     checking = true;
     lastCheck = Date.now();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    try {
-      // The manifest bypasses both the service worker and HTTP caches.
-      const response = await fetch('./build.json?check=' + Date.now(), {cache: 'no-store', signal: controller.signal});
-      const build = response.ok ? await response.json() : null;
-      if (build?.version && String(build.version) !== currentVersion) await registration.update();
-    } catch (_) { /* An offline or failed release check leaves the cached app working. */ }
-    finally { clearTimeout(timeout); }
-    // Also checks on each launch/resume even if the manifest request failed.
+    // updateViaCache: 'none' checks the worker and imported version directly.
+    // The worker handshake only permits a reload after all assets are installed.
     try { await registration.update(); } catch (_) {}
     try { await inspectController(); } finally { checking = false; }
   }
@@ -68,7 +64,6 @@
     document.addEventListener('visibilitychange', check);
     window.addEventListener('bowling:rendered', applyWhenSafe);
     setInterval(check, 5 * 60 * 1000);
-    setInterval(applyWhenSafe, 2000);
     check();
   }
   window.BowlingUpdates = {start};

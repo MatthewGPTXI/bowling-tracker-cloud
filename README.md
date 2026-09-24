@@ -1,6 +1,28 @@
 # Bowling Tracker
 
-## Latest release: v32 — September 24, 2026
+## Latest release: v33 — September 24, 2026
+
+A cleanup of the verified v32 release, preserving score-only entry, automatic updates, ball/alley inventories, goal colors, friend comparisons, and the current Profile layout.
+
+- Removed the legacy page-wide MutationObserver and overlapping UI enhancement layer. Strike opportunities and Average series are native controls/cards; Profile owns game benchmark labels and receives explicit history-render events.
+- Fixed Average series to respect alley filters and original game positions. Excluded no-tap games, balls, and alleys break consecutive runs; completed series remain non-overlapping groups of three. Score-only games still count.
+- Removed unused ball suggestions, obsolete duplicate-conflict branches, redundant validation warnings, unused storage helpers, and the dynamic Profile script/style loader.
+- Home no longer calculates every record just to display average/game count. Unchanged inventories no longer rewrite local storage or redraw Profile. Ball and alley sync share one profile transaction, and cloud backup reads the profile once.
+- Group read failures no longer remove saved memberships. Group responses and cloud backups are guarded against account changes during requests.
+- Delete all history uses one atomic transaction and retains original versions for offline deletion/conflict recovery. Failure leaves history intact.
+- Update checks query the service worker once with HTTP-cache bypass. Idle polling runs only while a complete installed update is waiting for a safe refresh. The same launch/resume/reconnect/five-minute checks and draft protections remain.
+
+Runtime JavaScript is 6.7% smaller before compression; the combined HTML/CSS/JavaScript payload is 13,466 bytes smaller. No dependencies, database migrations, or Firebase rule changes were added.
+
+Validation: all 16 Node suites pass, including `tests/cleanup-regression.cjs`, plus JavaScript syntax and static asset checks. Tests use simulated DOM, IndexedDB, and Firebase interfaces. The browser-runtime download failed, so physical iOS/Android and authenticated two-device Firebase behavior were not exercised in this release.
+
+Run the full regression suite:
+
+```sh
+for test in tests/*.cjs; do node "$test" || exit 1; done
+```
+
+## Previous release: v32 — September 24, 2026
 
 - **Automatic updates:** installed and browser apps check on launch, return to the foreground, reconnect, and every five minutes while visible. A network-only build probe and service-worker version handshake detect new releases. Once the complete offline cache is ready, the app refreshes silently when there is no entry/edit, open dialog, photo reference, save, sync, focused input, or pending Undo. Failed checks leave the offline app available. A reload guard prevents loops. No update prompt is added.
 - **First rollout:** v31.1 and earlier do not contain the new resume listener. Open the installed app online, then fully close and reopen it if its old screen remains. Opening Safari/Chrome separately or reinstalling is unnecessary. A closed or suspended app cannot be forced to execute immediately; future checks run when the app opens or resumes.
