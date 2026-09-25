@@ -908,6 +908,40 @@
     };
   }
 
+  // A share card is a snapshot of this profile, independent of screen filters.
+  // Only include public card fields: never notes, email, account IDs, or equipment.
+  function getScoreCardData(key = null) {
+    if (!api.ready) return null;
+    const session = key === null ? null : buildSessions(games).find(item => item.key === key);
+    if (key !== null && !session) return null;
+    const source = session ? session.games : games;
+    const noTapCount = source.filter(isNoTap).length;
+    const noTapOnly = !!session && noTapCount === source.length;
+    const included = noTapOnly ? source.map(game => ({...game, noTap: false})) : standardGames(source);
+    if (!included.length) return null;
+    const stats = calculateStats(included);
+    const dates = included.map(game => game.date).sort();
+    return {
+      kind: session ? 'session' : 'overall',
+      name: activeProfileName || 'Bowler',
+      date: session?.date || todayLocal(),
+      dateLabel: session ? fmtDate(session.date) : dates[0] === dates.at(-1) ? fmtDate(dates[0]) : `${fmtDate(dates[0])} – ${fmtDate(dates.at(-1))}`,
+      asOf: session ? '' : fmtDate(todayLocal()),
+      sessionType: session ? sessionType(session.games[0]) : '',
+      noTapOnly, noTapCount,
+      scores: session ? session.games.map((game, index) => ({number: index + 1, score: game.score, noTap: isNoTap(game)})) : [],
+      count: stats.count,
+      sessions: stats.sessions.length,
+      total: included.reduce((sum, game) => sum + game.score, 0),
+      average: stats.average,
+      highGame: stats.highGameObj?.score ?? null,
+      highSeries: stats.bestSeries?.total ?? null,
+      frameCount: stats.frameCount,
+      strikePct: stats.strikePct,
+      closedFramePct: stats.closedFramePct
+    };
+  }
+
   function renderStats() {
     const selected = statsGames();
     const stats = calculateStats(selected);
@@ -998,6 +1032,7 @@
           </summary>
           <div class="session-actions">
             <button class="btn secondary compact add-to-session" data-key="${escapeHtml(session.key)}" type="button">＋ Add game</button>
+            <button class="text-btn share-session" data-key="${escapeHtml(session.key)}" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog">Share card</button>
             <button class="text-btn edit-session" data-key="${escapeHtml(session.key)}" type="button">Edit session</button>
           </div>
           <div class="games-grid">
@@ -2204,6 +2239,7 @@
     ready: false,
     startupError: null,
     getGames: () => clone(games),
+    getScoreCardData,
     getTombstones: async () => clone(await getAllTombstones()),
     getBowlerNames: () => [activeProfileName || 'Bowler'],
     getDefaultBowler: async () => activeProfileName || await getSetting('profileName') || await getSetting('defaultBowler') || 'Bowler',
