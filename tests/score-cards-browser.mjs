@@ -27,6 +27,7 @@ try {
   // No user accounts or real cloud data are involved in this test.
   await context.route('https://**',route=>route.abort());
   const page = await context.newPage();
+  page.setDefaultTimeout(15000);
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(url);
   await page.waitForFunction(()=>window.BowlingApp?.ready);
@@ -90,9 +91,88 @@ try {
     const data=await page.evaluate(async()=>Array.from(new Uint8Array(await (await fetch(document.getElementById('scoreCardImage').src)).arrayBuffer())));
     await fs.writeFile(path.join(output,'overall-browser.png'),Buffer.from(data));
   }
+  await page.click('#closeScoreCard');
+
+  // Exercise the existing friend dialog and sharing controls with synthetic
+  // summaries only. No Firebase connection or production account is used.
+  await page.evaluate(()=>window.BowlingApp.activateAccount('comparison-test'));
+  await seed([180,210,240,300]);
+  await page.evaluate(async()=>{
+    await new Promise((resolve,reject)=>{
+      const request=indexedDB.open(window.BowlingApp.getLocalScopeInfo().dbName);
+      request.onsuccess=()=>{
+        const db=request.result,tx=db.transaction('games','readwrite'),store=tx.objectStore('games');
+        const second=store.get(2);second.onsuccess=()=>store.put({...second.result,scoreOnly:true,strikes:null,openFrames:null,strikeOpportunities:null});
+        const fourth=store.get(4);fourth.onsuccess=()=>store.put({...fourth.result,noTap:true});
+        tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>reject(tx.error);
+      };request.onerror=()=>reject(request.error);
+    });
+  });
+  await page.reload();await page.waitForFunction(()=>window.BowlingApp?.ready);
+  await page.evaluate(()=>{
+    Object.defineProperty(navigator,'canShare',{configurable:true,value:({files})=>files?.[0]?.type==='image/png'});
+    Object.defineProperty(navigator,'share',{configurable:true,value:async({files,title})=>{
+      window.sharedComparison={name:files[0].name,type:files[0].type,title,active:navigator.userActivation.isActive};
+    }});
+  });
+  const loadFriends=async(name='Alex')=>page.evaluate(name=>{
+    const uid=window.BowlingApp.getLocalScopeInfo().uid;
+    const friend={uid:'synthetic-friend',displayName:name,games:20,average:195.8,highGame:268,highSeries:656,
+      strikePct:42.5,cleanGames:2,totalStrikes:68,frameStatsGames:15,scoreOnlyGames:5,
+      updatedAt:Date.parse('2026-09-24T12:00:00Z'),frameStatsUpdatedAt:Date.parse('2026-09-24T12:00:00Z'),
+      details:{updatedAt:Date.parse('2026-09-24T12:00:00Z'),openAvg:2.2,hasSeries:true}};
+    window.BowlingFriends.setMembers([friend],{uid,groupId:'synthetic-group',revision:1});
+    window.BowlingFriends.open(friend.uid);
+  },name);
+  await loadFriends();
+  assert(!await page.locator('#shareFriendComparison').isVisible());
+  await page.click('#friendStatsCompare');await page.click('#shareFriendComparison');
+  await page.waitForSelector('#saveScoreCard:visible');
+  assert.equal(await page.locator('#scoreCardHeading').textContent(),'Friend comparison card');
+  const comparisonAlt=await page.locator('#scoreCardImage').getAttribute('alt');
+  assert.match(comparisonAlt,/Matthew\. Average: 210.0\. Games: 3/);
+  assert.match(comparisonAlt,/High 3-game series: 630/);
+  assert.match(comparisonAlt,/Alex\. Average: 195.8/);
+  assert.match(comparisonAlt,/Closed frame %: 78.0%/);
+  assert.match(comparisonAlt,/Frame details: 2 of 3 games/);
+  assert.match(comparisonAlt,/Frame details: 15 of 20 games/);
+  assert(!await page.locator('#scoreCardPages').isVisible());
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  assert.equal(await page.evaluate(()=>window.BowlingApp.canApplyUpdate()),false);
+  if(output)await page.screenshot({path:path.join(output,'comparison-mobile.png')});
+  const comparisonDownload=page.waitForEvent('download');await page.click('#saveScoreCard');
+  const comparisonFile=await comparisonDownload;
+  assert.match(comparisonFile.suggestedFilename(),/^bowling-tracker-comparison-\d{4}-\d{2}-\d{2}\.png$/);
+  const comparisonPng=await fs.readFile(await comparisonFile.path());
+  assert.equal(comparisonPng.subarray(1,4).toString(),'PNG');
+  if(output)await fs.writeFile(path.join(output,'comparison-browser.png'),comparisonPng);
+  await page.click('#copyScoreCard');
+  await page.waitForFunction(()=>/Image copied|Copy was blocked/.test(document.getElementById('scoreCardStatus').textContent));
+  assert.match(await page.locator('#scoreCardStatus').textContent(),/Image copied/);
+  assert((await page.evaluate(async()=>(await navigator.clipboard.read())[0].types)).includes('image/png'));
+  await page.click('#shareScoreCard');await page.waitForFunction(()=>window.sharedComparison);
+  assert.equal(await page.evaluate(()=>window.sharedComparison.title),'Bowling comparison');
+  assert.equal(await page.evaluate(()=>window.sharedComparison.active),true);
+  assert.match(await page.evaluate(()=>window.sharedComparison.name),/^bowling-tracker-comparison-/);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#friendStatsDialog').evaluate(el=>el.open),true,'Closing card returns to comparison');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'shareFriendComparison');
+  await page.click('#shareFriendComparison');await page.waitForSelector('#saveScoreCard:visible');
+  await page.evaluate(()=>window.BowlingFriends.clear());
+  assert.equal(await page.locator('#scoreCardDialog').evaluate(el=>el.open),false,'Group reset clears comparison image');
+  assert.equal(await page.locator('#scoreCardImage').getAttribute('src'),null);
+  await loadFriends('An extraordinarily long bowler name 🎳 '.repeat(5));
+  await page.click('#friendStatsCompare');await page.click('#shareFriendComparison');
+  await page.waitForSelector('#saveScoreCard:visible');
+  if(output){
+    const data=await page.evaluate(async()=>Array.from(new Uint8Array(await (await fetch(document.getElementById('scoreCardImage').src)).arrayBuffer())));
+    await fs.writeFile(path.join(output,'comparison-long-name.png'),Buffer.from(data));
+  }
   await page.evaluate(()=>window.BowlingApp.activateAccount('score-card-test-only'));
   assert.equal(await page.locator('#scoreCardDialog').evaluate(el=>el.open),false);
   assert.equal(await page.locator('#scoreCardImage').getAttribute('src'),null);
+  assert.equal(await page.locator('#friendStatsDialog').evaluate(el=>el.open),false);
+  console.log('PASS browser: friend comparison PNG, real clipboard/download, score-only/no-tap data, long names, mobile layout, nested dialog focus and group/account isolation.');
 
   await seed(Array.from({length:61},(_,i)=>100+i));
   await page.click('#nav-sessions');await page.click('.share-session');await page.waitForSelector('#saveScoreCard:visible');

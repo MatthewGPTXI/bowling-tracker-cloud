@@ -14,6 +14,7 @@
     { key: 'highGame', label: 'High game', better: 'higher' },
     { key: 'highSeries', label: 'High 3-game series', better: 'higher' },
     { key: 'strikePct', label: 'Strike %', digits: 1, suffix: '%', better: 'higher' },
+    { key: 'closedFramePct', label: 'Closed frame %', digits: 1, suffix: '%', better: 'higher' },
     { key: 'games', label: 'Games', count: true },
     { key: 'sessions', label: 'Sessions', details: true, count: true },
     { key: 'last5', label: 'Last 5 average', details: true, digits: 1, better: 'higher' },
@@ -53,7 +54,11 @@
     if (metric.key === 'highSeries' && (games < 3 || details?.hasSeries === false
       || (!details?.hasSeries && !member.highSeries))) return null;
     const frameGames = finite(member.frameStatsGames) ?? games;
-    if (['strikePct','openAvg','cleanGames','cleanRate','totalStrikes','strikesPerGame','mostStrikes','bestStrikePct'].includes(metric.key) && !frameGames) return null;
+    if (['strikePct','closedFramePct','openAvg','cleanGames','cleanRate','totalStrikes','strikesPerGame','mostStrikes','bestStrikePct'].includes(metric.key) && !frameGames) return null;
+    if (metric.key === 'closedFramePct') {
+      const openAvg = finite(details?.openAvg);
+      return openAvg === null || openAvg > 10 ? null : (10 - openAvg) * 10;
+    }
     if (metric.key === 'cleanRate') return finite(member.cleanGames) === null ? null : member.cleanGames / frameGames * 100;
     if (metric.key === 'strikesPerGame') return finite(member.totalStrikes) === null ? null : member.totalStrikes / frameGames;
     return finite(metric.details ? details?.[metric.key] : member[metric.key]);
@@ -72,6 +77,7 @@
   }
 
   function close() {
+    window.BowlingScoreCards?.closeComparison?.();
     if (dialog.open) dialog.close();
     selectedUid = '';
     comparing = false;
@@ -102,11 +108,41 @@
 
   function open(uid, trigger = document.activeElement) {
     if (!hasCurrentAccount() || !members.has(uid)) return;
+    window.BowlingScoreCards?.closeComparison?.();
     selectedUid = uid;
     comparing = false;
     opener = trigger;
     render();
     if (selectedUid && !dialog.open) dialog.showModal();
+  }
+
+  function canShareComparison(own, member) {
+    return comparing && selectedUid !== context.uid && !needsStandardRefresh(member)
+      && finite(own.games) > 0 && finite(member.games) > 0;
+  }
+
+  // Only public, display-ready fields leave the comparison view. Reuse the same
+  // missing/stale/frame-stat rules as the table; never fetch or store new data.
+  function getComparisonCardData() {
+    if (!dialog.open || !hasCurrentAccount() || !members.has(selectedUid)) return null;
+    const app = window.BowlingApp;
+    const own = app.getLeaderboardSummary(), member = members.get(selectedUid);
+    if (!canShareComparison(own, member)) return null;
+    const bowler = (summary, name, self) => ({
+      name: String(name || 'Bowler'),
+      self,
+      updatedAt: finite(summary.updatedAt),
+      frameCount: finite(summary.frameStatsGames) ?? finite(summary.games),
+      ...Object.fromEntries(metrics.filter(metric => ['average', 'highGame', 'highSeries', 'strikePct',
+        'closedFramePct', 'games', 'cleanGames', 'totalStrikes'].includes(metric.key))
+        .map(metric => [metric.key, metricValue(summary, metric)]))
+    });
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return {
+      kind: 'comparison', date, asOf: app.formatDate(date), scores: [],
+      bowlers: [bowler(own, app.getProfileName(), true), bowler(member, member.displayName, false)]
+    };
   }
 
   function render() {
@@ -127,6 +163,8 @@
     $('friendStatsOnly').setAttribute('aria-pressed', String(!comparing));
     $('friendStatsCompare').setAttribute('aria-pressed', String(comparing));
     $('friendStatsCompare').hidden = self;
+    $('shareFriendComparison').hidden = !comparing || self;
+    $('shareFriendComparison').disabled = !canShareComparison(own, member);
     const sample = needsRefresh ? 'This bowler must open the updated app and sync to refresh standard-only stats.'
       : count === null ? 'Game count unavailable.' : count === 0 ? 'No games shared yet.' : `${count} game${count === 1 ? '' : 's'} shared.`;
     $('friendStatsStatus').textContent = (comparing ? 'Comparing overall stats. ' : '') + sample
@@ -159,6 +197,7 @@
   dialog.addEventListener('click', event => { if (event.target === dialog) close(); });
   dialog.addEventListener('close', () => {
     if (dialog.open) return;
+    window.BowlingScoreCards?.closeComparison?.();
     selectedUid = '';
     comparing = false;
     if (opener?.isConnected) opener.focus();
@@ -171,5 +210,5 @@
   window.addEventListener('offline', () => { if (dialog.open) render(); });
   window.addEventListener('online', () => { if (dialog.open) render(); });
 
-  window.BowlingFriends = { setMembers, clear, open };
+  window.BowlingFriends = { setMembers, clear, open, getComparisonCardData };
 })();

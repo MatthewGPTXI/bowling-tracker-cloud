@@ -1,6 +1,15 @@
 # Bowling Tracker
 
-## Latest release: v34 — September 24, 2026
+## Latest release: v35 — September 25, 2026
+
+- **Friend comparison cards:** Friends → select a bowler → Compare with me → Share comparison creates a two-column PNG with both names, averages, game counts, high games, high consecutive 3-game series, strike %, closed frame %, clean games, and total strikes.
+- Reuses the existing score-card preview, Save image, Copy image, device Share, and local QR code. Closing the card returns to the comparison. No new page, tracking, network requests, database fields, or runtime dependencies.
+- Both columns use all-time standard games. Your column uses current saved stats; the friend's column uses their last shared summary and shows its date. Frame-detail counts show score-only coverage, low-game averages remain marked provisional, and unavailable values stay as —. Closed frame % is derived from the existing current open-frame average and also appears in the comparison table.
+- Sharing is available when both bowlers have standard games. Legacy summaries that still mix no-tap games or score-only frame stats must refresh first. Closing the friend view, changing groups, losing membership, or switching accounts clears the comparison preview and its image URL.
+
+Validation: all 17 Node regression suites pass, with added coverage for comparison snapshots, existing summary compatibility, missing/stale details, score-only denominators, true zeroes, and excluded data. Chromium checks cover comparison PNG download, actual clipboard images, native-share payload/user activation, mobile layout, long names, return focus, group/account changes, existing score cards, and offline cache reload. Native sharing uses a platform stub; physical iOS/Android share sheets were not exercised. Browser tooling is installed separately from this dependency-free app.
+
+## Previous release: v34 — September 24, 2026
 
 - **Session score cards:** Sessions → Share card creates a PNG with your name, date, game scores in their saved order, series total, average, strike %, and closed frame %. It includes the full session regardless of history filters.
 - **Overall stats cards:** Stats → Share overall stats creates an all-time card with the date range, average, game/session counts, high game, best consecutive 3-game series, total pins, strike %, and closed frame %. Screen filters do not change this card.
