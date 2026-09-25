@@ -53,6 +53,19 @@
   const percent = value => value == null ? '—' : `${value.toFixed(1)}%`;
   const pages = card => Math.max(1, Math.ceil(card.scores.length / PAGE_SIZE));
   const filename = (card, page = 0) => `bowling-tracker-${card.kind}-${card.date}${pages(card) > 1 ? `-${page + 1}` : ''}.png`;
+  const comparisonMetrics = [
+    ['highGame', 'High game', number],
+    ['highSeries', 'High 3-game series', number],
+    ['strikePct', 'Strike %', percent],
+    ['closedFramePct', 'Closed frame %', percent],
+    ['cleanGames', 'Clean games', number],
+    ['totalStrikes', 'Total strikes', number]
+  ];
+  const sharedDate = bowler => {
+    const date = bowler.updatedAt === null ? null : new Date(bowler.updatedAt);
+    return date && Number.isFinite(date.getTime())
+      ? date.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : 'unavailable';
+  };
 
   function notes(card) {
     const lines = [];
@@ -67,6 +80,13 @@
   }
 
   function describe(card, page = 0) {
+    if (card.kind === 'comparison') return `Friend comparison. All time, standard games only. As of ${card.asOf}. `
+      + card.bowlers.map(bowler => `${bowler.name}. Average: ${decimal(bowler.average)}. Games: ${number(bowler.games)}. `
+        + comparisonMetrics.map(([key, label, format]) => `${label}: ${format(bowler[key])}. `).join('')
+        + `Frame details: ${number(bowler.frameCount)} of ${number(bowler.games)} games. `
+        + (bowler.games < 10 ? 'Provisional average: fewer than 10 games. ' : '')
+        + (bowler.self ? 'Latest saved games. ' : `Last shared: ${sharedDate(bowler)}. `)).join('')
+      + `No-tap games excluded. Frame stats exclude score-only games. — means unavailable. Bowling Tracker. QR code: ${APP_URL}`;
     const scores = card.scores.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
     return `${card.name}. ${card.kind === 'session' ? card.sessionType + ' session' : 'Overall stats, all time'}. ${card.dateLabel}. `
       + (scores.length ? scores.map(game => `Game ${game.number}: ${game.score}${game.noTap ? ' (no-tap)' : ''}`).join(', ') + '. ' : '')
@@ -78,13 +98,14 @@
 
   function render(card, canvas, page = 0) {
     const session = card.kind === 'session';
+    const comparison = card.kind === 'comparison';
     const scores = card.scores.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
     const columns = scores.length > 6 ? 4 : 3;
     const rows = Math.ceil(scores.length / columns);
     const scoreHeight = rows ? rows * 150 - 16 : 0;
     const metricY = session ? 498 + scoreHeight + 32 : 492;
     const noteLines = notes(card);
-    const footerY = metricY + (session ? 176 : 342) + Math.max(1, noteLines.length) * 34 + 44;
+    const footerY = comparison ? 1376 : metricY + (session ? 176 : 342) + Math.max(1, noteLines.length) * 34 + 44;
     canvas.width = 1080;
     canvas.height = footerY + 264;
     const ctx = canvas.getContext('2d');
@@ -124,34 +145,60 @@
       ctx.fillStyle = '#32555f'; ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2); ctx.fill();
     }
     box(64, 62, 48, 5, colors.mint, 2);
-    text(session ? (card.noTapOnly ? 'NO-TAP SESSION' : 'SESSION SCORE CARD') : 'OVERALL STATS · ALL TIME', 130, 77, 27, colors.mint, 700);
-    text(card.name, 64, 163, 58, colors.text, 750, 790);
-    text(session ? `${card.dateLabel} · ${card.sessionType}` : card.dateLabel, 64, 219, 30, colors.muted);
-    text(session ? (card.noTapOnly ? 'NO-TAP SERIES TOTAL' : card.noTapCount ? 'STANDARD SERIES TOTAL' : 'SERIES TOTAL') : 'AVERAGE', 64, 300, 28, colors.mint, 650);
-    text(session ? number(card.total) : decimal(card.average), 58, 433, 138, colors.text, 750, 690);
-    text(`${number(card.count)} game${card.count === 1 ? '' : 's'}${session ? '' : ` · ${number(card.sessions)} session${card.sessions === 1 ? '' : 's'}`}`, 726, 411, 29, colors.muted, 500, 290);
-
-    if (session) {
-      const width = (952 - (columns - 1) * 16) / columns;
-      scores.forEach((game, i) => {
-        const x = 64 + (i % columns) * (width + 16), y = 498 + Math.floor(i / columns) * 150;
-        box(x, y, width, 134, colors.panel);
-        text(game.noTap ? `G${game.number} · NO-TAP` : `GAME ${game.number}`, x + 22, y + 38, 25, colors.muted, 550, width - 44);
-        text(game.score, x + 22, y + 107, 62, game.noTap ? colors.muted : colors.mint, 750, width - 44);
+    if (comparison) {
+      text('FRIEND COMPARISON', 130, 77, 27, colors.mint, 700);
+      text('Side by side.', 64, 158, 58, colors.text, 700);
+      text('All time · Standard games only', 64, 213, 30, colors.muted);
+      card.bowlers.forEach((bowler, index) => {
+        const x = index === 0 ? 64 : 548, width = 468;
+        const accent = index === 0 ? colors.mint : '#9fc9ff';
+        box(x, 254, width, 1014, colors.panel);
+        box(x + 28, 282, 42, 5, accent, 2);
+        text(bowler.name, x + 28, 342, 42, colors.text, 700, width - 56);
+        text(`${number(bowler.games)} games${bowler.games < 10 ? ' · Provisional' : ''}`, x + 28, 386, 26, colors.muted, 500, width - 56);
+        text('AVERAGE', x + 28, 443, 26, accent, 700, width - 56);
+        text(decimal(bowler.average), x + 23, 535, 90, accent, 700, width - 46);
+        comparisonMetrics.forEach(([key, label, format], row) => {
+          const y = 562 + row * 100;
+          ctx.fillStyle = colors.line; ctx.fillRect(x + 28, y, width - 56, 1);
+          text(label, x + 28, y + 33, 26, colors.muted, 500, width - 56);
+          text(format(bowler[key]), x + 28, y + 80, 42, colors.text, 700, width - 56);
+        });
+        text(`Frame details: ${number(bowler.frameCount)} / ${number(bowler.games)} games`, x + 28, 1202, 26, colors.muted, 500, width - 56);
+        text(bowler.self ? 'Your latest saved games' : `Shared ${sharedDate(bowler)}`, x + 28, 1241, 26, colors.muted, 500, width - 56);
       });
-      metric('Average', decimal(card.average), 64, metricY);
-      metric('Strike %', percent(card.strikePct), 387, metricY);
-      metric('Closed frame %', percent(card.closedFramePct), 710, metricY);
+      text('No-tap excluded · Frame stats exclude score-only games', 64, 1311, 26, colors.muted);
+      text('— means unavailable', 64, 1349, 26, colors.muted);
     } else {
-      metric('High game', number(card.highGame), 64, metricY, 468);
-      metric('Best 3-game series', number(card.highSeries), 548, metricY, 468);
-      metric('Total pins', number(card.total), 64, metricY + 164);
-      metric('Strike %', percent(card.strikePct), 387, metricY + 164);
-      metric('Closed frame %', percent(card.closedFramePct), 710, metricY + 164);
+      text(session ? (card.noTapOnly ? 'NO-TAP SESSION' : 'SESSION SCORE CARD') : 'OVERALL STATS · ALL TIME', 130, 77, 27, colors.mint, 700);
+      text(card.name, 64, 163, 58, colors.text, 750, 790);
+      text(session ? `${card.dateLabel} · ${card.sessionType}` : card.dateLabel, 64, 219, 30, colors.muted);
+      text(session ? (card.noTapOnly ? 'NO-TAP SERIES TOTAL' : card.noTapCount ? 'STANDARD SERIES TOTAL' : 'SERIES TOTAL') : 'AVERAGE', 64, 300, 28, colors.mint, 650);
+      text(session ? number(card.total) : decimal(card.average), 58, 433, 138, colors.text, 750, 690);
+      text(`${number(card.count)} game${card.count === 1 ? '' : 's'}${session ? '' : ` · ${number(card.sessions)} session${card.sessions === 1 ? '' : 's'}`}`, 726, 411, 29, colors.muted, 500, 290);
+
+      if (session) {
+        const width = (952 - (columns - 1) * 16) / columns;
+        scores.forEach((game, i) => {
+          const x = 64 + (i % columns) * (width + 16), y = 498 + Math.floor(i / columns) * 150;
+          box(x, y, width, 134, colors.panel);
+          text(game.noTap ? `G${game.number} · NO-TAP` : `GAME ${game.number}`, x + 22, y + 38, 25, colors.muted, 550, width - 44);
+          text(game.score, x + 22, y + 107, 62, game.noTap ? colors.muted : colors.mint, 750, width - 44);
+        });
+        metric('Average', decimal(card.average), 64, metricY);
+        metric('Strike %', percent(card.strikePct), 387, metricY);
+        metric('Closed frame %', percent(card.closedFramePct), 710, metricY);
+      } else {
+        metric('High game', number(card.highGame), 64, metricY, 468);
+        metric('Best 3-game series', number(card.highSeries), 548, metricY, 468);
+        metric('Total pins', number(card.total), 64, metricY + 164);
+        metric('Strike %', percent(card.strikePct), 387, metricY + 164);
+        metric('Closed frame %', percent(card.closedFramePct), 710, metricY + 164);
+      }
+      const noteY = metricY + (session ? 192 : 356);
+      noteLines.forEach((line, i) => text(line, 64, noteY + i * 34, 26, colors.muted));
+      if (pages(card) > 1) text(`Games ${scores[0].number}–${scores.at(-1).number} of ${card.scores.length} · Full-session totals on every card`, 64, footerY - 14, 26, colors.muted);
     }
-    const noteY = metricY + (session ? 192 : 356);
-    noteLines.forEach((line, i) => text(line, 64, noteY + i * 34, 26, colors.muted));
-    if (pages(card) > 1) text(`Games ${scores[0].number}–${scores.at(-1).number} of ${card.scores.length} · Full-session totals on every card`, 64, footerY - 14, 26, colors.muted);
     ctx.fillStyle = colors.line; ctx.fillRect(64, footerY, 952, 1);
     text('BOWLING TRACKER', 64, footerY + 80, 30, colors.text, 700);
     text('Log your games. See your progress.', 64, footerY + 125, 27, colors.muted);
@@ -229,12 +276,12 @@
       if (token === generation && valid()) { busy = false; buttons(); }
     }
   }
-  function open(key = null) {
-    const card = window.BowlingApp.getScoreCardData(key);
+  function openCard(card) {
     if (!card) return;
     snapshot = card; scope = currentScope(); page = 0;
-    $('scoreCardHeading').textContent = card.kind === 'session' ? 'Session score card' : 'Overall stats card';
-    $('scoreCardScope').textContent = card.kind === 'session'
+    $('scoreCardHeading').textContent = card.kind === 'comparison' ? 'Friend comparison card' : card.kind === 'session' ? 'Session score card' : 'Overall stats card';
+    $('scoreCardScope').textContent = card.kind === 'comparison'
+      ? 'All time · standard games · your saved stats and their last shared stats.' : card.kind === 'session'
       ? 'Full session · includes all saved game scores.'
       : 'All time · standard games · includes every date, ball, and alley.';
     dialog.showModal();
@@ -243,10 +290,12 @@
   $('closeScoreCard').addEventListener('click', close);
   dialog.addEventListener('close', () => { if (!dialog.open) close(); });
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
-  $('shareOverallStats').addEventListener('click', () => open());
+  $('shareOverallStats').addEventListener('click', () => openCard(window.BowlingApp.getScoreCardData()));
+  $('shareFriendComparison').addEventListener('click', () => openCard(window.BowlingFriends?.getComparisonCardData()));
+  api.closeComparison = () => { if (snapshot?.kind === 'comparison') close(); };
   $('sessionsList').addEventListener('click', event => {
     const button = event.target.closest('.share-session');
-    if (button) open(button.dataset.key);
+    if (button) openCard(window.BowlingApp.getScoreCardData(button.dataset.key));
   });
   $('scoreCardPrevious').addEventListener('click', () => { if (!busy && valid() && page > 0) { page--; generate(); } });
   $('scoreCardNext').addEventListener('click', () => { if (!busy && valid() && page < pages(snapshot) - 1) { page++; generate(); } });
@@ -271,7 +320,7 @@
     const token = generation;
     busy = true; buttons();
     try {
-      await navigator.share({files: [file()], title: snapshot.kind === 'session' ? 'My bowling session' : 'My bowling stats'});
+      await navigator.share({files: [file()], title: snapshot.kind === 'comparison' ? 'Bowling comparison' : snapshot.kind === 'session' ? 'My bowling session' : 'My bowling stats'});
       if (token === generation && valid()) $('scoreCardStatus').textContent = '';
     } catch (error) {
       if (token === generation && valid()) $('scoreCardStatus').textContent = error.name === 'AbortError' ? '' : 'Sharing isn’t available here. Try Save image or Copy image.';

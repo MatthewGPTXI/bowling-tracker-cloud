@@ -57,5 +57,22 @@ for(let page=0;page<3;page++) {
   assert(cards.filename(long,page).endsWith(`-${page+1}.png`));
 }
 assert.equal(cards.filename(overall),'bowling-tracker-overall-'+overall.date+'.png');
+const comparison = {kind:'comparison', date:'2026-09-25', asOf:'Sep 25, 2026', scores:[], bowlers:[
+  {name:'Matthew', self:true, updatedAt:Date.now(), games:20, frameCount:15, average:180, highGame:280,
+    highSeries:630, strikePct:42, closedFramePct:80, cleanGames:3, totalStrikes:63},
+  {name:'A very long bowler name 🎳 '.repeat(5), self:false, updatedAt:null, games:3, frameCount:0, average:0,
+    highGame:0, highSeries:0, strikePct:null, closedFramePct:null, cleanGames:null, totalStrikes:null}
+]};
+canvas.texts=[]; cards.render(comparison,canvas);
+assert.equal(canvas.width,1080); assert.equal(canvas.height,1640);
+assert.equal(canvas.texts.filter(value=>value==='Closed frame %').length,2);
+assert.equal(canvas.texts.filter(value=>value==='—').length,4);
+assert(canvas.texts.includes('Matthew')); assert(canvas.texts.includes('0.0'));
+assert(canvas.texts.some(value=>value.startsWith('A very long')&&value.endsWith('…')));
+assert.equal(cards.pages(comparison),1);
+assert.equal(cards.filename(comparison),'bowling-tracker-comparison-2026-09-25.png');
+assert(cards.describe(comparison).includes(comparison.bowlers[1].name),'Accessible description preserves the full name');
+assert(cards.describe(comparison).includes('Frame details: 0 of 3 games'));
+assert(!cards.describe(comparison).includes('undefined'));
 assert(fs.readFileSync(path.join(root,'service-worker.js'),'utf8').includes("'./score-cards.js'"));
 console.log('PASS: score cards preserve game order, weighted frame stats, missing stats, zero scores, no-tap rules, all-time scope, safe snapshots, and all scores across long-session pages.');
