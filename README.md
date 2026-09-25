@@ -1,6 +1,19 @@
 # Bowling Tracker
 
-## Latest release: v33 — September 24, 2026
+## Latest release: v34 — September 24, 2026
+
+- **Session score cards:** Sessions → Share card creates a PNG with your name, date, game scores in their saved order, series total, average, strike %, and closed frame %. It includes the full session regardless of history filters.
+- **Overall stats cards:** Stats → Share overall stats creates an all-time card with the date range, average, game/session counts, high game, best consecutive 3-game series, total pins, strike %, and closed frame %. Screen filters do not change this card.
+- **Save, copy, or share:** Preview the card, then use Save image, Copy image, or the device's Share menu when available. Clipboard failures leave save/share available. On devices that open the PNG instead of downloading it, touch and hold the image to save it.
+- Every card includes a small Bowling Tracker credit and a QR code linking to the app. The QR matrix is bundled and drawn locally; cards work offline without external image, QR, or font services.
+- Score-only games count toward scores and averages; missing frame details never become zeroes. Overall stats exclude no-tap. Session cards label no-tap scores and use standard-game totals/rates in mixed sessions; entirely no-tap sessions are clearly labeled.
+- Long sessions split into cards of up to 24 game scores with full-session totals repeated and page-specific filenames. No scores are silently omitted. Open cards block automatic app refresh and clear on profile changes; image URLs are released when the card closes.
+
+Validation: all 17 Node regression suites pass. Chromium checks exercise actual PNG downloads and image clipboard writes, blocked-copy fallback, mobile layout, account switching, pagination, late PNG encoding, update guards, and offline service-worker reload/card generation. Native-share capability/payload/cancellation is tested with a browser stub; physical iOS/Android share sheets have not been exercised. Exported QR codes were decoded independently at full and half size. No database migration, Firebase changes, or runtime dependencies were added.
+
+Optional browser check (requires Playwright and Chromium): `node tests/score-cards-browser.mjs`. Use `PLAYWRIGHT_MODULE` and `CHROMIUM_EXECUTABLE` to supply tools installed outside the app, and `CARD_TEST_OUTPUT` to save test PNGs/screenshots.
+
+## Previous release: v33 — September 24, 2026
 
 A cleanup of the verified v32 release, preserving score-only entry, automatic updates, ball/alley inventories, goal colors, friend comparisons, and the current Profile layout.
 

@@ -8,6 +8,7 @@ const APP_ASSETS = [
   './styles.css',
   './balls.js',
   './app.js',
+  './score-cards.js',
   './updates.js',
   './firebase-config.js',
   './cloud.js',

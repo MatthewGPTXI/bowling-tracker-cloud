@@ -165,7 +165,7 @@
       </section></div>
       <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>
       <section class="panel stats-toolbar" aria-labelledby="statsHeading">
-        <div class="section-heading"><div><p class="eyebrow">YOUR PROGRESS</p><h2 id="statsHeading">Statistics</h2></div><button id="clearStatsFilters" class="text-btn" type="button">Reset filters</button></div>
+        <div class="section-heading"><div><p class="eyebrow">YOUR PROGRESS</p><h2 id="statsHeading">Statistics</h2></div><div class="button-row"><button id="shareOverallStats" class="btn secondary compact" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog" disabled>Share overall stats</button><button id="clearStatsFilters" class="text-btn" type="button">Reset filters</button></div></div>
         <div class="stats-presets" role="group" aria-label="Statistics date range">
           <button class="range-chip" type="button" data-stats-preset="all" aria-pressed="true">All time</button>
           <button class="range-chip" type="button" data-stats-preset="month" aria-pressed="false">This month</button>
@@ -330,6 +330,17 @@
       <span id="offlineStatus">Checking offline support…</span>
     </footer>
   </div>
+
+  <dialog id="scoreCardDialog" aria-labelledby="scoreCardHeading" aria-describedby="scoreCardScope">
+    <div class="dialog-inner">
+      <div class="dialog-header"><h2 id="scoreCardHeading">Score card</h2><button id="closeScoreCard" class="text-btn" type="button" autofocus>Close</button></div>
+      <p id="scoreCardScope" class="section-copy"></p>
+      <div class="score-card-preview"><img id="scoreCardImage" alt="" hidden></div>
+      <div id="scoreCardPages" class="score-card-pages" hidden><button id="scoreCardPrevious" class="text-btn" type="button">Previous</button><span id="scoreCardPageLabel"></span><button id="scoreCardNext" class="text-btn" type="button">Next</button></div>
+      <div class="button-row score-card-actions"><button id="shareScoreCard" class="btn primary" type="button" hidden>Share…</button><a id="saveScoreCard" class="btn secondary" download hidden>Save image</a><button id="copyScoreCard" class="btn secondary" type="button" disabled>Copy image</button></div>
+      <p id="scoreCardStatus" class="status-text" role="status" aria-live="polite"></p>
+    </div>
+  </dialog>
 
   <dialog id="friendStatsDialog" aria-labelledby="friendStatsName" aria-describedby="friendStatsScope">
     <div class="dialog-inner">
@@ -540,6 +551,7 @@
   <script src="./balls.js" defer></script>
   <script src="./updates.js" defer></script>
   <script src="./app.js" defer></script>
+  <script src="./score-cards.js" defer></script>
   <script src="./firebase-config.js" defer></script>
   <script src="./friend-stats.js" defer></script>
   <script src="./cloud.js" defer></script>

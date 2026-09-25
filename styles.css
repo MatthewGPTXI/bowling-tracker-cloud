@@ -270,6 +270,13 @@ footer { padding: 18px 4px 4px; display: flex; justify-content: space-between; g
 dialog { width: min(620px, calc(100% - 24px)); border: 1px solid var(--line); border-radius: 22px; color: var(--text); background: var(--panel); padding: 0; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
 dialog::backdrop { background: rgba(2,6,12,.7); backdrop-filter: blur(5px); }
 .dialog-inner { padding: 20px; }
+.score-card-preview { margin: 16px 0; min-height: 80px; }
+.score-card-preview img { display: block; width: 100%; height: auto; border-radius: 14px; }
+.score-card-pages { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.score-card-actions { position: sticky; bottom: 0; padding: 12px 0; background: var(--panel); }
+.score-card-actions > * { flex: 1 1 auto; text-align: center; text-decoration: none; }
+#scoreCardDialog { max-height: calc(100dvh - 24px); overflow-y: auto; }
+#scoreCardStatus { display: block; min-height: 1.5em; }
 .dialog-header { display: flex; justify-content: space-between; align-items: flex-start; }
 .settings-section { padding: 18px 0; border-top: 1px solid var(--line); margin-top: 18px; }
 .settings-section p { color: var(--muted); line-height: 1.45; font-size: .86rem; margin: 7px 0 12px; }
