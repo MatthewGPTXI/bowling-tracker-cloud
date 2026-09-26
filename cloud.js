@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const openDialog = dialog => window.BowlingUI ? window.BowlingUI.openDialog(dialog) : dialog.showModal();
 
   const FIREBASE_SDK_VERSION = '12.17.1';
   const config = window.BOWLING_FIREBASE_CONFIG || {};
@@ -1475,7 +1476,7 @@
 
   function wireEvents() {
     dom.openCloudBtn?.addEventListener('click', async () => {
-      dom.cloudDialog.showModal();
+      openDialog(dom.cloudDialog);
       renderConnectionState();
       if (configReady() && navigator.onLine) await initFirebase();
     });
@@ -1484,10 +1485,10 @@
       if (event.target === dom.cloudDialog) dom.cloudDialog.close();
     });
     dom.leaderboardConnectBtn?.addEventListener('click', async () => {
-      dom.cloudDialog.showModal();
+      openDialog(dom.cloudDialog);
       if (configReady() && navigator.onLine) await initFirebase();
     });
-    dom.leaderboardManageGroupsBtn?.addEventListener('click', () => dom.cloudDialog.showModal());
+    dom.leaderboardManageGroupsBtn?.addEventListener('click', () => openDialog(dom.cloudDialog));
     dom.signInBtn?.addEventListener('click', signIn);
     dom.createAccountBtn?.addEventListener('click', createAccount);
     dom.resetPasswordBtn?.addEventListener('click', resetPassword);

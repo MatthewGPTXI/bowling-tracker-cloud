@@ -7,6 +7,7 @@ const APP_ASSETS = [
   './version.js',
   './styles.css',
   './balls.js',
+  './ui.js',
   './app.js',
   './score-cards.js',
   './updates.js',

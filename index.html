@@ -43,7 +43,7 @@
     <nav class="app-nav" aria-label="Main navigation"><button id="nav-home" type="button" data-go-view="home" aria-controls="view-home" aria-current="page"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z"/></svg>Home</button><button id="nav-sessions" type="button" data-go-view="sessions" aria-controls="view-sessions"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 2v6m10-6v6M3 11h18m-13 4h2m4 0h2"/></svg>Sessions</button><button id="nav-stats" type="button" data-go-view="stats" aria-controls="view-stats"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20v-6m7 6V4m7 16V9" stroke-width="3"/></svg>Stats</button><button id="nav-friends" type="button" data-go-view="friends" aria-controls="view-friends"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5v1"/></svg>Friends</button></nav>
     <main id="mainContent" tabindex="-1">
       <div id="view-home" class="app-view" role="region" aria-label="Home">
-        <div class="home-welcome"><h2 id="homeGreeting">Ready to bowl?</h2><div id="homeRecap" class="home-recap"></div></div>
+        <div class="home-welcome"><h2 id="homeGreeting">Your game</h2><div id="homeRecap" class="home-recap"></div></div>
         <section class="panel entry-panel">
           <div class="section-heading"><h2 id="entryHeading">Add game</h2><p id="entrySubheading" class="visually-hidden">Enter one game or a full series.</p></div>
           <div class="segmented" role="group" aria-label="Entry method">
@@ -335,7 +335,7 @@
           <p class="eyebrow">DATA & BACKUP</p>
           <h2>Data & backups</h2>
         </div>
-        <button id="closeSettingsBtn" class="icon-btn" type="button" aria-label="Close settings">×</button>
+        <button id="closeSettingsBtn" class="icon-btn" type="button" aria-label="Close settings" autofocus>×</button>
       </div>
 
       <div class="settings-section">
@@ -376,7 +376,7 @@
           <p class="eyebrow">CLOUD SYNC</p>
           <h2>Account & sync</h2>
         </div>
-        <button id="closeCloudBtn" class="icon-btn" type="button" aria-label="Close cloud settings">×</button>
+        <button id="closeCloudBtn" class="icon-btn" type="button" aria-label="Close cloud settings" autofocus>×</button>
       </div>
 
       <div id="cloudConfigMissing" class="settings-section">
@@ -498,7 +498,7 @@
 
   <dialog id="seriesDialog" aria-labelledby="seriesHeading">
     <form id="seriesForm" class="dialog-inner" novalidate>
-      <div class="dialog-header"><h2 id="seriesHeading">Enter a series</h2><button class="text-btn" type="button" data-close="seriesDialog">Close</button></div>
+      <div class="dialog-header"><h2 id="seriesHeading">Enter a series</h2><button class="text-btn" type="button" data-close="seriesDialog" autofocus>Close</button></div>
       <details id="seriesDetails" class="filters-panel"><summary><span id="seriesContextLabel">Session details</span><span class="change-label">Change details</span></summary>      <div class="form-grid"><label>Date<input id="seriesDate" type="date" required></label><input id="seriesName" type="hidden"><label>Session type<select id="seriesType"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label></div></details>
       <div id="seriesRows"></div>
       <button id="addSeriesRow" class="btn secondary" type="button">＋ Add another game</button>
@@ -510,7 +510,7 @@
   </dialog>
   <dialog id="editSessionDialog" aria-labelledby="editSessionHeading">
     <form id="editSessionForm" class="dialog-inner">
-      <div class="dialog-header"><h2 id="editSessionHeading">Edit session</h2><button class="text-btn" type="button" data-close="editSessionDialog">Close</button></div>
+      <div class="dialog-header"><h2 id="editSessionHeading">Edit session</h2><button class="text-btn" type="button" data-close="editSessionDialog" autofocus>Close</button></div>
       <p id="editSessionCount" class="section-copy"></p>
       <div class="form-grid"><label>Date<input id="editSessionDate" type="date" required></label><input id="editSessionName" type="hidden"><label>Session type<select id="editSessionType"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label></div>
       <div class="entry-actions"><button id="saveSessionBtn" class="btn primary" type="submit">Save session</button><span id="sessionEditStatus" class="status-text" role="status"></span></div>
@@ -521,11 +521,12 @@
   <script src="./version.js" defer></script>
   <script src="./balls.js" defer></script>
   <script src="./updates.js" defer></script>
+  <script src="./ui.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./score-cards.js" defer></script>
   <script src="./firebase-config.js" defer></script>
   <script src="./friend-stats.js" defer></script>
   <script src="./cloud.js" defer></script>
   <script src="./profile.js" defer></script>
-<dialog id="importPreviewDialog"><div class="dialog-header"><h2>Review backup import</h2></div><p id="importPreviewSummary"></p><p>Duplicates are skipped. Conflicts keep your current data unless you choose the backup version.</p><div id="importPreviewRows"></div><p id="importPreviewStatus" role="status"></p><div class="button-row"><button id="cancelImportBtn" class="btn secondary" type="button">Cancel</button><button id="confirmImportBtn" class="btn primary" type="button">Import selected changes</button></div></dialog></body>
+<dialog id="importPreviewDialog"><div class="dialog-header"><h2 tabindex="-1" autofocus>Review backup import</h2></div><p id="importPreviewSummary"></p><p>Duplicates are skipped. Conflicts keep your current data unless you choose the backup version.</p><div id="importPreviewRows"></div><p id="importPreviewStatus" role="status"></p><div class="button-row"><button id="cancelImportBtn" class="btn secondary" type="button">Cancel</button><button id="confirmImportBtn" class="btn primary" type="button">Import selected changes</button></div></dialog></body>
 </html>

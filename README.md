@@ -1,6 +1,14 @@
 # Bowling Tracker
 
-## Latest release: v36 — September 26, 2026
+## Latest release: v37 — September 26, 2026
+
+- Dialogs lock the page behind them, contain touch scrolling, start at the top without opening the keyboard, and restore the previous scroll position on close. Nested dialogs keep the lock until the last one closes.
+- The current section and page position survive reloads and future automatic updates. Profile uses the same navigation path as the four main tabs.
+- Saving or cancelling a game edit returns to the originating section and scroll position.
+- Home uses **Your game** in place of the time-of-day/name greeting.
+- Validation: 18 Node suites plus the UX, score-card/offline, and mobile-dialog browser suites. The mobile test covers touch gestures, backdrop scroll, reload retention, discard/Escape, Profile routes, stacked dialogs, rapid reopening and failure cleanup. The old v36 build reproduces the navigation regression. Physical iPhone/Safari verification remains separate from Chromium mobile emulation.
+
+## v36 — September 26, 2026
 
 Implements the approved September 26 proposal and five mockups. The default screens prioritize logging and recent scores, with less-frequent controls behind labeled disclosures.
 

@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const openDialog = dialog => window.BowlingUI ? window.BowlingUI.openDialog(dialog) : dialog.showModal();
 
   const $ = id => document.getElementById(id);
   const dialog = $('friendStatsDialog');
@@ -113,7 +114,7 @@
     comparing = false;
     opener = trigger;
     render();
-    if (selectedUid && !dialog.open) dialog.showModal();
+    if (selectedUid && !dialog.open) openDialog(dialog);
   }
 
   function canShareComparison(own, member) {
@@ -201,7 +202,7 @@
     window.BowlingScoreCards?.closeComparison?.();
     selectedUid = '';
     comparing = false;
-    if (opener?.isConnected) opener.focus();
+    if (opener?.isConnected) opener.focus({preventScroll: true});
     opener = null;
   });
   $('friendStatsOnly').addEventListener('click', () => { comparing = false; render(); });

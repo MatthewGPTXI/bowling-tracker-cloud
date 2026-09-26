@@ -884,3 +884,8 @@ fieldset.tracking-choice { display: flex; align-items: center; flex-wrap: wrap; 
   .entry-grid label:has(#strikeOppInput) .field-help { grid-column: 1 / -1; }
   .average-chart text { font-size: 20px; }
 }
+
+/* Keep touch gestures inside a modal, including installed iOS apps. */
+html.dialog-open { overflow: hidden; overscroll-behavior: none; }
+html.dialog-open body { position: fixed; top: var(--dialog-page-top); left: 0; right: 0; overflow: hidden; padding-right: var(--dialog-scrollbar); }
+dialog { max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; }
