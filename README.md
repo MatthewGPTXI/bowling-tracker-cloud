@@ -1,6 +1,26 @@
 # Bowling Tracker
 
-## Latest release: v35 — September 25, 2026
+## Latest release: v36 — September 26, 2026
+
+Implements the approved September 26 proposal and five mockups. The default screens prioritize logging and recent scores, with less-frequent controls behind labeled disclosures.
+
+- **Navigation:** four fixed bottom tabs on phones; top navigation on desktop. The name in the header opens Profile.
+- **Home:** greeting, Average / Last 10 / Last game, Single game / Series, and Full stats / Score only. Strike opportunities remains in detailed entry. Add scoreboard photo is a secondary action; photos remain references for manual entry.
+- **Entry:** Save stays above Advanced. Session type, alley, ball, no-tap, notes and date remain available there. The session summary shows its date, game count and results; Change reveals new/existing session selection and the latest-session shortcut. Saves continue the same session, date, type and alley. Selected ball names also carry forward; per-ball frame counts and notes reset for the next game.
+- **Series:** shared date/type behind Change details, shared equipment/scoring behind Advanced, three numeric columns per game, per-game score-only and strike opportunities retained, running total/average before Save. Existing validation and recoverable drafts remain.
+- **Sessions:** search stays visible; sort/scoring/dates move under Filters with an active-filter count. Summary cards show scores, total, average and alley. They start collapsed, remember expansion while browsing, and offer sharing without expansion. Game edit/order/delete/Undo and session edits remain available.
+- **Stats:** five primary metrics with a larger Average. Date presets stay visible; the other filters collapse with a count and readable active selections. Average series moves to More bowling stats. Recent form, chart modes, period comparisons, records and all-time share cards retain their calculations.
+- **Friends:** clearer rows and the five core comparison metrics first. Additional stats and explanations remain expandable. Comparison sharing still uses the existing PNG/clipboard/device-share flow.
+- **Profile:** Bowling setup, Account, Data and App groups. Inventory, alleys, profile editing, account/sync, groups, backups/import/export, goal settings, version and installation controls remain available. Destructive actions stay inside existing dialogs.
+- **Feedback:** concise save/sync labels, visible sync failures, and minimum 44px action targets. Existing conflict review, duplicate/contradictory-entry checks, confirmation safeguards and Undo are retained.
+
+No database migration, Firebase configuration/rule change, runtime dependency, tracking, or engagement feature was added.
+
+Validation: all 18 Node regression suites pass. `tests/ux-browser.mjs` exercises actual local saves, full/score-only/no-tap handling, continuation/new sessions, metadata, validation, draft reload/recovery, photos, series, filters, edits/delete/Undo, sharing, Profile/inventory/goals/backups, sync labels, account isolation, and layouts at 320, 390, 768 and 1280px. `tests/score-cards-browser.mjs` passes real PNG download/clipboard, comparison, modal-focus and cached-offline checks. These browser tests use synthetic local data; authenticated production Firebase and physical iOS/Android were not exercised.
+
+Browser tooling is external to the app. Run either browser test with `PLAYWRIGHT_MODULE` and `CHROMIUM_EXECUTABLE` when needed; `UX_TEST_OUTPUT` optionally saves UX screenshots.
+
+## v35 — September 25, 2026
 
 - **Friend comparison cards:** Friends → select a bowler → Compare with me → Share comparison creates a two-column PNG with both names, averages, game counts, high games, high consecutive 3-game series, strike %, closed frame %, clean games, and total strikes.
 - Reuses the existing score-card preview, Save image, Copy image, device Share, and local QR code. Closing the card returns to the comparison. No new page, tracking, network requests, database fields, or runtime dependencies.
