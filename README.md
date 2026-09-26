@@ -1,6 +1,6 @@
 # Bowling Tracker
 
-## v36 — UX redesign (prepared for review)
+## Latest release: v36 — September 26, 2026
 
 Implements the approved September 26 proposal and five mockups. The default screens prioritize logging and recent scores, with less-frequent controls behind labeled disclosures.
 
@@ -14,13 +14,13 @@ Implements the approved September 26 proposal and five mockups. The default scre
 - **Profile:** Bowling setup, Account, Data and App groups. Inventory, alleys, profile editing, account/sync, groups, backups/import/export, goal settings, version and installation controls remain available. Destructive actions stay inside existing dialogs.
 - **Feedback:** concise save/sync labels, visible sync failures, and minimum 44px action targets. Existing conflict review, duplicate/contradictory-entry checks, confirmation safeguards and Undo are retained.
 
-No database migration, Firebase configuration/rule change, runtime dependency, tracking, or engagement feature was added. The source is prepared as v36; publishing is a separate step.
+No database migration, Firebase configuration/rule change, runtime dependency, tracking, or engagement feature was added.
 
 Validation: all 18 Node regression suites pass. `tests/ux-browser.mjs` exercises actual local saves, full/score-only/no-tap handling, continuation/new sessions, metadata, validation, draft reload/recovery, photos, series, filters, edits/delete/Undo, sharing, Profile/inventory/goals/backups, sync labels, account isolation, and layouts at 320, 390, 768 and 1280px. `tests/score-cards-browser.mjs` passes real PNG download/clipboard, comparison, modal-focus and cached-offline checks. These browser tests use synthetic local data; authenticated production Firebase and physical iOS/Android were not exercised.
 
 Browser tooling is external to the app. Run either browser test with `PLAYWRIGHT_MODULE` and `CHROMIUM_EXECUTABLE` when needed; `UX_TEST_OUTPUT` optionally saves UX screenshots.
 
-## Latest release: v35 — September 25, 2026
+## v35 — September 25, 2026
 
 - **Friend comparison cards:** Friends → select a bowler → Compare with me → Share comparison creates a two-column PNG with both names, averages, game counts, high games, high consecutive 3-game series, strike %, closed frame %, clean games, and total strikes.
 - Reuses the existing score-card preview, Save image, Copy image, device Share, and local QR code. Closing the card returns to the comparison. No new page, tracking, network requests, database fields, or runtime dependencies.
