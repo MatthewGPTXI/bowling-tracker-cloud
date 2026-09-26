@@ -200,17 +200,8 @@
 
   function showProfile() {
     ensureProfileUI();
-    document.querySelectorAll('.app-view').forEach(panel => { panel.hidden = panel.id !== VIEW_ID; });
-    document.querySelectorAll('.app-nav [data-go-view]').forEach(button => {
-      if (button.dataset.goView === 'profile') button.setAttribute('aria-current', 'page');
-      else button.removeAttribute('aria-current');
-    });
-    $(NAV_ID)?.setAttribute('aria-current', 'page');
-    const menu = $('profileMenu');
-    if (menu) menu.open = false;
     renderProfile(true);
-    $('mainContent')?.focus({ preventScroll: true });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    app()?.showView('profile');
   }
 
   function ensureHistoryHelp() {

@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const openDialog = dialog => window.BowlingUI ? window.BowlingUI.openDialog(dialog) : dialog.showModal();
 
   const LEGACY_DB_NAME = 'bowling-tracker-db';
   const GUEST_DB_NAME = 'bowling-tracker-db-guest';
@@ -32,6 +33,7 @@
   let activeLocalScope = { kind: 'guest', uid: '', dbName: GUEST_DB_NAME };
   let games = [];
   let editingGameId = null;
+  let editReturn = null;
   let deferredInstallPrompt = null;
   let offlineCacheReady = false;
   let selectedPhotoUrl = null;
@@ -1281,6 +1283,7 @@
       await commitGames(updates, [], targetDb);
       if (db !== targetDb) return;
       games = await getAllGames();
+      const returnTo = editingGameId ? editReturn : null;
       if (editingGameId) {
         setStatus(dom.entryStatus, '✓ Game updated', 'success');
       } else {
@@ -1288,6 +1291,10 @@
       }
       resetEntryForm({ preserveDate: true, preserveSession: true });
       renderAll();
+      if (returnTo) {
+        returnFromEdit(returnTo);
+        setStatus($('historyActionStatus'), '✓ Game updated', 'success');
+      }
       emitDataChanged({ type: 'batch-upsert', games: clone(updates), bases: clone(bases) });
     } catch (error) {
       console.error(error);
@@ -1316,6 +1323,7 @@
     dom.noTap.value = preserveSession && dom.noTap.value === 'no-tap' ? 'no-tap' : 'standard';
     $('gameAdvanced').open = false;
     editingGameId = null;
+    editReturn = null;
     entryBaseGame = null;
     clearDraft('entry');
     dom.saveGameBtn.textContent = 'Save game';
@@ -1330,9 +1338,10 @@
 
   function startEdit(id) {
     if (hasEntryDraft() && !window.confirm('Discard the unsaved entry and edit this game?')) return;
-    showView('home', false);
     const game = games.find((g) => g.id === id);
     if (!game) return;
+    editReturn = { view: document.querySelector('.app-view:not([hidden])')?.id?.replace('view-', '') || 'sessions', y: window.scrollY || 0 };
+    showView('home', false);
     clearDraft('entry');
     editingGameId = id;
     entryBaseGame = clone(game);
@@ -1360,6 +1369,12 @@
     setStatus(dom.entryStatus, 'Editing saved game.');
     rememberEntry();
     window.scrollTo({ top: document.querySelector('.entry-panel').offsetTop - 12, behavior: 'smooth' });
+  }
+
+  function returnFromEdit(destination) {
+    showView(destination.view, false);
+    $('mainContent').focus({preventScroll: true});
+    window.scrollTo({top: destination.y, behavior: 'instant'});
   }
 
   async function confirmDelete(id) {
@@ -1441,8 +1456,6 @@
   function updateIdentityBar() {
     if (dom.currentProfileName) dom.currentProfileName.textContent = activeProfileName || 'Bowler';
     if ($('headerProfileName')) $('headerProfileName').textContent = activeProfileName || 'Profile';
-    const hour = new Date().getHours();
-    if ($('homeGreeting')) $('homeGreeting').textContent = `Good ${hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'}, ${activeProfileName || 'Bowler'}`;
     const signedIn = Boolean(window.BowlingCloud?.isSignedIn?.());
     if (dom.defaultBowlerInput) {
       dom.defaultBowlerInput.value = activeProfileName || 'Bowler';
@@ -1576,7 +1589,7 @@
       if (alleys.length) $('importPreviewSummary').textContent += ' · Saved alleys will be merged';
       if (inventory.length) $('importPreviewSummary').textContent += ' · Saved ball inventory will be merged';
       $('importPreviewRows').innerHTML = rows.map(r => `<div class="import-row"><strong>${escapeHtml(r.game?.date || r.local?.date || '')} · ${r.game ? r.game.score+' points · '+scoringLabel(r.game)+(hasFrameStats(r.game) ? ' · Full stats' : ' · Score only') : 'Backup deletion'}</strong>${r.game ? `<p>Backup balls: ${escapeHtml(Balls.summary(r.game))}</p><p>Backup alley: ${escapeHtml(r.game.alley || 'None')}</p>` : ''}<p>${r.kind}${r.local ? ' · Current: '+r.local.score+' points · '+scoringLabel(r.local)+(hasFrameStats(r.local) ? ' · Full stats' : ' · Score only') : r.tombstone ? ' · Deleted on this device' : ''}</p>${r.local ? `<p>Current balls: ${escapeHtml(Balls.summary(r.local))}</p><p>Current alley: ${escapeHtml(r.local.alley || 'None')}</p>` : ''}${r.kind==='conflict' ? `<label>Resolution<select data-import-id="${r.id}"><option value="keep">Keep current data</option><option value="backup">${r.deletion ? 'Apply backup deletion' : 'Use backup game'}</option></select></label>` : ''}</div>`).join('');
-      setStatus($('importPreviewStatus'),''); $('importPreviewDialog').showModal();
+      setStatus($('importPreviewStatus'),''); openDialog($('importPreviewDialog'));
     } catch (error) { setStatus(dom.settingsStatus,`Import failed: ${error.message}`,'error'); }
     finally { dom.importJsonInput.value = ''; }
   }
@@ -1770,7 +1783,7 @@
     setStatus($('seriesStatus'), '');
     updateSeriesPreview();
     dialogBaselines.set('seriesDialog', dialogSnapshot('seriesDialog'));
-    $('seriesDialog').showModal();
+    openDialog($('seriesDialog'));
     persistDrafts();
   }
 
@@ -1831,7 +1844,7 @@
     $('editSessionCount').textContent = `Update the date and type for all ${session.games.length} games in this session.`;
     setStatus($('sessionEditStatus'), '');
     dialogBaselines.set('editSessionDialog', dialogSnapshot('editSessionDialog'));
-    $('editSessionDialog').showModal();
+    openDialog($('editSessionDialog'));
   }
 
   async function saveSessionEdit(event) {
@@ -1935,14 +1948,13 @@
   }
 
   function showView(view, focus = true) {
-    if (!['home', 'sessions', 'stats', 'friends'].includes(view)) return;
+    if (!['home', 'sessions', 'stats', 'friends', 'profile'].includes(view) || !$(`view-${view}`)) return;
     document.querySelectorAll('.app-view').forEach((panel) => { panel.hidden = panel.id !== `view-${view}`; });
-    document.querySelectorAll('.app-nav [data-go-view]').forEach((button) => {
+    document.querySelectorAll('[data-go-view]').forEach((button) => {
       if (button.dataset.goView === view) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     });
     $('profileMenu').open = false;
-    $('nav-profile')?.removeAttribute('aria-current');
     if (focus) { $('mainContent').focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   }
 
@@ -2025,6 +2037,7 @@
       showView('home');
       if (kind === 'entry' && Array.isArray(draft.values)) {
         editingGameId = draft.values[0]; entryBaseGame = draft.base || null;
+        editReturn = editingGameId ? {view: 'sessions', y: 0} : null;
         ['date','sessionName','sessionType','score','openFrames','strikes','strikeOpp','notes','ball'].forEach((key,i) => dom[key].value = draft.values[i+1] ?? '');
         dom.noTap.value = draft.values[10] === 'no-tap' ? 'no-tap' : 'standard';
         Balls.set(dom.ball, Array.isArray(draft.values[11]) ? draft.values[11] : [{name: draft.values[9] || ''}]);
@@ -2062,7 +2075,7 @@
           Balls.set(row.querySelector('[data-field="ball"]'), Array.isArray(values.balls) ? values.balls : [{name: values.ball || ''}]);
           row.querySelector('[data-ball-advanced]').open = !!values.ball || (values.balls?.length || 0) > 1;
         });
-        dialogBaselines.set('seriesDialog',''); $('seriesDialog').showModal(); updateSeriesPreview();
+        dialogBaselines.set('seriesDialog',''); openDialog($('seriesDialog')); updateSeriesPreview();
         setStatus($('seriesStatus'),'Series draft recovered. Review it before saving.','success');
       }
     } finally { restoringDraft = false; }
@@ -2181,8 +2194,10 @@
     dom.saveGameBtn.addEventListener('click', saveGameFromForm);
     dom.cancelEditBtn.addEventListener('click', () => {
       if (hasEntryDraft() && !window.confirm('Discard your unsaved changes?')) return;
+      const returnTo = editReturn;
       resetEntryForm({ preserveDate: true, preserveSession: true });
       setStatus(dom.entryStatus, 'Edit cancelled.');
+      if (returnTo) returnFromEdit(returnTo);
     });
     dom.sortFilter.addEventListener('change', renderHistory);
     dom.sessionSelect.addEventListener('change', selectEntrySession);
@@ -2218,13 +2233,13 @@
     dom.editProfileBtn?.addEventListener('click', () => {
       if (activeLocalScope.kind === 'user' || window.BowlingCloud?.isSignedIn?.()) {
         document.getElementById('openCloudBtn')?.click();
-        setTimeout(() => document.getElementById('profileDisplayNameInput')?.focus(), 50);
+        setTimeout(() => { if ($('cloudDialog').open) $('profileDisplayNameInput')?.focus(); }, 50);
       } else {
-        dom.settingsDialog.showModal();
-        setTimeout(() => dom.defaultBowlerInput?.focus(), 50);
+        openDialog(dom.settingsDialog);
+        setTimeout(() => { if (dom.settingsDialog.open) dom.defaultBowlerInput?.focus(); }, 50);
       }
     });
-    dom.openSettingsBtn.addEventListener('click', () => dom.settingsDialog.showModal());
+    dom.openSettingsBtn.addEventListener('click', () => openDialog(dom.settingsDialog));
     dom.closeSettingsBtn.addEventListener('click', () => dom.settingsDialog.close());
     dom.settingsDialog.addEventListener('click', (event) => {
       if (event.target === dom.settingsDialog) dom.settingsDialog.close();
@@ -2271,6 +2286,7 @@
     version: APP_VERSION,
     ready: false,
     startupError: null,
+    showView,
     getGames: () => clone(games),
     getScoreCardData,
     getTombstones: async () => clone(await getAllTombstones()),

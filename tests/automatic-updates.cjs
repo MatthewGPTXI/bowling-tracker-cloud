@@ -3,7 +3,7 @@ const source=fs.readFileSync(path.join(__dirname,'../updates.js'),'utf8');
 const tick=async()=>{for(let i=0;i<20;i++)await Promise.resolve()};
 function harness(initial='32',savedGuard=null){
   const events={},timers=[],storage=new Map(savedGuard?[['bowling-update-reload:/bowling/',JSON.stringify(savedGuard)]]:[]);
-  let workerRelease=initial,safe=true,focus=false,reloads=0,updates=0,fail=false,now=100000;
+  let workerRelease=initial,safe=true,focus=false,reloads=0,updates=0,fail=false,now=100000,remembered=false;
   const listen=(name,fn)=>(events[name]??=[]).push(fn);
   const worker={postMessage(_,ports){ports[0].peer.onmessage?.({data:{version:workerRelease}})}};
   const registration={update:async()=>{updates++;if(fail)throw Error('offline')}};
@@ -12,9 +12,9 @@ function harness(initial='32',savedGuard=null){
     setTimeout:(fn,ms)=>{const timer={fn,ms};timers.push(timer);return timer},clearTimeout:timer=>{if(timer)timer.cleared=true},setInterval:(fn,ms)=>timers.push({fn,ms,interval:true}),
     sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},
     navigator:{onLine:true,serviceWorker:{controller:worker,addEventListener:listen}},
-    location:{pathname:'/bowling/',reload(){reloads++}},
+    location:{pathname:'/bowling/',reload(){assert(remembered,'Remember the current page before an automatic reload');reloads++}},
     document:{visibilityState:'visible',activeElement:{matches:()=>focus},addEventListener:listen},
-    window:{BOWLING_VERSION:initial,BowlingApp:{canApplyUpdate:()=>safe},addEventListener:listen},
+    window:{BowlingUI:{rememberPage(){remembered=true}},BOWLING_VERSION:initial,BowlingApp:{canApplyUpdate:()=>safe},addEventListener:listen},
     fetch:async(url,options)=>{assert(url.startsWith('./build.json?check='));assert.equal(options.cache,'no-store');if(fail)throw Error('offline');return{ok:true,json:async()=>({version:workerRelease})}}
   };
   vm.runInNewContext(source,c);

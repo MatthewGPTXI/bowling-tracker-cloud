@@ -14,6 +14,7 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert');
   await installation;
   assert(requests.some(request=>request.url==='./profile.js'));
   assert(requests.some(request=>request.url==='./app.js'));
+  assert(requests.some(request=>request.url==='./ui.js'),'Modal and navigation support must work offline');
   assert(requests.every(request=>request.cache==='reload'),'Release installation must bypass stale HTTP-cached assets');
   console.log('PASS: release installation refreshes every offline asset instead of reusing stale HTTP files.');
 })().catch(error=>{console.error(error);process.exitCode=1});

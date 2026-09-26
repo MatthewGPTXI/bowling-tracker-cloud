@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const openDialog = dialog => window.BowlingUI ? window.BowlingUI.openDialog(dialog) : dialog.showModal();
   const APP_URL = 'https://matthewgptxi.github.io/bowling-tracker-cloud/';
   const PAGE_SIZE = 24;
   // Fixed destination, precomputed with QR error correction M and a four-module
@@ -284,7 +285,7 @@
       ? 'All time · standard games · your saved stats and their last shared stats.' : card.kind === 'session'
       ? 'Full session · includes all saved game scores.'
       : 'All time · standard games · includes every date, ball, and alley.';
-    dialog.showModal();
+    openDialog(dialog);
     generate();
   }
   $('closeScoreCard').addEventListener('click', close);

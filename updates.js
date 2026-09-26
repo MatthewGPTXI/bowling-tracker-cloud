@@ -33,6 +33,7 @@
     } catch (_) { /* Storage restrictions must not prevent an update. */ }
     reloading = true;
     clearTimeout(retryTimer);
+    window.BowlingUI?.rememberPage();
     location.reload();
   }
 
