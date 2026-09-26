@@ -175,13 +175,14 @@
       + (!navigator.onLine ? ' Offline · using the last loaded summary.' : '');
 
     if (comparing) {
-      $('friendStatsContent').innerHTML = `<div class="friend-comparison-wrap"><table class="friend-comparison"><caption class="visually-hidden">All-time standard-game stats: you compared with ${escapeHtml(name)}</caption><thead><tr><th scope="col">Metric</th><th scope="col">You</th><th scope="col">${escapeHtml(name)}</th></tr></thead><tbody>${metrics.map(metric => {
+      const table = (rows) => `<div class="friend-comparison-wrap"><table class="friend-comparison"><caption class="visually-hidden">All-time standard-game stats: you compared with ${escapeHtml(name)}</caption><thead><tr><th scope="col">Metric</th><th scope="col">You</th><th scope="col">${escapeHtml(name)}</th></tr></thead><tbody>${rows.map(metric => {
         const mine = metricValue(own, metric), theirs = metricValue(member, metric);
         return `<tr><th scope="row">${metric.label}</th><td>${formatValue(mine, metric)}${comparisonDifference(mine, theirs, metric)}</td><td>${formatValue(theirs, metric)}</td></tr>`;
       }).join('')}</tbody></table></div>`;
+      $('friendStatsContent').innerHTML = table(metrics.slice(0, 5)) + `<details class="filter-disclosure"><summary>More comparison stats</summary>${table(metrics.slice(5))}</details>`;
     } else {
-      $('friendStatsContent').innerHTML = `<div class="stats-grid friend-overview">${metrics.slice(0, 4).map(metric => `<article class="stat-card"><span class="stat-label">${metric.label}</span><strong class="stat-value">${formatValue(metricValue(member, metric), metric)}</strong></article>`).join('')}</div>
-        <dl class="friend-metric-list">${metrics.slice(4).map(metric => `<div><dt>${metric.label}</dt><dd>${formatValue(metricValue(member, metric), metric)}</dd></div>`).join('')}</dl>`;
+      $('friendStatsContent').innerHTML = `<div class="stats-grid friend-overview">${metrics.slice(0, 5).map(metric => `<article class="stat-card"><span class="stat-label">${metric.label}</span><strong class="stat-value">${formatValue(metricValue(member, metric), metric)}</strong></article>`).join('')}</div>
+        <details class="filter-disclosure"><summary>More bowling stats</summary><dl class="friend-metric-list">${metrics.slice(5).map(metric => `<div><dt>${metric.label}</dt><dd>${formatValue(metricValue(member, metric), metric)}</dd></div>`).join('')}</dl></details>`;
     }
     const missing = !currentDetails(member);
     const recentCount = comparing ? 'Recent averages use up to 5, 10, or 30 games per bowler; compare the game counts above. ' : 'Recent averages use up to 5, 10, or 30 saved games. ';

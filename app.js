@@ -160,6 +160,7 @@
   function hasFrameStats(game) { return game?.scoreOnly !== true; }
   function setEntryDetail(fields = dom) {
     const scoreOnly = fields.entryDetail?.value === 'score-only';
+    if (fields === dom) document.querySelectorAll('[name="entryTracking"]').forEach(input => { input.checked = input.value === (scoreOnly ? 'score-only' : 'full'); });
     for (const key of ['openFrames', 'strikes', 'strikeOpp']) {
       const input = fields[key];
       input.disabled = scoreOnly;
@@ -752,7 +753,10 @@
     const ball = selectedBall === 'none' ? 'No ball recorded' : ballNames().find(name => 'ball:' + ballKey(name) === selectedBall) || 'All balls';
     const selectedAlley = $('statsAlley').value;
     const alley = selectedAlley === 'none' ? 'No alley recorded' : alleyNames().find(name => 'alley:' + alleyKey(name) === selectedAlley) || 'All alleys';
-    $('statsRangeStatus').textContent = from && through && from > through ? 'Start date must be on or before end date.' : `${statsGames().length} games · ${range} · ${$('statsType').value || 'All types'} · ${ball} · ${alley}`;
+    const activeFilters = [$('statsType').value, selectedBall ? ball : '', selectedAlley ? alley : ''].filter(Boolean);
+    const filterCount = activeFilters.length + Number(statsPreset === 'custom' && !!(from || through));
+    if ($('statsFiltersLabel')) $('statsFiltersLabel').textContent = filterCount ? `Filters · ${filterCount}` : 'Filters';
+    $('statsRangeStatus').textContent = from && through && from > through ? 'Start date must be on or before end date.' : [`${statsGames().length} games`, range, ...activeFilters].join(' · ');
     document.querySelectorAll('[data-stats-preset]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.statsPreset === statsPreset)));
     $('statsPeriodPanel').hidden = !comparison;
     if (!comparison) { $('periodComparison').textContent = ''; return; }
@@ -998,6 +1002,8 @@
     const fullSessions = new Map(buildSessions(games).map(session => [session.key, session]));
     let sessions = matchingSessions(buildSessions(source));
     const sort = dom.sortFilter.value;
+    const filterCount = Number(!!sort && sort !== 'newest') + Number(!!$('historyScoring').value) + Number(!!($('sessionFrom').value || $('sessionTo').value));
+    if ($('sessionFiltersLabel')) $('sessionFiltersLabel').textContent = filterCount ? `Filters · ${filterCount}` : 'Filters';
 
     if (sort === 'oldest') {
       sessions.sort((a, b) => a.date.localeCompare(b.date));
@@ -1013,26 +1019,28 @@
     $('showMoreSessions').classList.toggle('hidden', sessions.length <= historyLimit);
     sessions = sessions.slice(0, historyLimit);
     if (!sessions.length) { dom.sessionsList.innerHTML = ''; return; }
-    dom.sessionsList.innerHTML = sessions.map((session, index) => {
+    dom.sessionsList.innerHTML = sessions.map((session) => {
       const fullSession = fullSessions.get(session.key) || session;
       const positions = new Map(fullSession.games.map((game, position) => [game.id, position]));
       const summary = historySummary(session);
+      const sessionDate = new Date(`${session.date}T12:00:00`);
+      const alleys = [...new Set(session.games.map(game => cleanAlley(game.alley)).filter(Boolean))];
       return `
-        <details class="session-card" data-session-key="${escapeHtml(session.key)}" ${expandedSessions.has(session.key) ? (expandedSessions.get(session.key) ? 'open' : '') : (index === 0 ? 'open' : '')}>
+        <div class="session-item">
+        <details class="session-card" data-session-key="${escapeHtml(session.key)}" ${expandedSessions.has(session.key) ? (expandedSessions.get(session.key) ? 'open' : '') : ''}>
           <summary class="session-header">
-            <div>
-              <div class="session-title">${escapeHtml(fmtDate(session.date))}</div>
-              <div class="session-meta">${escapeHtml(session.name)} · ${session.games.length} game${session.games.length === 1 ? '' : 's'}</div>
+            <time class="session-date" datetime="${session.date}"><span>${escapeHtml(sessionDate.toLocaleDateString('en-US', {month:'short'}))}</span><strong>${sessionDate.getDate()}</strong><small>${sessionDate.getFullYear()}</small></time>
+            <div class="session-summary">
+              <span class="session-type ${sessionType(session.games[0]).toLowerCase()}">${escapeHtml(session.name)}</span>
+              <p class="session-scores" aria-label="Game scores">${session.games.map(game => `${game.score}${isNoTap(game) ? '<small> NT</small>' : ''}`).join(' · ')}</p>
+              <div class="session-totals" aria-label="${summary.prefix}Total ${summary.total} · ${summary.prefix}Avg ${summary.average.toFixed(1)}"><span><strong>${summary.total}</strong>${summary.prefix}Total</span><span><strong>${summary.average.toFixed(1)}</strong>${summary.prefix}Avg</span></div>
+              ${alleys.length ? `<p class="session-alley">${escapeHtml(alleys.join(' · '))}</p>` : ''}
+              <div class="session-badges">${summary.noTapCount ? `<span class="badge no-tap-badge">${summary.noTapCount} no-tap</span>` : ''}</div>
             </div>
-            <div class="session-badges">
-              <span class="badge">${summary.prefix}Avg ${summary.average.toFixed(1)}</span>
-              <span class="badge">${summary.prefix}Total ${summary.total}</span>
-              ${summary.noTapCount ? `<span class="badge no-tap-badge">${summary.noTapCount} no-tap</span>` : ''}
-            </div>
+            <span class="session-chevron" aria-hidden="true">›</span>
           </summary>
           <div class="session-actions">
             <button class="btn secondary compact add-to-session" data-key="${escapeHtml(session.key)}" type="button">＋ Add game</button>
-            <button class="text-btn share-session" data-key="${escapeHtml(session.key)}" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog">Share card</button>
             <button class="text-btn edit-session" data-key="${escapeHtml(session.key)}" type="button">Edit session</button>
           </div>
           <div class="games-grid">
@@ -1061,6 +1069,8 @@
             `).join('')}
           </div>
         </details>
+        <button class="text-btn share-session session-share-button" data-key="${escapeHtml(session.key)}" type="button" aria-label="Share session from ${escapeHtml(fmtDate(session.date))}" aria-haspopup="dialog" aria-controls="scoreCardDialog"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V2m-4 4 4-4 4 4M7 9H4v12h16V9h-3"/></svg></button>
+        </div>
       `;
     }).join('');
 
@@ -1272,9 +1282,9 @@
       if (db !== targetDb) return;
       games = await getAllGames();
       if (editingGameId) {
-        setStatus(dom.entryStatus, 'Game updated.', 'success');
+        setStatus(dom.entryStatus, '✓ Game updated', 'success');
       } else {
-        setStatus(dom.entryStatus, 'Game saved and added to this session.', 'success');
+        setStatus(dom.entryStatus, '✓ Game saved', 'success');
       }
       resetEntryForm({ preserveDate: true, preserveSession: true });
       renderAll();
@@ -1301,10 +1311,10 @@
     dom.entryDetail.value = preserveSession && dom.entryDetail.value === 'score-only' ? 'score-only' : 'full';
     setEntryDetail();
     dom.notes.value = '';
-    Balls.set(dom.ball, []);
+    Balls.set(dom.ball, preserveSession ? Balls.fromDraft(Balls.draft(dom.ball)).map(({name}) => ({name})) : []);
     fillAlleySelect(dom.alley, preserveSession ? dom.alley.value : '');
     dom.noTap.value = preserveSession && dom.noTap.value === 'no-tap' ? 'no-tap' : 'standard';
-    $('gameAdvanced').open = !!dom.alley.value || dom.noTap.value === 'no-tap';
+    $('gameAdvanced').open = false;
     editingGameId = null;
     entryBaseGame = null;
     clearDraft('entry');
@@ -1340,7 +1350,7 @@
     Balls.set(dom.ball, Balls.list(game));
     fillAlleySelect(dom.alley, game.alley || '');
     dom.noTap.value = isNoTap(game) ? 'no-tap' : 'standard';
-    $('gameAdvanced').open = !!dom.ball.value || !!dom.alley.value || isNoTap(game);
+    $('gameAdvanced').open = !!dom.ball.value || !!dom.alley.value || !!game.notes || isNoTap(game);
     updateEntryContext();
     dom.saveGameBtn.textContent = 'Update game';
     dom.cancelEditBtn.classList.remove('hidden');
@@ -1406,6 +1416,7 @@
     dom.manualTab.setAttribute('aria-pressed', String(!photoMode));
     dom.photoTab.setAttribute('aria-pressed', String(photoMode));
     dom.photoTab.classList.toggle('active', photoMode);
+    dom.photoTab.setAttribute('aria-expanded', String(photoMode));
     dom.photoArea.classList.toggle('hidden', !photoMode);
   }
 
@@ -1429,6 +1440,9 @@
 
   function updateIdentityBar() {
     if (dom.currentProfileName) dom.currentProfileName.textContent = activeProfileName || 'Bowler';
+    if ($('headerProfileName')) $('headerProfileName').textContent = activeProfileName || 'Profile';
+    const hour = new Date().getHours();
+    if ($('homeGreeting')) $('homeGreeting').textContent = `Good ${hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'}, ${activeProfileName || 'Bowler'}`;
     const signedIn = Boolean(window.BowlingCloud?.isSignedIn?.());
     if (dom.defaultBowlerInput) {
       dom.defaultBowlerInput.value = activeProfileName || 'Bowler';
@@ -1460,7 +1474,11 @@
   }
 
   function setSyncStatus(text, state = '') {
-    if (dom.globalSyncStatus) dom.globalSyncStatus.textContent = text || 'Local only';
+    const label = state === 'error' || /error|fail|unavailable|review|attention/i.test(text || '') ? '⚠ Sync needs attention'
+      : state === 'on' ? '✓ Synced' : !navigator.onLine ? (window.BowlingCloud?.isSignedIn?.() ? 'Offline · games will sync later' : 'Offline · saved on this device')
+      : state === 'working' ? 'Syncing…' : 'Saved on this device';
+    if (dom.globalSyncStatus) { dom.globalSyncStatus.textContent = label; dom.globalSyncStatus.title = text || 'Local only'; }
+    if ($('headerSyncNotice')) $('headerSyncNotice').hidden = !/attention/.test(label);
     if ($('entrySyncStatus')) renderEntrySaveState();
     if (dom.globalSyncDot) dom.globalSyncDot.className = `status-dot ${state || 'off'}`.trim();
   }
@@ -1693,14 +1711,13 @@
   function addSeriesRow() {
     const row = document.createElement('fieldset');
     row.className = 'series-row';
-    row.innerHTML = `<legend>Game</legend><div class="form-grid">
-      <label>Record<select data-field="entryDetail"><option value="full">Score + frame stats</option><option value="score-only">Score only</option></select></label>
+    row.innerHTML = `<legend>Game</legend><div class="form-grid series-core">
+      <label class="series-tracking">Tracking<select data-field="entryDetail"><option value="full">Full stats</option><option value="score-only">Score only</option></select></label>
       <label>Score<input data-field="score" type="number" min="0" max="300" step="1" inputmode="numeric" required></label>
       <label>Open frames<input data-field="openFrames" type="number" min="0" max="10" step="1" inputmode="numeric" required></label>
       <label>Strikes<input data-field="strikes" type="number" min="0" max="12" step="1" inputmode="numeric" required></label>
       <label>Strike opportunities<select data-field="strikeOpp" required><option value="10">10</option><option value="11">11</option><option value="12">12</option></select></label>
-      <label class="series-notes">Notes <small>optional</small><input data-field="notes" type="text"></label>
-    </div><details class="advanced-options" data-ball-advanced><summary>Advanced</summary><div class="ball-editor" data-ball-editor><div class="ball-usage-row" data-ball-first><label class="ball-name-field">Ball <small>optional</small><select data-field="ball" data-ball-select><option value="">No ball selected</option></select></label></div></div></details><button class="text-btn danger-text remove-series-row" type="button">Remove game</button>`;
+    </div><details class="advanced-options" data-ball-advanced><summary>Advanced</summary><label class="series-notes">Notes <small>optional</small><input data-field="notes" type="text"></label><div class="ball-editor" data-ball-editor><div class="ball-usage-row" data-ball-first><label class="ball-name-field">Ball <small>optional</small><select data-field="ball" data-ball-select><option value="">No ball selected</option></select></label></div></div></details><button class="text-btn danger-text remove-series-row" type="button">Remove game</button>`;
     const fields = seriesFields(row);
     fields.entryDetail.value = dom.entryDetail.value || 'full';
     setEntryDetail(fields);
@@ -1742,12 +1759,13 @@
     Balls.fillSelect($('seriesBall'), dom.ball.value);
     fillAlleySelect($('seriesAlley'), dom.alley.value);
     $('seriesNoTap').value = dom.noTap.value === 'no-tap' ? 'no-tap' : 'standard';
-    $('seriesAdvanced').open = !!dom.ball.value || !!dom.alley.value || $('seriesNoTap').value === 'no-tap';
+    $('seriesAdvanced').open = false;
+    if ($('seriesDetails')) $('seriesDetails').open = false;
     $('seriesRows').innerHTML = '';
     const first = addSeriesRow();
     for (const field of ['score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball']) first.querySelector(`[data-field="${field}"]`).value = dom[field].value;
     Balls.set(first.querySelector('[data-field="ball"]'), Balls.draft(dom.ball));
-    first.querySelector('[data-ball-advanced]').open = Balls.fromDraft(Balls.draft(dom.ball)).length > 0;
+    first.querySelector('[data-ball-advanced]').open = false;
     addSeriesRow(); addSeriesRow();
     setStatus($('seriesStatus'), '');
     updateSeriesPreview();
@@ -1924,6 +1942,7 @@
       else button.removeAttribute('aria-current');
     });
     $('profileMenu').open = false;
+    $('nav-profile')?.removeAttribute('aria-current');
     if (focus) { $('mainContent').focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   }
 
@@ -1939,7 +1958,8 @@
 
   function renderHome() {
     const source = standardGames();
-    $('homeRecap').innerHTML = `<div><strong>${source.length ? avg(source.map(game => game.score)).toFixed(1) : '—'}</strong><span>Average</span></div><div><strong>${source.length}</strong><span>Games</span></div>`;
+    const recent = [...source].sort((a, b) => b.date.localeCompare(a.date) || gameOrder(b, a));
+    $('homeRecap').innerHTML = `<div><span>Average</span><strong>${source.length ? avg(source.map(game => game.score)).toFixed(1) : '—'}</strong></div><div><span>Last 10</span><strong>${recent.length ? avg(recent.slice(0, 10).map(game => game.score)).toFixed(1) : '—'}</strong></div><div><span>Last game</span><strong>${recent[0]?.score ?? '—'}</strong></div>`;
     const latest = buildSessions(games).sort(latestSessionOrder)[0];
     $('latestSessionShortcut').classList.toggle('hidden', !latest);
     if (latest) {
@@ -1949,9 +1969,13 @@
   }
 
   function updateEntryContext() {
-    const date = isValidDate(dom.date.value) ? fmtDate(dom.date.value) : 'Choose a date';
+    const date = dom.date.value === todayLocal() ? 'Today' : isValidDate(dom.date.value) ? fmtDate(dom.date.value) : 'Choose a date';
     const name = sessionType({sessionType:dom.sessionType.value});
-    $('entrySessionSummary').textContent = `${editingGameId ? 'Editing game in' : 'Adding to'} ${name} · ${date}${dom.noTap.value === 'no-tap' ? ' · No-tap: excluded from standard stats' : ''}`;
+    const session = buildSessions(games).find(item => item.key === sessionKey({date:dom.date.value,sessionName:dom.sessionName.value}));
+    const count = session?.games.length || 0;
+    const summary = session ? historySummary(session) : null;
+    const totals = summary ? `${count} game${count === 1 ? '' : 's'}${count >= 3 ? ` · ${summary.prefix}${summary.total} total` : ''} · ${summary.prefix}${summary.average.toFixed(1)} avg` : 'New session';
+    $('entrySessionSummary').textContent = `${editingGameId ? 'Editing' : 'Adding to'} ${name} · ${date} · ${totals}${dom.alley.value ? ` · ${dom.alley.value}` : ''}${dom.noTap.value === 'no-tap' ? ' · No-tap' : ''}`;
     renderEntrySaveState();
   }
 
@@ -2049,8 +2073,11 @@
   }
   function rememberEntry() { entryBaseline = entrySnapshot(); renderEntrySaveState(); }
   function renderEntrySaveState() {
-    const sync = dom.globalSyncStatus.textContent;
-    $('entrySyncStatus').textContent = hasEntryDraft() ? `Draft on this device · tap ${editingGameId ? 'Update game' : 'Save game'} to add it to history` : sync === 'Local only' || !sync ? 'Games save on this device · local only' : sync;
+    const sync = dom.globalSyncStatus.textContent || '';
+    const needsAttention = /error|fail|unavailable|review|attention/i.test(sync);
+    $('entrySyncStatus').textContent = needsAttention ? 'Sync needs attention · open Profile' : !navigator.onLine && window.BowlingCloud?.isSignedIn?.()
+      ? 'Saved games will sync when you’re back online.' : hasEntryDraft() ? 'Unsaved changes' : '';
+    $('entrySyncStatus').classList.toggle('error', needsAttention);
   }
   function hasEntryDraft() { return entryBaseline !== null && entrySnapshot() !== entryBaseline; }
   function dialogSnapshot(id) {
@@ -2071,6 +2098,7 @@
     const scores = [...$('seriesRows').querySelectorAll('[data-field="score"]')];
     const entered = scores.filter((input) => input.value !== '' && Number.isInteger(Number(input.value)) && +input.value >= 0 && +input.value <= 300);
     const total = entered.reduce((sum, input) => sum + Number(input.value), 0);
+    if ($('seriesContextLabel')) $('seriesContextLabel').textContent = `${$('seriesType').value} · ${$('seriesDate').value === todayLocal() ? 'Today' : fmtDate($('seriesDate').value)}`;
     $('seriesPreview').textContent = `${$('seriesNoTap').value === 'no-tap' ? 'No-tap series · ' : ''}${entered.length}/${scores.length} scores entered · Total ${total}${entered.length ? ` · Average ${(total / entered.length).toFixed(1)}` : ''}${$('seriesNoTap').value === 'no-tap' ? ' · Excluded from standard stats' : ''}`;
   }
 
@@ -2090,6 +2118,7 @@
     $('clearSessionFilters').addEventListener('click', () => {
       for (const id of ['sessionSearch', 'sessionFrom', 'sessionTo']) $(id).value = '';
       $('historyScoring').value = '';
+      dom.sortFilter.value = 'newest';
       historyLimit = 10; renderHistory(); $('sessionSearch').focus();
     });
     $('showMoreSessions').addEventListener('click', () => { historyLimit += 10; renderHistory(); });
@@ -2146,7 +2175,7 @@
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persistDrafts(); });
     window.addEventListener('pagehide', persistDrafts);
     dom.manualTab.addEventListener('click', () => setEntryMode(false));
-    dom.photoTab.addEventListener('click', () => setEntryMode(true));
+    dom.photoTab.addEventListener('click', () => setEntryMode(dom.photoArea.classList.contains('hidden')));
     dom.scoreboardPhoto.addEventListener('change', handlePhotoSelection);
     dom.clearPhotoBtn.addEventListener('click', () => clearPhoto());
     dom.saveGameBtn.addEventListener('click', saveGameFromForm);
@@ -2160,8 +2189,12 @@
     $('sessionMode').addEventListener('change', changeSessionMode);
     dom.sessionType.addEventListener('change', () => { updateEntryContext(); persistDrafts(); });
     dom.date.addEventListener('change', () => { updateSessionSuggestions(); persistDrafts(); });
+    dom.alley.addEventListener('change', updateEntryContext);
 
     dom.entryDetail.addEventListener('change', () => { setEntryDetail(); persistDrafts(); renderEntrySaveState(); });
+    document.querySelectorAll('[name="entryTracking"]').forEach(input => input.addEventListener('change', () => {
+      dom.entryDetail.value = input.value; setEntryDetail(); persistDrafts(); renderEntrySaveState();
+    }));
     dom.score.addEventListener('input', () => {
       if (Number(dom.score.value) === 300 && dom.entryDetail.value !== 'score-only') {
         dom.strikes.value = '12';

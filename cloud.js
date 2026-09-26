@@ -1129,7 +1129,7 @@
       return `
         <tr class="${you ? 'you-row' : ''}">
           <td><span class="rank-badge">${ranked ? ++rank : '—'}</span></td>
-          <td><button class="leaderboard-bowler" type="button" data-member-uid="${escapeHtml(member.uid)}" aria-haspopup="dialog" aria-controls="friendStatsDialog"><strong>${escapeHtml(member.displayName || 'Bowler')}${you ? ' · You' : ''}</strong><span class="bowler-stats-link">View stats ›</span></button>${stale ? '<span class="provisional">Open the updated app and sync</span>' : !ranked ? `<span class="provisional">${frameMetric && Number(member.games || 0) > 0 ? 'No frame details' : 'No standard games'}</span>` : provisional ? '<span class="provisional">Provisional</span>' : ''}</td>
+          <td><button class="leaderboard-bowler" type="button" data-member-uid="${escapeHtml(member.uid)}" aria-haspopup="dialog" aria-controls="friendStatsDialog"><span class="bowler-avatar" aria-hidden="true">${escapeHtml(String(member.displayName || 'Bowler').trim().split(/\s+/).slice(0,2).map(part => part[0]).join('').toUpperCase())}</span><strong>${escapeHtml(member.displayName || 'Bowler')}${you ? ' · You' : ''}</strong></button>${stale ? '<span class="provisional">Open the updated app and sync</span>' : !ranked ? `<span class="provisional">${frameMetric && Number(member.games || 0) > 0 ? 'No frame details' : 'No standard games'}</span>` : provisional ? '<span class="provisional">Provisional</span>' : ''}</td>
           <td class="leader-value">${ranked ? escapeHtml(info.format(member[metric])) : '—'}</td>
           <td>${stale ? '—' : Number(member.games || 0)}</td>
         </tr>`;
@@ -1559,6 +1559,7 @@
   window.BowlingCloud = {
     isBusy: () => syncing,
     isSignedIn: () => Boolean(currentUser),
+    getAccount: () => currentUser ? { uid: currentUser.uid, email: currentUser.email || '' } : null,
     syncNow: () => syncAll('Manual sync')
   };
 

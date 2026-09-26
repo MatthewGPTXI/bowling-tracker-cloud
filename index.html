@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#17213a">
+  <meta name="theme-color" content="#091826">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Bowling Tracker">
@@ -18,11 +18,7 @@
   <a class="skip-link" href="#mainContent">Skip to content</a>
   <div class="app-shell">
     <header class="topbar">
-      <div>
-        <p class="eyebrow">YOUR BOWLING COMPANION</p>
-        <h1>Bowling Tracker</h1>
-        <p class="subtitle">Log your games. See your progress.</p>
-      </div>
+      <div class="brand"><svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true"><circle cx="23" cy="24" r="14" fill="currentColor"/><circle cx="21" cy="17" r="2" fill="#091826"/><circle cx="27" cy="20" r="2" fill="#091826"/><circle cx="21" cy="23" r="2" fill="#091826"/><path d="M6 3h5l-1 8 3 7-2 15H5L3 18l4-7z" fill="currentColor"/></svg><h1>Bowling Tracker</h1></div>
       <details class="profile-menu" id="profileMenu"><summary>Profile &amp; settings</summary>
       <div class="top-actions">
         <button id="installBtn" class="btn secondary hidden" type="button">Install</button>
@@ -32,7 +28,7 @@
       </details>
     </header>
 
-    <section class="identity-strip" aria-label="Current profile and sync status">
+    <section id="profileIdentity" class="identity-strip" hidden aria-label="Current profile and sync status">
       <div class="identity-person">
         <span>Current bowler</span>
         <strong id="currentProfileName">Bowler</strong>
@@ -44,23 +40,40 @@
       </div>
     </section>
 
-    <nav class="app-nav" aria-label="Main navigation"><button id="nav-home" type="button" data-go-view="home" aria-controls="view-home" aria-current="page"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z"/></svg>Home</button><button id="nav-sessions" type="button" data-go-view="sessions" aria-controls="view-sessions"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Sessions</button><button id="nav-stats" type="button" data-go-view="stats" aria-controls="view-stats"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v17h17M7 15l5-5 4 2 5-7"/></svg>Stats</button><button id="nav-friends" type="button" data-go-view="friends" aria-controls="view-friends"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5v1"/></svg>Friends</button></nav>
+    <nav class="app-nav" aria-label="Main navigation"><button id="nav-home" type="button" data-go-view="home" aria-controls="view-home" aria-current="page"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z"/></svg>Home</button><button id="nav-sessions" type="button" data-go-view="sessions" aria-controls="view-sessions"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 2v6m10-6v6M3 11h18m-13 4h2m4 0h2"/></svg>Sessions</button><button id="nav-stats" type="button" data-go-view="stats" aria-controls="view-stats"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20v-6m7 6V4m7 16V9" stroke-width="3"/></svg>Stats</button><button id="nav-friends" type="button" data-go-view="friends" aria-controls="view-friends"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5v1"/></svg>Friends</button></nav>
     <main id="mainContent" tabindex="-1">
-      <div id="view-home" class="app-view" role="region" aria-label="Home"><div class="home-welcome"><div><p class="eyebrow">READY TO ROLL?</p><h2>Make every game count.</h2></div><div id="homeRecap" class="home-recap"></div></div>
-      <div id="latestSessionShortcut" class="latest-session hidden"><div><span class="eyebrow">LATEST SESSION</span><p id="latestSessionLabel"></p></div><button id="continueLatestBtn" class="btn secondary" type="button">Continue session</button></div>      <section class="panel entry-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">LOG A GAME</p>
-            <h2 id="entryHeading">Add game</h2>
-            <p id="entrySubheading" class="section-copy">Enter one game or a full series.</p>
-          </div>
+      <div id="view-home" class="app-view" role="region" aria-label="Home">
+        <div class="home-welcome"><h2 id="homeGreeting">Ready to bowl?</h2><div id="homeRecap" class="home-recap"></div></div>
+        <section class="panel entry-panel">
+          <div class="section-heading"><h2 id="entryHeading">Add game</h2><p id="entrySubheading" class="visually-hidden">Enter one game or a full series.</p></div>
           <div class="segmented" role="group" aria-label="Entry method">
             <button id="manualTab" class="segment active" type="button">Single game</button>
-            <button id="openSeriesBtn" aria-haspopup="dialog" aria-controls="seriesDialog" class="segment" type="button">Enter a series</button>
-            <button id="photoTab" class="segment" type="button">Photo reference</button>
+            <button id="openSeriesBtn" aria-haspopup="dialog" aria-controls="seriesDialog" class="segment" type="button">Series</button>
           </div>
-        </div>
+          <div id="draftNotice" class="session-context" hidden><span>Unfinished entries.</span> <button id="recoverEntry" class="text-btn" type="button">Recover game</button><button id="recoverSeries" class="text-btn" type="button">Recover series</button><button id="discardDrafts" class="text-btn" type="button">Discard saved drafts</button></div>
+          <div class="form-grid entry-grid">
+            <fieldset class="tracking-choice"><legend>Tracking</legend><label><input type="radio" name="entryTracking" value="full" checked>Full stats</label><label><input type="radio" name="entryTracking" value="score-only">Score only</label></fieldset><select id="entryDetailInput" aria-label="Tracking" hidden><option value="full">Full stats</option><option value="score-only">Score only</option></select>
+            <label><span>Score</span><input id="scoreInput" type="number" min="0" max="300" inputmode="numeric" placeholder="0–300"></label>
+            <label><span>Open frames</span><input id="openFramesInput" type="number" min="0" max="10" inputmode="numeric" placeholder="0–10"></label>
+            <label><span>Strikes</span><input id="strikesInput" type="number" min="0" max="12" inputmode="numeric" placeholder="0–12"></label>
+            <label><span>Strike opportunities</span><select id="strikeOppInput"><option value="10">10</option><option value="11">11</option><option value="12">12</option></select><small class="field-help">11–12 with extra shots in the tenth.</small></label>
+          </div>
+          <div class="entry-actions">
+            <button id="saveGameBtn" class="btn primary" type="button">Save game</button>
+            <button id="cancelEditBtn" class="btn secondary hidden" type="button">Cancel edit</button>
+            <span id="entryStatus" class="status-text" aria-live="polite"></span>
+            <span id="entrySyncStatus" class="status-text" role="status"></span>
+          </div>
+        <details id="gameAdvanced" class="advanced-options"><summary>Advanced</summary><div class="form-grid optional-grid">
+          <label>Session type<select id="sessionTypeInput"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label><label>Scoring<select id="noTapInput"><option value="standard">Standard</option><option value="no-tap">No-tap</option></select><small class="field-help">No-tap games stay in history but are excluded from stats and rankings.</small></label>
+          <label>Alley <small>optional</small><select id="alleyInput" data-alley-select><option value="">No alley selected</option></select><small class="field-help">Manage your alleys in Profile → Alleys.</small></label>
+          <div id="gameBallEditor" class="ball-editor"><div id="gameBallFirst" class="ball-usage-row"><label class="ball-name-field">Ball <small>optional</small><select id="ballInput" data-ball-select><option value="">No ball selected</option></select><small class="field-help">Manage your balls in Profile → Ball inventory.</small></label></div></div>
+          <label>Notes <small>optional</small><input id="notesInput" type="text" placeholder="Lane, tournament, oil pattern…"></label>
+          <label>Date<input id="dateInput" type="date"></label>
+          </div>
+        </details>
 
+          <button id="photoTab" class="text-btn photo-action" type="button" aria-controls="photoArea" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5l2-2h4l2 2h4v15H4V5z"/><circle cx="12" cy="12" r="4"/></svg>Add scoreboard photo</button>
         <div id="photoArea" class="photo-area hidden">
           <label class="upload-box" for="scoreboardPhoto">
             <span class="upload-icon">📷</span>
@@ -75,84 +88,37 @@
           <p class="field-help">Photos are a reference only—enter the scores below.</p>
         </div>
 
-        <div id="draftNotice" class="session-context" hidden><span>Unfinished entries saved on this device.</span> <button id="recoverEntry" class="text-btn" type="button">Recover game</button><button id="recoverSeries" class="text-btn" type="button">Recover series</button><button id="discardDrafts" class="text-btn" type="button">Discard saved drafts</button></div><p id="entrySessionSummary" class="session-context" aria-live="polite"></p>
-        <div class="form-grid entry-grid">
-          <label>Session choice<select id="sessionMode"><option value="new">Start new session</option><option value="existing">Existing session</option></select></label>
-          <label id="existingSessionField" hidden>
-            <span>Existing session</span>
-            <select id="sessionSelect" aria-describedby="sessionSelectHelp">
-              <option value="">＋ New session</option>
-            </select>
-            <small id="sessionSelectHelp" class="field-help">Add games to this session.</small>
-          </label>
-          <label>
-            <span>Date</span>
-            <input id="dateInput" type="date">
-          </label>
-          <input id="sessionNameInput" type="hidden"><label>Session type<select id="sessionTypeInput"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select><small class="field-help">Applies to every game in this session.</small></label>
-          <label>Record<select id="entryDetailInput"><option value="full">Score + frame stats</option><option value="score-only">Score only</option></select></label>
-          <label>
-            <span>Game score</span>
-            <input id="scoreInput" type="number" min="0" max="300" inputmode="numeric" placeholder="0–300">
-          </label>
-          <label>
-            <span>Open frames</span>
-            <input id="openFramesInput" type="number" min="0" max="10" inputmode="numeric" placeholder="0–10">
-          </label>
-          <label>
-            <span>Strikes</span>
-            <input id="strikesInput" type="number" min="0" max="12" inputmode="numeric" placeholder="0–12">
-          </label>
-          <label>
-            <span>Strike opportunities</span>
-            <select id="strikeOppInput"><option value="10">10</option><option value="11">11</option><option value="12">12</option></select>
-            <small class="field-help">Use 11 or 12 if you had extra shots in the tenth frame.</small>
-          </label>
-          <label>
-            <span>Notes <small>optional</small></span>
-            <input id="notesInput" type="text" placeholder="Lane, tournament, oil pattern…">
-          </label>
-        </div>
 
-        <details id="gameAdvanced" class="advanced-options"><summary>Advanced</summary><label>Scoring<select id="noTapInput"><option value="standard">Standard</option><option value="no-tap">No-tap</option></select><small class="field-help">No-tap games stay in history but are excluded from stats and rankings.</small></label>
-          <label>Alley <small>optional</small><select id="alleyInput" data-alley-select><option value="">No alley selected</option></select><small class="field-help">Manage your alleys in Profile → Alleys.</small></label>
-          <div id="gameBallEditor" class="ball-editor"><div id="gameBallFirst" class="ball-usage-row"><label class="ball-name-field">Ball <small>optional</small><select id="ballInput" data-ball-select><option value="">No ball selected</option></select><small class="field-help">Manage your balls in Profile → Ball inventory.</small></label></div></div>
-        </details>
-        <div class="entry-actions">
-          <button id="saveGameBtn" class="btn primary" type="button">Save game</button>
-          <button id="cancelEditBtn" class="btn secondary hidden" type="button">Cancel edit</button>
-          <span id="entrySyncStatus" class="status-text" role="status">Saved on this device · local only</span>
-          <span id="entryStatus" class="status-text" aria-live="polite"></span>
-        </div>
-      </section></div>
+          <details id="sessionContext" class="session-picker">
+            <summary><span id="entrySessionSummary" aria-live="polite"></span><span class="change-label">Change</span></summary>
+            <div class="form-grid">
+              <label>Session<select id="sessionMode"><option value="new">Start new session</option><option value="existing">Existing session</option></select></label>
+              <label id="existingSessionField" hidden>Existing session<select id="sessionSelect" aria-describedby="sessionSelectHelp"><option value="">Choose a session</option></select><small id="sessionSelectHelp" class="field-help">Add games to this session.</small></label>
+            </div>
+            <input id="sessionNameInput" type="hidden">
+            <div id="latestSessionShortcut" class="latest-session hidden"><p id="latestSessionLabel"></p><button id="continueLatestBtn" class="text-btn" type="button">Continue latest</button></div>
+          </details>
+        </section>
+      </div>
       <div id="view-sessions" class="app-view" role="region" aria-label="Sessions" hidden>      <section class="panel">
         <div class="section-heading history-heading">
           <div>
-            <p class="eyebrow">HISTORY</p>
             <h2>Sessions</h2>
-            <p class="section-copy">Your saved games, grouped by session.</p>
-          </div>
-          <div class="history-filters">
-            <label>
-              <span>Sort</span>
-              <select id="sortFilter">
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="highscore">Highest game</option>
-              </select>
-            </label>
-          </div>
-        </div>
 
-        <div class="session-filters">
-          <label><span>Find a session</span><input id="sessionSearch" type="search" placeholder="Session, date, notes, ball, or alley" autocomplete="off"></label>
-          <label class="history-scoring"><span>Scoring</span><select id="historyScoring"><option value="">All games</option><option value="standard">Standard only</option><option value="no-tap">No-tap only</option></select></label>
-          <label><span>From</span><input id="sessionFrom" type="date"></label>
-          <label><span>Through</span><input id="sessionTo" type="date"></label>
-          <button id="clearSessionFilters" class="text-btn" type="button">Clear filters</button>
+          </div>
         </div>
+        <label class="session-search"><span class="visually-hidden">Search sessions</span><input id="sessionSearch" type="search" placeholder="Search sessions" aria-label="Search sessions by date, notes, ball, or alley" autocomplete="off"></label>
+        <details id="sessionFilters" class="filters-panel"><summary><span id="sessionFiltersLabel">Filters</span></summary>
+          <div class="session-filters">
+            <label>Sort<select id="sortFilter"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="highscore">Highest game</option></select></label>
+            <label class="history-scoring">Scoring<select id="historyScoring"><option value="">All games</option><option value="standard">Standard only</option><option value="no-tap">No-tap only</option></select></label>
+            <label>From<input id="sessionFrom" type="date"></label><label>Through<input id="sessionTo" type="date"></label>
+            <button id="clearSessionFilters" class="text-btn" type="button">Clear filters</button>
+          </div>
+          <details class="filter-disclosure"><summary>About session totals</summary><p class="field-help">Totals and averages use standard games only. No-tap games stay in history and are marked separately.</p></details>
+          <div id="historyHelpSlot"></div>
+        </details>
         <p id="historyResultCount" class="section-copy" aria-live="polite"></p>
-        <details class="filter-disclosure"><summary>About session totals</summary><p class="field-help">Totals and averages use standard games only. No-tap games stay in history and are marked separately.</p></details>
         <p id="historyActionStatus" class="status-text" role="status"></p>
         <p id="noSessionMatches" class="empty-state hidden">No sessions match. Try another name or date range.</p>
         <div id="emptyHistory" class="empty-state">
@@ -165,22 +131,25 @@
       </section></div>
       <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>
       <section class="panel stats-toolbar" aria-labelledby="statsHeading">
-        <div class="section-heading"><div><p class="eyebrow">YOUR PROGRESS</p><h2 id="statsHeading">Statistics</h2></div><div class="button-row"><button id="shareOverallStats" class="btn secondary compact" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog" disabled>Share overall stats</button><button id="clearStatsFilters" class="text-btn" type="button">Reset filters</button></div></div>
+        <div class="section-heading"><div><h2 id="statsHeading">Statistics</h2></div><div class="button-row"><button id="shareOverallStats" class="btn secondary compact" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog" disabled>Share overall stats</button></div></div>
         <div class="stats-presets" role="group" aria-label="Statistics date range">
           <button class="range-chip" type="button" data-stats-preset="all" aria-pressed="true">All time</button>
-          <button class="range-chip" type="button" data-stats-preset="month" aria-pressed="false">This month</button>
-          <button class="range-chip" type="button" data-stats-preset="90" aria-pressed="false">Last 90 days</button>
-          <button class="range-chip" type="button" data-stats-preset="year" aria-pressed="false">This year</button>
+          <button class="range-chip" type="button" data-stats-preset="month" aria-pressed="false">Month</button>
+          <button class="range-chip" type="button" data-stats-preset="90" aria-pressed="false">90 days</button>
+          <button class="range-chip" type="button" data-stats-preset="year" aria-pressed="false">Year</button>
         </div>
+        <details id="statsFilters" class="filters-panel"><summary><span id="statsFiltersLabel">Filters</span></summary>
         <div class="form-grid stats-filter-grid">
           <label>Session type<select id="statsType"><option value="">All types</option><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label>
           <label>Alley<select id="statsAlley"><option value="">All alleys</option><option value="none">No alley recorded</option></select></label>
           <label>Ball<select id="statsBall"><option value="">All balls</option><option value="none">No ball recorded</option></select></label>
         </div>
         <details id="statsCustomDates" class="filter-disclosure"><summary>Custom dates</summary><div class="form-grid stats-filter-grid"><label>From<input id="statsFrom" type="date"></label><label>Through<input id="statsTo" type="date"></label></div></details>
-        <p id="statsRangeStatus" class="section-copy" role="status"></p>
         <p id="statsBallNote" class="field-help" hidden>Stats cover the whole game, including frames played with other balls.</p>
         <p class="field-help">Standard games only; no-tap games are excluded.</p>
+          <button id="clearStatsFilters" class="text-btn" type="button">Reset filters</button>
+        </details>
+        <p id="statsRangeStatus" class="section-copy" role="status"></p>
       </section>
       <section class="stats-grid stats-overview" aria-label="At a glance">
         <article class="stat-card primary-stat">
@@ -198,11 +167,7 @@
           <strong id="statHighSeries" class="stat-value">—</strong>
           <span id="statHighSeriesDetail" class="stat-detail">Need 3 games in one session</span>
         </article>
-        <article id="statAverageSeriesCard" class="stat-card">
-          <span class="stat-label">Average series</span>
-          <strong id="statAverageSeries" class="stat-value">—</strong>
-          <span id="statAverageSeriesDetail" class="stat-detail">Need 3 games in one session</span>
-        </article>
+
         <article class="stat-card">
           <span class="stat-label">Strike %</span>
           <strong id="statStrikePct" class="stat-value">—</strong>
@@ -217,9 +182,9 @@
       <section class="panel recent-form" aria-labelledby="recentFormHeading">
         <div class="section-heading"><div><h2 id="recentFormHeading">Recent form</h2><p class="section-copy">Your latest games within the selected filters.</p></div></div>
         <div class="recent-form-grid">
-          <div class="mini-stat"><span>Last 5 average</span><strong id="moreLast5">—</strong><small id="last5Count"></small></div>
-          <div class="mini-stat"><span>Last 10 average</span><strong id="moreLast10">—</strong><small id="last10Count"></small></div>
-          <div class="mini-stat"><span>Last 30 average</span><strong id="moreLast30">—</strong><small id="last30Count"></small></div>
+          <div class="mini-stat"><span>Last 5</span><strong id="moreLast5">—</strong><small id="last5Count"></small></div>
+          <div class="mini-stat"><span>Last 10</span><strong id="moreLast10">—</strong><small id="last10Count"></small></div>
+          <div class="mini-stat"><span>Last 30</span><strong id="moreLast30">—</strong><small id="last30Count"></small></div>
         </div>
       </section>
       <section class="panel">
@@ -229,7 +194,12 @@
         <div id="averageChart"></div>
       </section>
       <details id="statsPeriodPanel" class="panel stats-disclosure" hidden><summary>Compare with the previous period</summary><div id="periodComparison"></div></details>
-      <details class="panel stats-disclosure"><summary>Accuracy &amp; milestones</summary><div class="stats-grid stats-breakdown">
+      <details class="panel stats-disclosure"><summary>More bowling stats</summary><div class="stats-grid stats-breakdown">
+        <article id="statAverageSeriesCard" class="stat-card">
+          <span class="stat-label">Average series</span>
+          <strong id="statAverageSeries" class="stat-value">—</strong>
+          <span id="statAverageSeriesDetail" class="stat-detail">Need 3 games in one session</span>
+        </article>
         <article class="stat-card">
           <span class="stat-label">Open frames / game</span>
           <strong id="statOpenAvg" class="stat-value">—</strong>
@@ -253,7 +223,7 @@
           <div class="mini-stat"><span>Perfect games</span><strong id="more300">0</strong></div>
         </div>
       </details>
-      <details class="panel stats-disclosure records-panel"><summary>More personal records</summary>
+      <details class="panel stats-disclosure records-panel"><summary>Personal records</summary>
         <div class="records-grid">
           <div class="record-stat"><span>Best session average</span><strong id="recordBestSession">—</strong><small id="recordBestSessionDetail">No sessions yet</small></div>
           <div class="record-stat"><span>Most strikes in a game</span><strong id="recordMostStrikes">—</strong><small id="recordMostStrikesDetail">No games yet</small></div>
@@ -264,8 +234,7 @@
       <div id="view-friends" class="app-view" role="region" aria-label="Friends" hidden>      <section class="panel leaderboard-panel" id="leaderboardPanel">
         <div class="section-heading leaderboard-heading">
           <div>
-            <p class="eyebrow">FRIENDS</p>
-            <h2>Leaderboard</h2>
+            <h2>Friends</h2>
             <p class="section-copy">Compare results with your bowling group.</p>
           </div>
           <div class="leaderboard-controls">
@@ -350,11 +319,12 @@
       <div class="stats-presets friend-view-options" role="group" aria-label="Bowler statistics view">
         <button id="friendStatsOnly" class="range-chip" type="button" aria-pressed="true">Their stats</button>
         <button id="friendStatsCompare" class="range-chip" type="button" aria-pressed="false">Compare with me</button>
-        <button id="shareFriendComparison" class="btn secondary compact" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog" hidden disabled>Share comparison</button>
+
       </div>
       <p id="friendStatsStatus" class="section-copy" role="status"></p>
       <div id="friendStatsContent"></div>
-      <p id="friendStatsNote" class="section-copy small-note"></p>
+      <button id="shareFriendComparison" class="btn primary comparison-share" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog" hidden disabled>Share comparison</button>
+      <details class="filter-disclosure"><summary>About these stats</summary><p id="friendStatsNote" class="section-copy small-note"></p></details>
     </div>
   </dialog>
 
@@ -378,7 +348,7 @@
         <button id="saveDefaultBowlerBtn" class="btn secondary" type="button">Save local profile</button>
       </div>
 
-      <div class="settings-section">
+      <div id="backupSettings" class="settings-section" tabindex="-1">
         <h3>Backups</h3>
         <p>Export a backup to restore later, or a CSV for spreadsheets.</p>
         <div class="button-row">
@@ -476,7 +446,7 @@
           </div>
         </div>
 
-        <div class="settings-section">
+        <div id="bowlingGroupSettings" class="settings-section" tabindex="-1">
           <h3>Private bowling groups</h3>
           <p>Create a group and share its invite code, or enter a friend's code to join their leaderboard.</p>
           <div class="group-actions-grid">
@@ -527,14 +497,14 @@
   </dialog>
 
   <dialog id="seriesDialog" aria-labelledby="seriesHeading">
-    <form id="seriesForm" class="dialog-inner">
+    <form id="seriesForm" class="dialog-inner" novalidate>
       <div class="dialog-header"><h2 id="seriesHeading">Enter a series</h2><button class="text-btn" type="button" data-close="seriesDialog">Close</button></div>
-      <p class="section-copy">Add or remove games, then save the series.</p>
-      <div class="form-grid"><label>Date<input id="seriesDate" type="date" required></label><input id="seriesName" type="hidden"><label>Session type<select id="seriesType"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label></div>
-      <details id="seriesAdvanced" class="advanced-options"><summary>Advanced</summary><label>Scoring for this series<select id="seriesNoTap"><option value="standard">Standard</option><option value="no-tap">No-tap</option></select><small class="field-help">Applies to every game below. No-tap games are excluded from stats and rankings.</small></label><label>Alley for this series <small>optional</small><select id="seriesAlley" data-alley-select><option value="">No alley selected</option></select><small class="field-help">Applies to every game in this entry. Manage your alleys in Profile → Alleys.</small></label><label>Ball for this series <small>optional</small><select id="seriesBall" data-ball-select><option value="">No ball selected</option></select><small class="field-help">Manage your balls in Profile → Ball inventory.</small></label><button id="applySeriesBall" class="btn secondary compact" type="button">Apply ball to all games</button><p class="field-help">Used for new rows. Tap Apply ball to all games to update existing rows, or change each game under Advanced.</p></details>
-      <p id="seriesPreview" class="session-context" aria-live="polite"></p>
+      <details id="seriesDetails" class="filters-panel"><summary><span id="seriesContextLabel">Session details</span><span class="change-label">Change details</span></summary>      <div class="form-grid"><label>Date<input id="seriesDate" type="date" required></label><input id="seriesName" type="hidden"><label>Session type<select id="seriesType"><option value="League">League</option><option value="Practice">Practice</option><option value="Tournament">Tournament</option></select></label></div></details>
       <div id="seriesRows"></div>
       <button id="addSeriesRow" class="btn secondary" type="button">＋ Add another game</button>
+      <details id="seriesAdvanced" class="advanced-options"><summary>Advanced</summary><label>Scoring for this series<select id="seriesNoTap"><option value="standard">Standard</option><option value="no-tap">No-tap</option></select><small class="field-help">Applies to every game below. No-tap games are excluded from stats and rankings.</small></label><label>Alley for this series <small>optional</small><select id="seriesAlley" data-alley-select><option value="">No alley selected</option></select><small class="field-help">Applies to every game in this entry. Manage your alleys in Profile → Alleys.</small></label><label>Ball for this series <small>optional</small><select id="seriesBall" data-ball-select><option value="">No ball selected</option></select><small class="field-help">Manage your balls in Profile → Ball inventory.</small></label><button id="applySeriesBall" class="btn secondary compact" type="button">Apply ball to all games</button><p class="field-help">Used for new rows. Tap Apply ball to all games to update existing rows, or change each game under Advanced.</p></details>
+
+      <p id="seriesPreview" class="session-context" aria-live="polite"></p>
       <div class="entry-actions"><button id="saveSeriesBtn" class="btn primary" type="submit">Save series</button><span id="seriesStatus" class="status-text" role="status"></span></div>
     </form>
   </dialog>

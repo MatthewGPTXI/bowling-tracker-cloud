@@ -27,7 +27,7 @@ const submit={preventDefault(){}};
  assert(!$('view-home').hidden);assert($('view-stats').hidden);
  $('scoreInput').value='175';assert(t.hasEntryDraft());await $('nav-sessions').fire('click');assert($('view-home').hidden);assert(!$('view-sessions').hidden);assert.equal($('scoreInput').value,'175');
  assert.equal($('nav-sessions').attributes['aria-current'],'page');assert.equal($('nav-home').attributes['aria-current'],undefined);
- assert($('historyResultCount').textContent.includes('10 of 16'));assert.equal(($('sessionsList').innerHTML.match(/<details/g)||[]).length,10);assert.equal(($('sessionsList').innerHTML.match(/ open>/g)||[]).length,1);
+ assert($('historyResultCount').textContent.includes('10 of 16'));assert.equal(($('sessionsList').innerHTML.match(/<details/g)||[]).length,10);assert.equal(($('sessionsList').innerHTML.match(/ open>/g)||[]).length,0);
  await $('showMoreSessions').fire('click');assert($('historyResultCount').textContent.includes('16 of 16'));
  $('sessionSearch').value='LEAGUE';$('sessionFrom').value='2026-08-05';$('sessionTo').value='2026-08-07';await $('sessionSearch').fire('input');assert($('historyResultCount').textContent.includes('3 of 3'));
  $('sessionSearch').value='missing';await $('sessionSearch').fire('input');assert(!$('noSessionMatches').classList.contains('hidden'));assert.equal($('sessionsList').innerHTML,'');await $('clearSessionFilters').fire('click');assert($('historyResultCount').textContent.includes('10 of 16'));

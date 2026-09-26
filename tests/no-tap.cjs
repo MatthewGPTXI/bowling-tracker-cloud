@@ -28,7 +28,8 @@ const setScores = () => {
   assert.equal(t.progressStats(data).points.at(-1).count, 3);
   assert.equal($('statAverage').textContent, '180.0'); assert.equal($('statHighGame').textContent, 210);
   assert.equal($('more300').textContent, 0); assert.equal($('recordMostStrikes').textContent, 4);
-  assert($('homeRecap').innerHTML.includes('<strong>3</strong><span>Games'));
+  assert($('homeRecap').innerHTML.includes('<span>Last 10</span><strong>180.0</strong>'));
+  assert(!$('homeRecap').innerHTML.includes('<strong>300</strong>'), 'No-tap games stay out of the Home recap');
   assert($('averageChart').innerHTML.includes('Latest average 180.0 across 3 games'));
   const own = app.getLeaderboardSummary();
   assert.equal(own.games, 3); assert.equal(own.noTapGames, 1); assert.equal(own.average, 180);

@@ -49,23 +49,27 @@
     return games.length ? games.reduce((sum, game) => sum + Number(game.score), 0) / games.length : null;
   }
 
+  function profileIcon(kind) {
+    const paths = {
+      ball: '<circle cx="12" cy="12" r="9"/><circle cx="11" cy="7" r="1"/><circle cx="15" cy="9" r="1"/><circle cx="10" cy="11" r="1"/>',
+      alley: '<path d="M12 22S4 14 4 9a8 8 0 1 1 16 0c0 5-8 13-8 13Z"/><circle cx="12" cy="9" r="3"/>',
+      groups: '<circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 4a3 3 0 0 1 0 6m2 4a7 7 0 0 1 3 7"/>',
+      transfer: '<path d="M3 7h18m-5-5 5 5-5 5M21 17H3m5-5-5 5 5 5"/>',
+      settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>',
+      info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-11v1"/>'
+    };
+    return `<svg class="row-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths[kind]}</svg>`;
+  }
+
   function profileMarkup() {
     return `
-      <section class="panel" aria-labelledby="profileHeading">
-        <div class="section-heading">
-          <div><p class="eyebrow">YOUR PROFILE</p><h2 id="profileHeading">Profile</h2><p class="section-copy">Your account, equipment, and goals.</p></div>
-        </div>
-        <div class="profile-summary-grid">
-          <div class="profile-summary-card"><span>Bowler</span><strong id="profileNameSummary">Bowler</strong><small id="profileScopeSummary">Current local profile</small></div>
-          <div class="profile-summary-card"><span>Average</span><strong id="profileAverageSummary">—</strong><small id="profileAverageDetail">No games yet</small></div>
-          <div class="profile-summary-card"><span>Goal average</span><strong id="profileGoalSummary">Not set</strong><small id="profileGoalProgress">Uses running average for game colors</small></div>
-        </div>
+      <div class="page-heading"><h2 id="profileHeading">Profile</h2></div>
+      <section class="panel profile-hero" aria-labelledby="profileNameSummary">
+        <div class="profile-avatar" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7" r="4"/><path d="M3 23v-3a9 9 0 0 1 18 0v3z"/></svg></div>
+        <div class="profile-person"><strong id="profileNameSummary">Bowler</strong><small id="profileScopeSummary">Saved on this device</small><div id="profileIdentitySlot"></div></div>
       </section>
-
-
-
-      <section class="panel" aria-labelledby="ballInventoryHeading">
-        <div class="section-heading"><div><p class="eyebrow">YOUR EQUIPMENT</p><h2 id="ballInventoryHeading">Ball inventory</h2><p class="section-copy">Choose from these balls when adding a game or series.</p></div></div>
+      <section class="panel profile-group"><h3 class="eyebrow">BOWLING SETUP</h3>
+      <details class="profile-row"><summary>${profileIcon('ball')}<span id="ballInventoryHeading">Ball inventory</span></summary><div class="profile-row-content">
         <form id="ballInventoryForm" class="inventory-form">
           <label>Ball name<input id="inventoryBallName" type="text" maxlength="100" required placeholder="e.g. Storm Concept" autocomplete="off"></label>
           <button id="saveInventoryBall" class="btn primary" type="submit">Add ball</button>
@@ -76,10 +80,10 @@
         <p class="field-help">Renaming or removing a ball keeps past game tags unchanged.</p>
         <p id="inventorySyncNote" class="field-help"></p>
         <p id="inventoryStatus" class="status-text" role="status"></p>
-      </section>
+      </div></details>
 
-      <section class="panel" aria-labelledby="alleyInventoryHeading">
-        <div class="section-heading"><div><p class="eyebrow">YOUR LOCATIONS</p><h2 id="alleyInventoryHeading">Alleys</h2><p class="section-copy">Choose from these alleys when adding a game or series.</p></div></div>
+
+      <details class="profile-row"><summary>${profileIcon('alley')}<span id="alleyInventoryHeading">Alleys</span></summary><div class="profile-row-content">
         <form id="alleyInventoryForm" class="inventory-form">
           <label>Alley name<input id="alleyInventoryAlleyName" type="text" maxlength="100" required placeholder="e.g. Bowlero Pasadena" autocomplete="off"></label>
           <button id="saveAlleyInventoryAlley" class="btn primary" type="submit">Add alley</button>
@@ -90,9 +94,16 @@
         <p class="field-help">Renaming or removing an alley keeps past game tags unchanged.</p>
         <p id="alleyInventorySyncNote" class="field-help"></p>
         <p id="alleyInventoryStatus" class="status-text" role="status"></p>
-      </section>
+      </div></details>
 
-      <section class="panel" aria-labelledby="goalAverageHeading">
+
+      </section>
+      <section class="panel profile-group" aria-labelledby="profileSettingsHeading"><h3 id="profileSettingsHeading" class="eyebrow">ACCOUNT</h3><div id="profileActionButtons" class="profile-actions"></div><button id="profileGroupsBtn" class="profile-link" type="button">${profileIcon('groups')}Bowling groups<span aria-hidden="true">›</span></button></section>
+      <section class="panel profile-group"><h3 class="eyebrow">DATA</h3><div id="profileDataActions" class="profile-actions"></div><button id="profileImportExportBtn" class="profile-link" type="button">${profileIcon('transfer')}Import / Export<span aria-hidden="true">›</span></button></section>
+      <section class="panel profile-group"><h3 class="eyebrow">APP</h3>
+        <details class="profile-row"><summary>${profileIcon('settings')}Settings</summary><div class="profile-row-content">
+          <div class="profile-summary-grid"><div class="profile-summary-card"><span>Average</span><strong id="profileAverageSummary">—</strong><small id="profileAverageDetail"></small></div><div class="profile-summary-card"><span>Goal average</span><strong id="profileGoalSummary">Not set</strong><small id="profileGoalProgress"></small></div></div>
+      <div aria-labelledby="goalAverageHeading">
         <div class="goal-heading">
           <div><p class="eyebrow">AVERAGE TARGET</p><h2 id="goalAverageHeading">Goal average</h2><p class="section-copy">Set the average you are working toward.</p></div>
           <details class="goal-help">
@@ -111,17 +122,17 @@
           <span id="goalNeutralLegend" class="goal-color-chip neutral">Neutral · At average</span>
         </div>
         <p id="goalAverageStatus" class="status-text" aria-live="polite"></p>
-      </section>
+      </div>
 
-      <section class="panel" aria-labelledby="profileSettingsHeading">
-        <div class="section-heading"><div><p class="eyebrow">ACCOUNT & APP</p><h2 id="profileSettingsHeading">Account & backups</h2></div></div>
-        <div id="profileActionButtons" class="profile-actions"></div>
+        </div></details>
+        <details class="profile-row"><summary>${profileIcon('info')}About / Version</summary><div id="profileAbout" class="profile-row-content"><p class="section-copy">Bowling Tracker · Your games, wherever you bowl.</p></div></details>
+        <div id="profileInstallAction"></div>
       </section>
     `;
   }
 
   function ensureProfileUI() {
-    const nav = document.querySelector('.app-nav');
+    const nav = document.querySelector('.topbar');
     const main = $('mainContent');
     if (!nav || !main) return false;
 
@@ -131,7 +142,9 @@
       button.type = 'button';
       button.dataset.goView = 'profile';
       button.setAttribute('aria-controls', VIEW_ID);
-      button.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Profile';
+      button.className = 'profile-trigger';
+      button.setAttribute('aria-label', 'Open profile and settings');
+      button.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span id="headerProfileName">Profile</span><span id="headerSyncNotice" class="sync-attention" aria-label="Sync needs attention" hidden>!</span><span aria-hidden="true">⌄</span>';
       button.addEventListener('click', showProfile);
       nav.appendChild(button);
     }
@@ -154,36 +167,35 @@
       $('cancelAlleyInventoryEdit').addEventListener('click', resetAlleyInventoryEditor);
       $('ballInventoryForm').addEventListener('submit', saveInventoryBall);
       $('cancelInventoryEdit').addEventListener('click', resetInventoryEditor);
+      const identity = $('profileIdentity');
+      if (identity) { identity.hidden = false; $('profileIdentitySlot').appendChild(identity); }
+      const footer = document.querySelector('footer');
+      if (footer) $('profileAbout').appendChild(footer);
+      $('profileGroupsBtn').addEventListener('click', () => {
+        $('openCloudBtn').click();
+        const target = window.BowlingCloud?.isSignedIn?.() ? $('bowlingGroupSettings') : $('cloudEmailInput');
+        if (target?.getClientRects().length) { target.scrollIntoView({block:'center'}); target.focus({preventScroll:true}); }
+      });
+      $('profileImportExportBtn').addEventListener('click', () => {
+        $('openSettingsBtn').click();
+        $('backupSettings')?.scrollIntoView({block:'center'}); $('backupSettings')?.focus({preventScroll:true});
+      });
     }
 
     moveSettingsButtons();
     ensureHistoryHelp();
     const menu = $('profileMenu');
     if (menu) menu.hidden = true;
-    const edit = $('editProfileBtn');
-    if (edit && edit.dataset.profileRoute !== 'true') {
-      edit.dataset.profileRoute = 'true';
-      edit.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        showProfile();
-      }, true);
-    }
     return true;
   }
 
   function moveSettingsButtons() {
-    const actions = $('profileActionButtons');
-    if (!actions) return;
-    const cloud = $('openCloudBtn');
-    const settings = $('openSettingsBtn');
-    const install = $('installBtn');
-    if (cloud && cloud.parentElement !== actions) actions.appendChild(cloud);
-    if (settings) {
-      settings.textContent = 'Data & backups';
-      if (settings.parentElement !== actions) actions.appendChild(settings);
+    for (const [id, target] of [['openCloudBtn','profileActionButtons'], ['openSettingsBtn','profileDataActions'], ['installBtn','profileInstallAction']]) {
+      const button = $(id), container = $(target);
+      if (!button || !container) continue;
+      if (id === 'openSettingsBtn') button.textContent = 'Data & backups';
+      if (button.parentElement !== container) container.appendChild(button);
     }
-    if (install && install.parentElement !== actions) actions.appendChild(install);
   }
 
   function showProfile() {
@@ -193,6 +205,7 @@
       if (button.dataset.goView === 'profile') button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     });
+    $(NAV_ID)?.setAttribute('aria-current', 'page');
     const menu = $('profileMenu');
     if (menu) menu.open = false;
     renderProfile(true);
@@ -208,7 +221,8 @@
     details.id = 'historyColorHelp';
     details.className = 'history-color-help';
     details.innerHTML = '<summary>Game color coding <span class="help-mark" aria-hidden="true">?</span></summary><p id="historyColorHelpCopy"></p>';
-    anchor.before(details);
+    const slot = $('historyHelpSlot');
+    if (slot) slot.appendChild(details); else anchor.before(details);
   }
 
   function saveGoal() {
@@ -263,7 +277,10 @@
     const scope = app()?.getLocalScopeInfo?.();
 
     $('profileNameSummary').textContent = name;
-    $('profileScopeSummary').textContent = scope?.kind === 'user' ? 'Signed-in profile on this device' : 'Local profile on this device';
+    const account = window.BowlingCloud?.getAccount?.();
+    $('profileScopeSummary').textContent = scope?.kind === 'user'
+      ? (account?.uid === scope.uid ? account.email || 'Signed in' : 'Saved account profile') : 'Local profile';
+    if ($('headerProfileName')) $('headerProfileName').textContent = name;
     $('profileAverageSummary').textContent = average === null ? '—' : average.toFixed(1);
     $('profileAverageDetail').textContent = games.length ? `${games.length} game${games.length === 1 ? '' : 's'}` : 'No games yet';
     $('profileGoalSummary').textContent = goal === null ? 'Not set' : goal.toFixed(1);
@@ -493,6 +510,7 @@
     if (goal === null) return;
     const average = currentAverage();
     const item = document.createElement('div');
+    item.className = 'home-goal';
     item.dataset.goalRecap = 'true';
     item.innerHTML = `<strong>${goal.toFixed(1)}</strong><span>${average === null ? 'Goal average' : average >= goal ? 'Goal reached' : `${(goal - average).toFixed(1)} pins to goal`}</span>`;
     recap.appendChild(item);
