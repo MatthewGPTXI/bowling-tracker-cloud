@@ -13,6 +13,7 @@ const server = http.createServer(async (req,res) => {
   const pathname = decodeURIComponent(new URL(req.url,'http://localhost').pathname);
   const filename = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
   if (!filename.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
+  if (pathname === '/firebase-config.js') { res.writeHead(200,{'Content-Type':'application/javascript'}).end('window.BOWLING_FIREBASE_CONFIG = {};'); return; }
   try {
     const mime = {'.js':'application/javascript','.css':'text/css','.html':'text/html','.png':'image/png','.json':'application/json'}[path.extname(filename)] || 'application/octet-stream';
     res.writeHead(200,{'Content-Type':mime});res.end(await fs.readFile(filename));
@@ -125,6 +126,8 @@ try {
     window.BowlingFriends.open(friend.uid);
   },name);
   await loadFriends();
+  const friendState = await page.evaluate(()=>({scope:BowlingApp.getLocalScopeInfo(),open:document.getElementById('friendStatsDialog').open,hidden:document.getElementById('friendStatsCompare').hidden,name:document.getElementById('friendStatsName').textContent}));
+  assert(friendState.open && !friendState.hidden, 'Synthetic friend dialog must be open: '+JSON.stringify(friendState));
   assert(!await page.locator('#shareFriendComparison').isVisible());
   await page.click('#friendStatsCompare');await page.click('#shareFriendComparison');
   await page.waitForSelector('#saveScoreCard:visible');
