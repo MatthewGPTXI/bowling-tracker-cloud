@@ -8,6 +8,7 @@ const APP_ASSETS = [
   './styles.css',
   './balls.js',
   './ui.js',
+  './main.js',
   './app.js',
   './score-cards.js',
   './updates.js',
@@ -17,7 +18,23 @@ const APP_ASSETS = [
   './profile.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './modules/backup.js',
+  './modules/ball-data.js',
+  './modules/cloud-reader.js',
+  './modules/drafts.js',
+  './modules/format.js',
+  './modules/games.js',
+  './modules/groups.js',
+  './modules/history-renderer.js',
+  './modules/ids.js',
+  './modules/inventory-editor.js',
+  './modules/inventory.js',
+  './modules/navigation.js',
+  './modules/reconciliation.js',
+  './modules/sessions.js',
+  './modules/statistics.js',
+  './modules/storage.js'
 ];
 
 self.addEventListener('install', (event) => {

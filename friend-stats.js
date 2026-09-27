@@ -1,6 +1,9 @@
-(() => {
+import {app as App} from './app.js';
+import {scoreCards as ScoreCards} from './score-cards.js';
+import * as UI from './ui.js';
+export const friends = (() => {
   'use strict';
-  const openDialog = dialog => window.BowlingUI ? window.BowlingUI.openDialog(dialog) : dialog.showModal();
+  const {openDialog, closeDialog} = UI;
 
   const $ = id => document.getElementById(id);
   const dialog = $('friendStatsDialog');
@@ -41,8 +44,8 @@
   const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
   const currentDetails = member => member?.details && finite(member.updatedAt) !== null
     && member.details.updatedAt === member.updatedAt ? member.details : null;
-  const hasCurrentAccount = () => context && window.BowlingApp?.ready
-    && window.BowlingApp.getLocalScopeInfo().uid === context.uid;
+  const hasCurrentAccount = () => context && App?.ready
+    && App.getLocalScopeInfo().uid === context.uid;
   const needsStandardRefresh = member => (Number(member?.noTapGames || 0) > 0
     && member.standardStatsUpdatedAt !== member.updatedAt) || (Number(member?.scoreOnlyGames || 0) > 0
     && member.frameStatsUpdatedAt !== member.updatedAt);
@@ -78,8 +81,8 @@
   }
 
   function close() {
-    window.BowlingScoreCards?.closeComparison?.();
-    if (dialog.open) dialog.close();
+    ScoreCards?.closeComparison?.();
+    if (dialog.open) closeDialog(dialog);
     selectedUid = '';
     comparing = false;
   }
@@ -109,7 +112,7 @@
 
   function open(uid, trigger = document.activeElement) {
     if (!hasCurrentAccount() || !members.has(uid)) return;
-    window.BowlingScoreCards?.closeComparison?.();
+    ScoreCards?.closeComparison?.();
     selectedUid = uid;
     comparing = false;
     opener = trigger;
@@ -126,7 +129,7 @@
   // missing/stale/frame-stat rules as the table; never fetch or store new data.
   function getComparisonCardData() {
     if (!dialog.open || !hasCurrentAccount() || !members.has(selectedUid)) return null;
-    const app = window.BowlingApp;
+    const app = App;
     const own = app.getLeaderboardSummary(), member = members.get(selectedUid);
     if (!canShareComparison(own, member)) return null;
     const bowler = (summary, name, self) => ({
@@ -148,7 +151,7 @@
 
   function render() {
     if (!hasCurrentAccount() || !members.has(selectedUid)) { clear(); return; }
-    const own = window.BowlingApp.getLeaderboardSummary();
+    const own = App.getLeaderboardSummary();
     const self = selectedUid === context.uid;
     const member = self ? { ...members.get(selectedUid), ...own } : members.get(selectedUid);
     const name = String(member.displayName || 'Bowler');
@@ -199,7 +202,7 @@
   dialog.addEventListener('click', event => { if (event.target === dialog) close(); });
   dialog.addEventListener('close', () => {
     if (dialog.open) return;
-    window.BowlingScoreCards?.closeComparison?.();
+    ScoreCards?.closeComparison?.();
     selectedUid = '';
     comparing = false;
     if (opener?.isConnected) opener.focus({preventScroll: true});
@@ -212,5 +215,5 @@
   window.addEventListener('offline', () => { if (dialog.open) render(); });
   window.addEventListener('online', () => { if (dialog.open) render(); });
 
-  window.BowlingFriends = { setMembers, clear, open, getComparisonCardData };
+  return { setMembers, clear, open, getComparisonCardData };
 })();

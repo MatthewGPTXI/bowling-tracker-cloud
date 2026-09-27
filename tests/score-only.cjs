@@ -50,14 +50,14 @@ const partial = (id,score) => ({...game(id,'2026-09-01',score),scoreOnly:true,op
   await t.importBackupFile({text:async()=>JSON.stringify({games:[partial(99,250)]})});await t.confirmImport();
   assert.equal(app.getGames().find(g=>g.id===99).score,250);
   // Payloads/conflicts distinguish unknown details from recorded zeroes.
-  const source=fs.readFileSync(path.join(__dirname,'../cloud.js'),'utf8');
-  const cloud={window:c.window,Date};vm.createContext(cloud);
+  const source=require('./helpers/legacy.cjs').source(path.join(__dirname,'../cloud.js'));
+  const cloud={window:c.window,Date};vm.createContext(require('./helpers/legacy.cjs').prepare(cloud));
   vm.runInContext(source.slice(source.indexOf('  function cloudGamePayload'),source.indexOf('  function gameReviewHtml')),cloud);
   const payload=cloud.cloudGamePayload(partial(55,200));assert.equal(payload.strikes,null);assert.equal(payload.strikeOpportunities,null);
   assert.equal(cloud.sameGameContent(payload,partial(55,200)),true);
   assert.equal(cloud.sameGameContent(payload,{...partial(55,200),scoreOnly:false,strikes:0,openFrames:0,strikeOpportunities:10}),false);
   // Friend denominators reflect only games with frame details.
-  c.window.BowlingApp.ready=true;vm.runInContext(fs.readFileSync(path.join(__dirname,'../friend-stats.js'),'utf8'),c);
+  c.window.BowlingApp.ready=true;vm.runInContext(require('./helpers/legacy.cjs').source(path.join(__dirname,'../friend-stats.js')),c);
   const friends=c.window.BowlingFriends;
   friends.setMembers([{uid:'b',displayName:'Friend',...summary}],{uid:'a',groupId:'one',revision:1});friends.open('b');
   assert($('friendStatsContent').innerHTML.includes('<dt>Strikes / game</dt><dd>4.00</dd>'));

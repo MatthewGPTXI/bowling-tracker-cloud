@@ -151,7 +151,7 @@ const setScores = () => {
   assert($('sessionsList').innerHTML.includes('No-tap Total 300')); assert.equal(t.filteredGames().length, 1);
 
   t.setState(database(standard), standard); app.ready = true;
-  vm.runInContext(fs.readFileSync(path.join(root, 'friend-stats.js'), 'utf8'), c);
+  vm.runInContext(require('./helpers/legacy.cjs').source(path.join(root, 'friend-stats.js')), c);
   const friends = c.window.BowlingFriends, context = { uid: 'a', groupId: 'group', revision: 1 };
   const friend = { uid: 'b', displayName: 'Friend', ...own };
   friends.setMembers([friend], context); friends.open('b'); await $('friendStatsCompare').fire('click');
@@ -165,13 +165,13 @@ const setScores = () => {
   const legacy = { ...friend }; delete legacy.noTapGames; delete legacy.standardStatsUpdatedAt;
   friends.setMembers([legacy], context); assert.equal((row('Average').match(/180.0/g) || []).length, 2);
 
-  const cloud = fs.readFileSync(path.join(root, 'cloud.js'), 'utf8');
+  const cloud = require('./helpers/legacy.cjs').source(path.join(root, 'cloud.js'));
   const renderer = cloud.slice(cloud.indexOf('  function renderLeaderboardRows('), cloud.indexOf('  async function saveProfile('));
   const pub = { window: {}, currentUser: { uid: 'a' }, selectedGroupId: 'group', authRevision: 1,
     dom: { metricSelect: { value: 'average' }, leaderboardMetricHeading: {}, leaderboardBody: {} },
     metricInfo: { average: { label: 'Average', format: v => Number(v).toFixed(1), provisional: true } },
     escapeHtml: value => String(value) };
-  vm.createContext(pub); vm.runInContext(renderer, pub);
+  vm.createContext(require('./helpers/legacy.cjs').prepare(pub)); vm.runInContext(renderer, pub);
   pub.renderLeaderboardRows([stale, { ...friend, uid: 'c', displayName: 'No-tap only', games: 0 }, legacy]);
   const board = pub.dom.leaderboardBody.innerHTML;
   assert.equal((board.match(/rank-badge">1</g) || []).length, 1);

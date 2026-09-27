@@ -3,7 +3,7 @@ const root = path.resolve(__dirname, '..');
 const harness = fs.readFileSync(path.join(__dirname, 'ui-regression.cjs'), 'utf8').split('(async()=>{')[0];
 const {app,t,$,game,database} = vm.runInNewContext(harness+'\n({app,t,$,game,database});',
   {require,console,__dirname,setTimeout,clearTimeout,URL,structuredClone,queueMicrotask,setImmediate,process});
-const cards = require('../score-cards.js');
+const cardContext={}; vm.runInNewContext(require('./helpers/legacy.cjs').source(path.join(root,'score-cards.js')).replace('window.BowlingScoreCards = scoreCards;', 'globalThis.cards = scoreCards;'), require('./helpers/legacy.cjs').prepare(cardContext)); const cards=cardContext.cards;
 const partial = (id, score) => ({...game(id,'2026-09-24',score),scoreOnly:true,strikes:null,openFrames:null,strikeOpportunities:null});
 const key = '2026-09-24|||league';
 const data = [

@@ -48,14 +48,15 @@ const root = path.resolve(__dirname, '..');
   assert($('sessionsList').innerHTML.includes('class="game-detail-panel" hidden'));
   assert($('sessionsList').innerHTML.includes('&lt;script&gt;'), 'Notes remain readable and escaped');
   const toggles = [1, 2, 3].map(id => {
-    const button = $('gameActionsToggle-' + id); button.dataset.id = String(id);
+    const button = $('gameActionsToggle-' + id); button.dataset.id = String(id); button.classList.add('game-actions-toggle'); button.closest = () => button;
     $('gameActions-' + id).hidden = true; return button;
   });
   $('sessionsList').querySelectorAll = selector => selector === '.game-actions-toggle' ? toggles : [];
+  $('sessionsList').contains = () => true;
   t.renderHistory();
-  await toggles[1].fire('click');
+  await $('sessionsList').fire('click', {target: toggles[1]});
   assert.equal(toggles[1].attributes['aria-expanded'], 'true'); assert(!$('gameActions-2').hidden);
-  await toggles[2].fire('click');
+  await $('sessionsList').fire('click', {target: toggles[2]});
   assert($('gameActions-2').hidden); assert(!$('gameActions-3').hidden);
   await $('sessionsList').fire('keydown', { key: 'Escape', target: { closest: () => ({ querySelector: () => toggles[2] }) } });
   assert($('gameActions-3').hidden); assert(toggles[2].focused);
@@ -78,7 +79,7 @@ const root = path.resolve(__dirname, '..');
   c.window.addEventListener = (type, fn) => { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn); };
   const dispatch = type => (listeners.get(type) || []).forEach(fn => fn());
   app.ready = true;
-  vm.runInContext(fs.readFileSync(path.join(root, 'friend-stats.js'), 'utf8'), c);
+  vm.runInContext(require('./helpers/legacy.cjs').source(path.join(root, 'friend-stats.js')), c);
   const friends = c.window.BowlingFriends;
   const context = { uid: 'a', groupId: 'group-one', revision: 1 };
   const friend = { uid: 'b', displayName: '<img src=x onerror=alert(1)>', games: 20, average: 200,
@@ -166,12 +167,12 @@ const root = path.resolve(__dirname, '..');
   friends.clear();
 
   // Publishing must preserve the summary timestamp and the active account.
-  const source = fs.readFileSync(path.join(root, 'cloud.js'), 'utf8');
+  const source = require('./helpers/legacy.cjs').source(path.join(root, 'cloud.js'));
   const publishing = source.slice(source.indexOf('  async function memberPayload()'), source.indexOf('  async function publishAllSummaries()'));
   const writes = [];
   const pub = { currentUser: { uid: 'a', displayName: 'Matthew' }, authRevision: 1, profile: { displayName: 'Matthew' },
     waitForBowlingApp: async () => app, firestore: {}, modules: { doc: (_, ...parts) => parts.join('/'), setDoc: async (ref, body) => writes.push({ ref, body }) } };
-  vm.createContext(pub); vm.runInContext(publishing, pub);
+  vm.createContext(require('./helpers/legacy.cjs').prepare(pub)); vm.runInContext(publishing, pub);
   await pub.publishSummaryToGroup('group-one');
   assert.equal(writes[0].ref, 'groups/group-one/members/a');
   assert.equal(writes[0].body.details.updatedAt, writes[0].body.updatedAt);

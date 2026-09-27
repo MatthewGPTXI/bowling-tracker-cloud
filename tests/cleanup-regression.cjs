@@ -4,7 +4,7 @@ const harness = fs.readFileSync(path.join(__dirname, 'ui-regression.cjs'), 'utf8
   .replace('api.test={showView,', 'api.test={clearAllHistory,completedSeriesTotals,startEdit,showView,');
 const {c, app, t, $, game, database, events} = vm.runInNewContext(harness + '\n({c,app,t,$,game,database,events});',
   {require, console, __dirname, setTimeout, clearTimeout, URL, structuredClone, queueMicrotask, setImmediate, process});
-const cloudSource = fs.readFileSync(path.join(root, 'cloud.js'), 'utf8');
+const cloudSource = require('./helpers/legacy.cjs').source(path.join(root, 'cloud.js'));
 const section = (start, end) => cloudSource.slice(cloudSource.indexOf('  ' + start), cloudSource.indexOf('  ' + end, cloudSource.indexOf('  ' + start)));
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -46,7 +46,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
   assert.equal(deletion.type,'batch-delete');assert.equal(deletion.bases.length,6);
   assert(deletion.tombstones.every((item,i)=>item.updatedAt>data[i].updatedAt));
   const storage=new Map();const outbox={window:c.window,Date,localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},setStatus(){}};
-  vm.createContext(outbox);vm.runInContext(section('function cloudGamePayload','function normalizedSessionName')+section('function outboxKey','async function flushOutbox'),outbox);
+  vm.createContext(require('./helpers/legacy.cjs').prepare(outbox));vm.runInContext(section('function cloudGamePayload','function normalizedSessionName')+section('function outboxKey','async function flushOutbox'),outbox);
   outbox.queueLocalChange(deletion,'a');
   assert.equal(Object.keys(outbox.readOutbox('a')).length,6);
   assert(outbox.readOutbox('a')[1].data.deleted);assert.equal(outbox.readOutbox('a')[1].base.score,150);
@@ -60,7 +60,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
     document:{readyState:'loading',addEventListener(){},getElementById:id=>id==='sessionsList'?list:null,createElement:()=>({remove(){statusHost.children=[]}})},
     window:{BowlingApp:{getGames:()=>[game(1,'2026-09-01',180),game(2,'2026-09-01',220)],getLocalScopeInfo:()=>({dbName:'guest'})},
       addEventListener:(name,fn)=>(listeners[name]??=[]).push(fn)}};
-  vm.runInNewContext(fs.readFileSync(path.join(root,'profile.js'),'utf8'),profileContext);
+  vm.runInNewContext(require('./helpers/legacy.cjs').source(path.join(root,'profile.js')),require('./helpers/legacy.cjs').prepare(profileContext));
   listeners['bowling:history-rendered'][0]();assert.equal(statusHost.children[0].textContent,'Above goal');
   listeners['bowling:history-rendered'][0]();assert.equal(statusHost.children.length,1);
   profileStorage.clear();listeners['bowling:history-rendered'][0]();assert.equal(statusHost.children[0].textContent,'Below average');
@@ -69,7 +69,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
   const groupContext={currentUser:{uid:'a'},authRevision:1,profile:{groupIds:['A','B'],activeGroupId:'B'},groups:[{id:'B',name:'Cached'}],selectedGroupId:'B',firestore:{},
     console:{warn(){}},resetLeaderboardView(){},renderGroups(){},renderLeaderboardShell(){},loadLeaderboard:async()=>{},
     modules:{doc:(_,type,id)=>id,getDoc:async id=>{if(id==='B')throw Error('Network unavailable');return{exists:()=>true,data:()=>({name:'First'})}},setDoc(){throw Error('A read must not write memberships')}}};
-  vm.createContext(groupContext);vm.runInContext(section('async function loadGroups','function renderGroups'),groupContext);
+  vm.createContext(require('./helpers/legacy.cjs').prepare(groupContext));vm.runInContext(section('async function loadGroups','function renderGroups'),groupContext);
   await groupContext.loadGroups();assert.deepEqual(plain(groupContext.profile.groupIds),['A','B']);assert.equal(groupContext.selectedGroupId,'B');
   let finish;groupContext.modules.getDoc=()=>new Promise(resolve=>finish=resolve);
   const loading=groupContext.loadGroups();groupContext.currentUser={uid:'b'};groupContext.authRevision++;
@@ -82,14 +82,14 @@ const plain = value => JSON.parse(JSON.stringify(value));
     dom:{downloadCloudBackupBtn:{}},console,setStatus(){},friendlyError:error=>error.message,localDateStamp:()=> '2026-09-24',window:{BowlingApp:{version:8}},
     downloadJson:(_,payload)=>downloads.push(payload),modules:{doc:(_,type,id)=>type+'/'+id,collection:(_,type,id)=>type+'/'+id,
       getDocs:async()=>({forEach:fn=>fn({id:'1',data:()=>data[0]})}),getDoc:async ref=>{reads.push(ref);return {exists:()=>true,data:()=>({displayName:'Matthew',ballInventory:[{name:'Concept',updatedAt:1}],alleyInventory:[{name:'Home',updatedAt:1}]})}}}};
-  vm.createContext(backupContext);vm.runInContext(section('async function downloadCloudBackup','async function deleteRefsInChunks'),backupContext);
+  vm.createContext(require('./helpers/legacy.cjs').prepare(backupContext));vm.runInContext(section('async function downloadCloudBackup','async function deleteRefsInChunks'),backupContext);
   await backupContext.downloadCloudBackup();assert.equal(reads.length,1);assert.equal(downloads[0].ballInventory[0].name,'Concept');assert.equal(downloads[0].alleyInventory[0].name,'Home');
   backupContext.modules.getDocs=()=>new Promise(resolve=>finish=resolve);
   const backup=backupContext.downloadCloudBackup();backupContext.currentUser={uid:'b'};backupContext.authRevision++;
   finish({forEach(){}});await backup;assert.equal(downloads.length,1,'No stale account backup may be downloaded');
 
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
-  assert(html.includes('<select id="strikeOppInput">'));assert(html.includes('<script src="./profile.js" defer>'));
-  assert(!fs.readFileSync(path.join(root,'friend-stats.js'),'utf8').includes('MutationObserver'));
+  assert(html.includes('<select id="strikeOppInput">'));assert(html.includes('<script type="module" src="./main.js">'));
+  assert(!require('./helpers/legacy.cjs').source(path.join(root,'friend-stats.js')).includes('MutationObserver'));
   t.clearUndo();console.log('PASS: filtered/non-overlapping series, no-tap and ball gaps, goal labels after history refresh, atomic reset failure/retry, durable bulk deletions, group-read failures/account switches, and single-read isolated cloud backups.');
 })().catch(error=>{console.error(error);t.clearUndo();process.exitCode=1});

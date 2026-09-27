@@ -1,48 +1,107 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isSelf(userId) {
-      return signedIn() && request.auth.uid == userId;
-    }
-
+    function signedIn() { return request.auth != null; }
+    function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
     function isGroupMember(groupId) {
-      return signedIn()
+      return signedIn() && exists(/databases/$(database)/documents/groups/$(groupId))
         && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
     }
-
-    // Each user's full bowling history is private to that account.
-    match /users/{userId} {
-      allow read, create, update, delete: if isSelf(userId);
-
+    function integerIn(value, low, high) { return value is int && value >= low && value <= high; }
+    function optionalString(data, key, size) { return data.get(key, '') is string && data.get(key, '').size() <= size; }
+    function optionalList(data, key, size) { return data.get(key, []) is list && data.get(key, []).size() <= size; }
+    function rate(value) { return value == null || (value is number && value >= 0 && value <= 100); }
+    function ballAt(rows, index) {
+      return rows.size() <= index || (rows[index] is map
+        && rows[index].keys().hasOnly(['name', 'frames'])
+        && rows[index].name is string && rows[index].name.size() > 0 && rows[index].name.size() <= 100
+        && (rows[index].get('frames', null) == null || integerIn(rows[index].frames, 1, 10)));
+    }
+    function validBalls(data) {
+      let rows = data.get('balls', []);
+      return rows is list && rows.size() <= 10
+        && ballAt(rows, 0) && ballAt(rows, 1) && ballAt(rows, 2) && ballAt(rows, 3) && ballAt(rows, 4)
+        && ballAt(rows, 5) && ballAt(rows, 6) && ballAt(rows, 7) && ballAt(rows, 8) && ballAt(rows, 9);
+    }
+    function matchingId(data, gameId) {
+      return data.recordId == gameId && (
+        (gameId.matches('[1-9][0-9]*') && integerIn(data.id, 1, 9007199254740991) && data.id == int(gameId))
+        || (gameId.matches('[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}') && data.id == gameId));
+    }
+    function validFrames(data) {
+      return data.get('scoreOnly', false) is bool && (
+        (data.get('scoreOnly', false) && data.openFrames == null && data.strikes == null && data.strikeOpportunities == null)
+        || (!data.get('scoreOnly', false) && integerIn(data.openFrames, 0, 10)
+          && integerIn(data.strikes, 0, 12) && integerIn(data.strikeOpportunities, 10, 12)
+          && data.strikes <= data.strikeOpportunities));
+    }
+    function validGame(data, gameId) {
+      return data.keys().hasOnly(['id','recordId','date','bowler','sessionName','sessionId','sessionType','ball','balls','alley',
+          'noTap','gameOrder','score','scoreOnly','openFrames','strikes','strikeOpportunities','notes','createdAt','updatedAt',
+          'deleted','deletedAt','schemaVersion','serverUpdatedAt'])
+        && matchingId(data, gameId) && data.deleted is bool
+        && integerIn(data.updatedAt, 0, 9007199254740991)
+        && integerIn(data.schemaVersion, 1, 6)
+        && (!('serverUpdatedAt' in data) || data.serverUpdatedAt == request.time)
+        && (data.deleted
+          ? integerIn(data.deletedAt, 0, 9007199254740991)
+          : (data.bowler is string && data.bowler.size() > 0
+            && data.date is string && data.date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+            && optionalString(data, 'sessionName', 2048) && optionalString(data, 'sessionId', 2048)
+            && data.get('sessionType', 'League') in ['League','Practice','Tournament']
+            && data.get('noTap', false) is bool && integerIn(data.score, 0, 300)
+            && integerIn(data.get('gameOrder', 0), 0, 9007199254740991)
+            && optionalString(data, 'ball', 100) && optionalString(data, 'alley', 100)
+            && optionalString(data, 'notes', 100000) && validBalls(data) && validFrames(data)
+            && integerIn(data.createdAt, 0, 9007199254740991)));
+    }
+    function incremental(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+        && get(/databases/$(database)/documents/users/$(uid)).data.get('syncProtocolVersion', 0) == 1;
+    }
+    function validProfile(data) {
+      return optionalString(data, 'displayName', 1000) && optionalString(data, 'email', 1000)
+        && optionalString(data, 'statsBowler', 1000) && optionalString(data, 'activeGroupId', 100)
+        && optionalList(data, 'groupIds', 1000) && optionalList(data, 'ballInventory', 5000)
+        && optionalList(data, 'alleyInventory', 5000);
+    }
+    match /users/{uid} {
+      allow read, delete: if isSelf(uid);
+      allow create: if isSelf(uid) && validProfile(request.resource.data) && !('syncProtocolVersion' in request.resource.data);
+      // Only the trusted admin rollout may opt an account into the cursor protocol.
+      allow update: if isSelf(uid) && validProfile(request.resource.data)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['syncProtocolVersion'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['syncReadAt']) || request.resource.data.syncReadAt == request.time);
       match /games/{gameId} {
-        allow read, create, update, delete: if isSelf(userId);
+        allow read, delete: if isSelf(uid);
+        allow create, update: if isSelf(uid) && validGame(request.resource.data, gameId)
+          && (!incremental(uid) || request.resource.data.serverUpdatedAt == request.time);
       }
     }
-
-    // Group IDs double as invite codes. A signed-in user can fetch a group
-    // only when they already know its exact code; listing all groups is blocked.
     match /groups/{groupId} {
       allow get: if signedIn();
       allow list: if false;
-      allow create: if signedIn()
-        && request.resource.data.ownerUid == request.auth.uid;
-      allow update, delete: if signedIn()
-        && resource.data.ownerUid == request.auth.uid;
-
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.code == groupId;
+      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid is string && request.resource.data.ownerUid.size() > 0
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (request.resource.data.ownerUid == resource.data.ownerUid
+          || existsAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(request.resource.data.ownerUid)));
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
       match /members/{memberId} {
-        // Only existing members can read the group's leaderboard rows.
         allow read: if isGroupMember(groupId);
-
-        // A user may create/update only their own leaderboard row.
-        allow create: if isSelf(memberId)
+        // Casual social summaries are self-reported, not authoritative scores.
+        allow create, update: if isSelf(memberId)
           && exists(/databases/$(database)/documents/groups/$(groupId))
-          && request.resource.data.uid == request.auth.uid;
-        allow update: if isSelf(memberId)
-          && request.resource.data.uid == request.auth.uid;
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.displayName is string
+          && integerIn(request.resource.data.games, 0, 9007199254740991)
+          && request.resource.data.average is number && request.resource.data.average >= 0 && request.resource.data.average <= 300
+          && integerIn(request.resource.data.highGame, 0, 300) && integerIn(request.resource.data.highSeries, 0, 900)
+          && rate(request.resource.data.strikePct);
         allow delete: if isSelf(memberId);
       }
     }

@@ -9,7 +9,7 @@ const tests=`
  const index={open(name){const request={};setImmediate(()=>{if(openFailure){request.error=new Error('Simulated storage failure');request.onerror?.();return;}if(!databases.has(name))databases.set(name,persistentDb());request.result=databases.get(name);request.onsuccess?.();});return request;}};
  c.indexedDB=index;c.window.indexedDB=index;
  databases.set('bowling-tracker-db-user-a',persistentDb([saved]));storage.set('bowling-tracker-last-account-uid','a');
- await t.init();assert.equal(app.ready,true,'Startup should complete with existing data');assert.equal(app.getGames().length,1);assert.equal(app.getGames()[0].sessionName,'Legacy league name');assert.equal(app.getGames()[0].ball,undefined,'Opening must not rewrite old games');
+ await t.init();assert.equal(app.ready,true,'Startup should complete with existing data');assert.equal(app.getGames().length,1);assert.equal(app.getGames()[0].sessionName,'Legacy league name');assert.equal(app.getGames()[0].ball,'','Migration normalizes missing fields');assert.equal(app.getGames()[0].id,saved.id);assert.equal(app.getGames()[0].updatedAt,saved.updatedAt);
  assert(events.some(e=>e.type==='bowling:ready' && e.detail.ok));
  // Data arriving from Firebase is applied after the database becomes ready.
  await app.applyRemoteChanges({expectedUid:'a',upserts:[{...game(2,'2026-08-02',185),ball:'Ball A',sessionType:'Practice'}]});assert.equal(app.getGames().length,2);
@@ -18,12 +18,12 @@ const tests=`
  console.log('PASS: complete startup opens existing account database, preserves legacy fields, accepts cloud downloads, switches accounts, and reports database open failures.');
 })().catch(e=>{console.error(e);process.exitCode=1});`;
 vm.runInNewContext(harness+tests,{require,console,__dirname,setTimeout,clearTimeout,URL,structuredClone,queueMicrotask,setImmediate,process});
-const cloud=fs.readFileSync(path.join(__dirname,'../cloud.js'),'utf8');
+const cloud=require('./helpers/legacy.cjs').source(path.join(__dirname,'../cloud.js'));
 const gate=cloud.slice(cloud.indexOf('  function waitForBowlingApp()'),cloud.indexOf('  async function loadFirebaseModules()'));
 (async()=>{
  const assert=require('assert');let listener;
  const c={window:{BowlingApp:{ready:false,startupError:'tx is not defined'},addEventListener:(_,fn)=>listener=fn}};
- vm.createContext(c);vm.runInContext(gate,c);
+ vm.createContext(require('./helpers/legacy.cjs').prepare(c));vm.runInContext(gate,c);
  await assert.rejects(()=>c.waitForBowlingApp(),/startup failed/);
  c.window.BowlingApp.startupError=null;const pending=c.waitForBowlingApp();listener({detail:{ok:false}});await assert.rejects(()=>pending,/storage is unavailable/);
  c.window.BowlingApp.ready=true;assert.equal(await c.waitForBowlingApp(),c.window.BowlingApp);

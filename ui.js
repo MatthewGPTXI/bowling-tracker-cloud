@@ -1,13 +1,9 @@
-(() => {
+export const UI = (() => {
   'use strict';
 
   const root = document.documentElement;
   const dialogs = new Set();
-  const pageKey = 'bowling-page:' + location.pathname;
   let pagePosition = null;
-  let navigated = false;
-  let savedPage;
-  try { savedPage = JSON.parse(sessionStorage.getItem(pageKey)); } catch (_) {}
 
   function unlockPage() {
     if (dialogs.size || !pagePosition) return;
@@ -48,26 +44,11 @@
     }
   }
 
-  function rememberPage() {
-    const view = document.querySelector('.app-view:not([hidden])')?.id.replace('view-', '');
-    if (!view) return;
-    try { sessionStorage.setItem(pageKey, JSON.stringify({view, y: pagePosition?.y ?? window.scrollY})); } catch (_) {}
+  function closeDialog(dialog) {
+    if (dialog?.open) dialog.close();
   }
 
-  window.addEventListener('pagehide', rememberPage);
-  document.addEventListener('click', event => {
-    if (event.target.closest('[data-go-view]')) navigated = true;
-  });
-  window.addEventListener('bowling:ready', event => {
-    if (!event.detail?.ok || !savedPage) return;
-    // Profile is created by a separate script; wait until its ready handlers finish.
-    requestAnimationFrame(() => {
-      if (!navigated && ['home', 'sessions', 'stats', 'friends', 'profile'].includes(savedPage.view)) {
-        window.BowlingApp.showView(savedPage.view, false);
-        window.scrollTo({top: Math.max(0, Number(savedPage.y) || 0), behavior: 'instant'});
-      }
-      savedPage = null;
-    });
-  });
-  window.BowlingUI = {openDialog, rememberPage};
+  return {openDialog, closeDialog, getPagePosition: () => pagePosition};
 })();
+export const {openDialog, closeDialog, getPagePosition} = UI;
+export {rememberPage} from './modules/navigation.js';
