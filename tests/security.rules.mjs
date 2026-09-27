@@ -2,6 +2,10 @@ import fs from 'node:fs/promises';
 import {initializeTestEnvironment, assertFails, assertSucceeds} from '@firebase/rules-unit-testing';
 import {doc, setDoc, getDoc, deleteDoc, updateDoc, serverTimestamp, writeBatch} from 'firebase/firestore';
 import {cloudGamePayload, cloudDeletePayload} from '../modules/reconciliation.js';
+import * as sdk from 'firebase/firestore';
+import assert from 'node:assert/strict';
+import {readRemoteHistory} from '../modules/cloud-reader.js';
+import {leaveMembership} from '../modules/groups.js';
 const env = await initializeTestEnvironment({projectId:'demo-bowling-tracker',firestore:{rules:await fs.readFile('firestore.rules','utf8')}});
 try {
   const a = env.authenticatedContext('a').firestore(), b = env.authenticatedContext('b').firestore();
@@ -24,6 +28,17 @@ try {
   await assertSucceeds(setDoc(ref,{...record,serverUpdatedAt:serverTimestamp()}));
   await assertFails(updateDoc(doc(a,'users/a'),{syncReadAt:0}));
   await assertSucceeds(updateDoc(doc(a,'users/a'),{syncReadAt:serverTimestamp()}));
+  // Exercise the actual cursor query and the same write chunk size as sync.
+  for (let start=10; start<270; start+=100) {
+    const batch = writeBatch(a);
+    for (let id=start; id<Math.min(start+100,270); id++) batch.set(doc(a,'users/a/games/'+id),{...cloudGamePayload({...record,id}),serverUpdatedAt:serverTimestamp()});
+    await assertSucceeds(batch.commit());
+  }
+  const history = await readRemoteHistory({sdk,firestore:a,uid:'a',isCurrent:()=>true,protocol:1});
+  assert.equal(history.records.size,262);
+  await assertSucceeds(setDoc(doc(a,'users/a/games/10'),{...cloudDeletePayload({id:10,updatedAt:2}),serverUpdatedAt:serverTimestamp()}));
+  const delta = await readRemoteHistory({sdk,firestore:a,uid:'a',isCurrent:()=>true,protocol:1,baseline:history.snapshot});
+  assert.equal(delta.records.size,262); assert.equal(delta.records.get(10).deleted,true);
   const group = doc(a,'groups/ABC123');
   await assertSucceeds(setDoc(group,{name:'League',code:'ABC123',ownerUid:'a',createdAt:1,updatedAt:1}));
   const summary = {uid:'a',displayName:'Matthew',games:1,average:180,highGame:180,highSeries:0,strikePct:40};
@@ -36,5 +51,11 @@ try {
   await assertFails(updateDoc(group,{name:'Old owner'}));
   await assertSucceeds(updateDoc(doc(b,'groups/ABC123'),{name:'New owner'}));
   await assertSucceeds(deleteDoc(doc(b,'groups/ABC123')));
+  // A partially completed group creation can leave an owner without a member
+  // row. The owner must still be able to inspect membership and dissolve it.
+  await assertSucceeds(setDoc(doc(a,'groups/INCOMPLETE'),{name:'Pending',code:'INCOMPLETE',ownerUid:'a',createdAt:1,updatedAt:1}));
+  await assertFails(sdk.getDocs(sdk.collection(b,'groups/INCOMPLETE/members')));
+  await leaveMembership({sdk,firestore:a,groupId:'INCOMPLETE',uid:'a',isCurrent:()=>true});
+  assert(!(await getDoc(doc(a,'groups/INCOMPLETE'))).exists());
   console.log('PASS Firestore rules: numeric/UUID games, score-only, schema/range validation, private ownership, server cursor protocol and atomic group transfer.');
 } finally { await env.cleanup(); }

@@ -6,7 +6,7 @@ export function cloudGamePayload(game) {
   const balls = Balls.list(game);
   return {
     id: recordId(game.id),
-    recordId: String(game.id),
+    recordId: String(recordId(game.id)),
     bowler: String(game.bowler),
     date: String(game.date),
     sessionName: String(game.sessionName || ''),
@@ -23,8 +23,8 @@ export function cloudGamePayload(game) {
     strikes: game.scoreOnly === true ? null : Number(game.strikes),
     strikeOpportunities: game.scoreOnly === true ? null : Number(game.strikeOpportunities || 10),
     notes: String(game.notes || ''),
-    createdAt: Number(game.createdAt || Date.now()),
-    updatedAt: Number(game.updatedAt || Date.now()),
+    createdAt: Number(game.createdAt ?? 0),
+    updatedAt: Number(game.updatedAt ?? game.createdAt ?? 0),
     deleted: false,
     schemaVersion: DATA_SCHEMA_VERSION
   };
@@ -33,9 +33,9 @@ export function cloudGamePayload(game) {
 export function cloudDeletePayload(tombstone) {
   return {
     id: recordId(tombstone.id),
-    recordId: String(tombstone.id),
-    updatedAt: Number(tombstone.updatedAt || Date.now()),
-    deletedAt: Number(tombstone.deletedAt || tombstone.updatedAt || Date.now()),
+    recordId: String(recordId(tombstone.id)),
+    updatedAt: Number(tombstone.updatedAt ?? 0),
+    deletedAt: Number(tombstone.deletedAt ?? tombstone.updatedAt ?? 0),
     deleted: true,
     schemaVersion: DATA_SCHEMA_VERSION
   };

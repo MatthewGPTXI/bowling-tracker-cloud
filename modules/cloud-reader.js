@@ -1,4 +1,5 @@
 import {recordId} from './ids.js';
+import {isValidGame, isValidTombstone} from './games.js';
 
 export const SYNC_PROTOCOL_VERSION = 1;
 export const READ_PAGE_SIZE = 250;
@@ -50,5 +51,10 @@ export async function readRemoteHistory({sdk, firestore, uid, isCurrent, protoco
     }
     after = sdk.query && docs.length === READ_PAGE_SIZE ? docs.at(-1) : null;
   } while (after);
+  for (const row of records.values()) {
+    if (row.deleted ? !isValidTombstone(row) : !isValidGame(row)) {
+      throw new Error('Cloud history contains invalid or unsupported game data. Sync was paused without advancing its cursor.');
+    }
+  }
   return {records, snapshot: enabled ? {version: SYNC_PROTOCOL_VERSION, cursor: cutoff, records: [...records.values()]} : null};
 }

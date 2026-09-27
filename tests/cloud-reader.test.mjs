@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readRemoteHistory, READ_PAGE_SIZE} from '../modules/cloud-reader.js';
-const rows = new Map(Array.from({length:503},(_,index)=>[String(index+1),{id:index+1,score:180,updatedAt:1}]));
+const game = id => ({id,score:180,updatedAt:1,date:'2026-09-27',bowler:'Matthew',openFrames:3,strikes:4,strikeOpportunities:10});
+const rows = new Map(Array.from({length:503},(_,index)=>[String(index+1),game(index+1)]));
 let seconds=1000, cutoff, reads=0, queries=[], current=true, fail=false;
 const sdk={
   doc:(_, ...parts)=>parts.join('/'), collection:(_, ...parts)=>parts.join('/'),
@@ -33,7 +34,7 @@ const initial=await readRemoteHistory({...args,protocol:1});
 assert.equal(initial.records.size,503);assert.deepEqual(initial.snapshot.cursor,{seconds:1000,nanoseconds:0});
 // A same-boundary commit and a later tombstone must both be seen; unchanged
 // legacy records without server timestamps remain in the durable baseline.
-rows.set('1',{id:1,score:210,updatedAt:2,serverUpdatedAt:{seconds:1000,nanoseconds:0}});
+rows.set('1',{...game(1),score:210,updatedAt:2,serverUpdatedAt:{seconds:1000,nanoseconds:0}});
 rows.set('2',{id:2,deleted:true,updatedAt:3,serverUpdatedAt:{seconds:1001,nanoseconds:0}});
 seconds=1002;reads=0;queries=[];
 const delta=await readRemoteHistory({...args,protocol:1,baseline:initial.snapshot});
@@ -41,11 +42,14 @@ assert.equal(reads,1);assert(queries[0].constraints.some(rule=>rule.type==='wher
 assert.equal(delta.records.size,503);assert.equal(delta.records.get(1).score,210);assert(delta.records.get(2).deleted);
 assert.equal(delta.records.get(503).score,180);
 // Timestamp ties larger than a page do not lose documents.
-for(let id=1;id<=501;id++)rows.set(String(id),{id,score:200,updatedAt:4,serverUpdatedAt:{seconds:1003,nanoseconds:0}});
+for(let id=1;id<=501;id++)rows.set(String(id),{...game(id),score:200,updatedAt:4,serverUpdatedAt:{seconds:1003,nanoseconds:0}});
 seconds=1004;reads=0;
 const tied=await readRemoteHistory({...args,protocol:1,baseline:delta.snapshot});assert.equal(reads,3);
 assert.equal([...tied.records.values()].filter(row=>row.score===200).length,501);
 current=false;await assert.rejects(readRemoteHistory({...args,protocol:1,baseline:tied.snapshot}),/Account/);
 current=true;fail=true;await assert.rejects(readRemoteHistory({...args,protocol:1,baseline:tied.snapshot}),/offline/);
 assert.equal(tied.snapshot.cursor.seconds,1004,'Failed sync cannot mutate the last successful cursor');
+fail=false; rows.set('1',{...game(1),score:301,serverUpdatedAt:{seconds:1005,nanoseconds:0}}); seconds=1006;
+await assert.rejects(readRemoteHistory({...args,protocol:1,baseline:tied.snapshot}),/invalid or unsupported/);
+assert.equal(tied.snapshot.cursor.seconds,1004,'Invalid remote data cannot advance the successful cursor');
 console.log('PASS cloud reader: bounded full reads, legacy compatibility, server cutoffs, delta reads, tombstones, equal-timestamp pagination, failed reads and account guards.');

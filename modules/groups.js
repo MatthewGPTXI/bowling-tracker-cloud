@@ -9,8 +9,9 @@ export async function leaveMembership({sdk, firestore, groupId, uid, isCurrent})
   const memberRef = sdk.doc(firestore, 'groups', groupId, 'members', uid);
   const group = await sdk.getDoc(groupRef);
   assertCurrent();
+  const wasOwner = group.exists() && group.data().ownerUid === uid;
   let successor = null;
-  if (group.exists() && group.data().ownerUid === uid) {
+  if (wasOwner) {
     const rows = await sdk.getDocs(sdk.collection(firestore, 'groups', groupId, 'members'));
     assertCurrent();
     const members = []; rows.forEach(row => members.push({uid: row.id}));
@@ -22,6 +23,7 @@ export async function leaveMembership({sdk, firestore, groupId, uid, isCurrent})
     const next = successor ? await tx.get(sdk.doc(firestore, 'groups', groupId, 'members', successor)) : null;
     assertCurrent();
     if (latest.exists() && latest.data().ownerUid === uid) {
+      if (!wasOwner) throw new Error('Group ownership changed. Please try leaving again.');
       if (successor && !next.exists()) throw new Error('Group membership changed. Please try leaving again.');
       if (successor) tx.update(groupRef, {ownerUid: successor, updatedAt: Date.now()});
       else tx.delete(groupRef);

@@ -14,4 +14,11 @@ current=false;await assert.rejects(leaveMembership({sdk,firestore:{},groupId:'G'
 assert(rows.has('groups/G/members/b'));
 current=true;await leaveMembership({sdk,firestore:{},groupId:'G',uid:'b',isCurrent:()=>current});
 assert(!rows.has('groups/G'));assert(!rows.has('groups/G/members/b'));
+// Another owner may transfer ownership to this departing member between the
+// initial read and the transaction. Do not treat that as an empty group.
+rows.set('groups/G',{ownerUid:'b'}); rows.set('groups/G/members/a',{uid:'a'}); rows.set('groups/G/members/c',{uid:'c'});
+const run = sdk.runTransaction;
+sdk.runTransaction = (...args) => { rows.set('groups/G',{ownerUid:'a'}); return run(...args); };
+await assert.rejects(leaveMembership({sdk,firestore:{},groupId:'G',uid:'a',isCurrent:()=>true}),/ownership changed/);
+assert(rows.has('groups/G')); assert(rows.has('groups/G/members/a')); assert(rows.has('groups/G/members/c'));
 console.log('PASS group lifecycle: deterministic transfer, departing member removal, account-switch guard and sole-owner dissolution.');

@@ -6,6 +6,13 @@ const cleanAlley = cleanBall;
 export const DATA_SCHEMA_VERSION = 6;
 export const BACKUP_SCHEMA_VERSION = 9;
 
+export function isValidTombstone(value) {
+  return value && recordId(value.id) !== null && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0;
+}
+export function normalizeTombstone(value) {
+  return {id: recordId(value.id), updatedAt: value.updatedAt};
+}
+
 export function isValidDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) return false;
   const parsed = new Date(`${value}T12:00:00Z`);

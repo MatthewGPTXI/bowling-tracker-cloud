@@ -1,5 +1,32 @@
 # Bowling Tracker validation
 
+## v39 candidate pre-release review — September 27, 2026
+
+Reviewed the new domain/storage/session modules, Firebase reconciliation and rules, form/draft state, navigation, history rendering, and offline update/deployment boundaries. The candidate remains unpublished.
+
+Confirmed and fixed:
+
+- UUID backup replacements and deletions ignored the selected resolution because the import dialog converted IDs to numbers. Numeric-string tombstones also bypassed repeated-ID detection and could miss the saved numeric key. Import and storage now use canonical IDs consistently.
+- Session continuation reconstructed identity from date/name after a session metadata edit. Two distinct sessions with identical metadata could receive each other's games. Entry, editing, series entry and recovery now carry the explicit session ID, including saved drafts.
+- Legacy edit drafts compared their pre-migration baseline to a normalized game and were incorrectly rejected as stale. Both sides are now normalized for that comparison while retaining the changed-record guard.
+- Invalid cloud records were silently skipped by the local apply path. Sync now rejects invalid/unsupported history visibly, avoids partial local application, and does not advance the incremental cursor.
+- Zero timestamps were replaced with the current time in cloud payloads, and importing guest history into an account skipped zero-timestamp games without a tombstone. Explicit zero values are preserved; missing deletion markers no longer act as a deletion at time zero.
+- Overlapping account activations could complete out of order and reopen the earlier account. Database transitions now run in request order, including guest activation and account-to-guest copying.
+- A group owner without a membership row (possible after interrupted creation) could not inspect membership to leave/dissolve the group. Rules allow its owner to inspect membership without exposing it to outsiders. A concurrent ownership transfer to a departing member now aborts rather than incorrectly dissolving the group.
+- Storage commits canonicalize keys before writing and explicitly abort on synchronous write failure, preserving atomicity.
+
+Validation:
+
+- `npm test`: 22 Node/domain suites, 6 browser suites, and Firestore rules emulator tests passed. Existing regression suites remain intact.
+- The new browser suite fails on the earlier candidate for UUID backup resolution and wrong-session continuation, and passes with the fixes. A delayed IndexedDB-open test reproduced the out-of-order account activation before the queue fix.
+- Actual browser IndexedDB checks cover one-time migration, unknown-field/timestamp preservation, canonical deletion/restoration, rollback, and guest/account copying.
+- Actual Firestore emulator checks cover 100-write chunks, a 262-record paginated baseline, incremental tombstone retrieval with server timestamps, cross-account denial, and the group owner exception. Group lifecycle unit coverage includes ownership changing during a leave operation.
+- A real Chromium service-worker upgrade defers reload for an open modal and an unsaved draft, then preserves the active Stats view and saved game. The updated ES module app also reloads offline. The synthetic update version is used only by the test server.
+- Existing mobile dialog, safe-area, score-card/offline and UX checks passed, along with 1,000/5,000-game rendering/storage tests. The 5,000-game run measured approximately 175 ms for full rendering and 399 ms for reload/startup in this container.
+- Deployment artifact construction and `git diff --check` passed.
+
+Release limits: no production user records were changed. Native installed iOS/Android behavior and authenticated production two-device sync still require verification. Branch protection/Pages Actions settings and deployment of the revised Firebase rules are separate administrator actions; they have not been applied. Incremental sync remains disabled until the documented admin rollout. See `docs/architecture.md` for the staged rollout and remaining refactor scope.
+
 ## v33 code cleanup — September 24, 2026
 
 Reviewed every runtime JavaScript file, the HTML/CSS shell, offline worker and manifest, Firebase configuration, and the checked-in Firestore rules against the v32 source (`de411db`).

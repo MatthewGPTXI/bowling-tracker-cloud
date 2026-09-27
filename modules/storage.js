@@ -2,7 +2,7 @@ export const DB_VERSION = 2;
 export const GAME_STORE = 'games';
 export const SETTINGS_STORE = 'settings';
 export const TOMBSTONE_STORE = 'tombstones';
-import {DATA_SCHEMA_VERSION, normalizeGame} from './games.js';
+import {DATA_SCHEMA_VERSION, normalizeGame, normalizeTombstone} from './games.js';
 
 // Normalize legacy records and mark the migration in the same transaction.
 // IDs, timestamps and tombstones are preserved, so migration is not a user edit.
@@ -29,10 +29,14 @@ export function migrateGames(database) {
 }
 export function commitGames(database, upserts = [], deletions = []) {
   return new Promise((resolve, reject) => {
+    const normalized = upserts.map(normalizeGame), tombstones = deletions.map(normalizeTombstone);
+    if ([...normalized, ...tombstones].some(row => row.id === null)) { reject(new Error('Invalid game ID')); return; }
     const tx = database.transaction([GAME_STORE, TOMBSTONE_STORE], 'readwrite');
     const saved = tx.objectStore(GAME_STORE), removed = tx.objectStore(TOMBSTONE_STORE);
-    for (const game of upserts) { saved.put(normalizeGame(game)); removed.delete(game.id); }
-    for (const tombstone of deletions) { removed.put(tombstone); saved.delete(tombstone.id); }
+    try {
+      for (const game of normalized) { saved.put(game); removed.delete(game.id); }
+      for (const tombstone of tombstones) { removed.put(tombstone); saved.delete(tombstone.id); }
+    } catch (error) { tx.abort(); reject(error); return; }
     tx.oncomplete = resolve;
     tx.onabort = tx.onerror = () => reject(tx.error || new Error('Save cancelled'));
   });

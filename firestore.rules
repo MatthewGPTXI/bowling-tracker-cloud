@@ -3,9 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
-    function isGroupMember(groupId) {
+    function canReadGroupMembers(groupId) {
       return signedIn() && exists(/databases/$(database)/documents/groups/$(groupId))
-        && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        && (exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid))
+          || get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == request.auth.uid);
     }
     function integerIn(value, low, high) { return value is int && value >= low && value <= high; }
     function optionalString(data, key, size) { return data.get(key, '') is string && data.get(key, '').size() <= size; }
@@ -92,7 +93,7 @@ service cloud.firestore {
           || existsAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(request.resource.data.ownerUid)));
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
       match /members/{memberId} {
-        allow read: if isGroupMember(groupId);
+        allow read: if canReadGroupMembers(groupId);
         // Casual social summaries are self-reported, not authoritative scores.
         allow create, update: if isSelf(memberId)
           && exists(/databases/$(database)/documents/groups/$(groupId))

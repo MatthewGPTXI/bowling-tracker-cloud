@@ -27,7 +27,7 @@ This is an incremental extraction of v38. The app remains vanilla JavaScript wit
 
 The import graph is acyclic and checked in CI. Browser diagnostics retain read-only `window.Bowling*` handles for the preserved browser suites; runtime modules never read them. App/cloud status and update coordination is injected once at bootstrap.
 
-IndexedDB is the durable source of truth for saved games and settings. `app.js` owns the current account's in-memory snapshot; successful transactions replace it. Forms remain transient edit buffers with an explicit baseline and recovered draft. They do not overwrite saved records until validation and an atomic commit succeed. Session storage owns route/scroll only. Account-scoped localStorage owns recovery drafts and the existing durable sync outbox. Tombstones remain in IndexedDB. Switching accounts clears transient UI state; late operations are guarded by the captured database, UID and revision.
+IndexedDB is the durable source of truth for saved games and settings. `app.js` owns the current account's in-memory snapshot; successful transactions replace it. Forms remain transient edit buffers with an explicit baseline, stable session ID and recovered draft. Database scope transitions are serialized so an earlier slow account load cannot replace a later requested account. They do not overwrite saved records until validation and an atomic commit succeed. Session storage owns route/scroll only. Account-scoped localStorage owns recovery drafts and the existing durable sync outbox. Tombstones remain in IndexedDB. Switching accounts clears transient UI state; late operations are guarded by the captured database, UID and revision.
 
 ## Data compatibility
 
@@ -48,11 +48,11 @@ To activate incremental mode safely:
 1. Publish the new app and verify every active device has updated.
 2. Deploy the emulator-tested `firestore.rules` with Firebase administration access. A GitHub Pages deployment does not deploy Firebase rules.
 3. After checking compatibility, set `syncProtocolVersion: 1` on selected user profiles through trusted administration. Clients cannot set, remove or change this field under the new rules.
-4. The first successful sync records a full baseline and server cutoff in that account's IndexedDB. Later syncs fetch timestamp changes, including the cutoff boundary, with document-ID tie breaking and pagination. The cursor advances only after reconciliation succeeds. A missing baseline starts with a full read. Failed reads/account changes never advance it.
+4. The first successful sync records a full baseline and server cutoff in that account's IndexedDB. Later syncs fetch timestamp changes, including the cutoff boundary, with document-ID tie breaking and pagination. The cursor advances only after reconciliation succeeds. A missing baseline starts with a full read. Failed reads/account changes never advance it. Invalid or unsupported remote records pause sync visibly instead of being silently skipped.
 
 Do not enable the marker against the old ownership-only rules: older clients could write without a timestamp and make cursor reads miss changes. Full fallback remains deliberately available during rollout. Remote physical document deletion is not the application deletion protocol; game deletion uses tombstones. Account deletion retains its existing cleanup path.
 
-Group owners transfer ownership atomically to another current member when leaving or deleting their account. A sole-owner group is dissolved. No empty owner UID is written. A disappearing successor or changed account aborts the operation. The new rules validate the successor's membership. Legacy ownerless groups are not silently claimed.
+Group owners transfer ownership atomically to another current member when leaving or deleting their account. A sole-owner group is dissolved. No empty owner UID is written. A disappearing successor or changed account aborts the operation. The new rules validate the successor's membership. An owner can inspect membership even if interrupted group creation omitted their member row. Ownership changing during a leave operation requires a fresh attempt. Legacy ownerless groups are not silently claimed.
 
 Leaderboards remain casual, self-reported social summaries. Field validation limits malformed values but does not make scores authoritative. Competitive rankings would require trusted server aggregation.
 
@@ -71,3 +71,5 @@ All module dependencies are pre-cached atomically by the service worker; an offl
 On the development container (Node 24, Chromium mobile viewport), the 5,000-game fixture has 1,667 sessions, 12 balls and 8 alleys. Median pure stats calculation: approximately 3.2 ms; grouping: 0.5 ms; reconciliation: 0.5 ms. Browser full render: approximately 190 ms; reload/startup: 446 ms; filter interaction: 55 ms; initial IndexedDB write plus rendering: 937 ms. These are environment measurements, not phone guarantees. Replacing locale-based ID comparison removed a measured sorting cost. No broad derived-data cache was introduced without a measured need.
 
 CSS cleanup removes 22 superseded rules, introduces reusable spacing/tap-target tokens, and preserves the existing responsive cascade. A computed-style comparison of all five pages at ten widths from 320 to 1280px found no differences. A broader breakpoint reorder changed geometry, so it was not retained. Deeper consolidation is intentionally deferred until those responsive relationships can be changed and reviewed separately.
+
+The v39 pre-release findings and regression evidence are recorded in `BUG-TEST-REPORT.md`.

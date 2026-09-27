@@ -30,6 +30,8 @@ export const app = (() => {
   const SESSION_TYPES = ['League', 'Practice', 'Tournament'];
   let restoringDraft = false;
   let entryBaseGame = null;
+  let entrySessionId = null;
+  let seriesSessionId = null;
   let pendingImport = null;
 
   let statsPreset = 'all';
@@ -44,6 +46,7 @@ export const app = (() => {
   let dialogScope = null;
 
   let db;
+  let scopeQueue = Promise.resolve();
   let activeLocalScope = { kind: 'guest', uid: '', dbName: GUEST_DB_NAME };
   let games = [];
   let editingGameId = null;
@@ -256,7 +259,7 @@ export const app = (() => {
   function newSessionId() { return IDs.newSessionId(); }
   function gameOrder(...args) { return Sessions.gameOrder(...args); }
   function latestSessionOrder(...args) { return Sessions.latestSessionOrder(...args); }
-  function nextGameOrder(name, date) { return games.filter(g => g.sessionName === name && g.date === date).reduce((n, g) => Math.max(n, IDs.orderValue(g)), 0) + 1; }
+  function nextGameOrder(id) { return games.filter(g => sessionKey(g) === id).reduce((n, g) => Math.max(n, IDs.orderValue(g)), 0) + 1; }
 
   function clone(value) {
     if (typeof structuredClone === 'function') return structuredClone(value);
@@ -335,7 +338,7 @@ export const app = (() => {
       const gameAt = Number(sourceGame.updatedAt || sourceGame.createdAt || 0);
       const existingGameAt = Number(existingGame?.updatedAt || existingGame?.createdAt || 0);
       const deleteAt = Number(existingTombstone?.updatedAt || 0);
-      if (gameAt >= existingGameAt && gameAt > deleteAt) {
+      if (gameAt >= existingGameAt && (!existingTombstone || gameAt > deleteAt)) {
         await idbRequestOn(targetDb, GAME_STORE, 'readwrite', (store) => store.put(normalizeGame(sourceGame)));
         if (existingTombstone) await idbRequestOn(targetDb, TOMBSTONE_STORE, 'readwrite', (store) => store.delete(sourceGame.id));
       }
@@ -403,6 +406,14 @@ export const app = (() => {
       dbName: activeLocalScope.dbName,
       gameCount: games.length
     };
+  }
+
+  // Database opening and migration can finish out of order. Finish each scope
+  // transition before starting the next, so the latest requested account wins.
+  function changeLocalScope(action) {
+    const task = scopeQueue.then(action);
+    scopeQueue = task.catch(() => {});
+    return task;
   }
 
   async function getAccountLocalGameCount(uid) {
@@ -595,7 +606,7 @@ export const app = (() => {
     dom.sessionSelect.innerHTML = '<option value="">Choose an existing session…</option>' + sessions.map((session, i) =>
       `<option value="${escapeHtml(session.key)}">${escapeHtml(fmtDate(session.date))} · ${escapeHtml(session.name)} · Session ${sessions.length-i} · ${session.games.length} games</option>`
     ).join('');
-    const key = sessionKey({date:dom.date.value,sessionName:dom.sessionName.value});
+    const key = entrySessionId;
     const current = sessions.find(s => s.key === key);
     dom.sessionSelect.value = current ? key : '';
     $('sessionMode').value = current ? 'existing' : 'new';
@@ -606,6 +617,7 @@ export const app = (() => {
   function selectEntrySession() {
     const session = buildSessions(games).find(s => s.key === dom.sessionSelect.value);
     if (session) {
+      entrySessionId = session.key;
       dom.date.value = session.date;
       dom.sessionName.value = session.games[0].sessionName || '';
       dom.sessionType.value = sessionType(session.games[0]);
@@ -624,7 +636,8 @@ export const app = (() => {
       dom.sessionSelect.value = latest?.key || '';
       selectEntrySession();
     } else {
-      dom.sessionName.value = newSessionId();
+      entrySessionId = newSessionId();
+      dom.sessionName.value = entrySessionId;
       dom.sessionSelect.value = '';
       dom.date.value = todayLocal();
       dom.sessionType.value = 'League';
@@ -868,16 +881,15 @@ export const app = (() => {
 
     }
     return {
-      value: { bowler, date, sessionName, sessionType: type, ball, balls, alley, noTap: fields.noTap?.value === 'no-tap', score, scoreOnly, openFrames: scoreOnly ? null : openFrames, strikes: scoreOnly ? null : strikes, strikeOpportunities: scoreOnly ? null : strikeOpportunities, notes }
+      value: { bowler, date, sessionName, sessionId: fields === dom ? entrySessionId : seriesSessionId, sessionType: type, ball, balls, alley, noTap: fields.noTap?.value === 'no-tap', score, scoreOnly, openFrames: scoreOnly ? null : openFrames, strikes: scoreOnly ? null : strikes, strikeOpportunities: scoreOnly ? null : strikeOpportunities, notes }
     };
   }
 
   function possibleDuplicate(candidate) {
-    const session = String(candidate.sessionName || '').trim().toLowerCase();
     return games.find((g) => g.id !== editingGameId
       && g.date === candidate.date
       && isNoTap(g) === isNoTap(candidate)
-      && String(g.sessionName || '').trim().toLowerCase() === session
+      && sessionKey(g) === sessionKey(candidate)
       && Number(g.score) === candidate.score
       && hasFrameStats(g) === hasFrameStats(candidate)
       && (!hasFrameStats(candidate) || (Number(g.openFrames) === candidate.openFrames
@@ -906,16 +918,16 @@ export const app = (() => {
     }
     const now = Date.now();
     const existing = editingGameId ? games.find((g) => g.id === editingGameId) : null;
-    if (editingGameId && (!existing || JSON.stringify(existing) !== JSON.stringify(entryBaseGame))) {
+    if (editingGameId && (!existing || (!entryBaseGame || JSON.stringify(normalizeGame(existing)) !== JSON.stringify(normalizeGame(entryBaseGame))))) {
       setStatus(dom.entryStatus, 'This game changed since you opened it. Your draft is kept; cancel and reopen the current game before saving.', 'error'); return;
     }
-    const sessionId = games.find(g => g.sessionName === validated.value.sessionName && g.date === validated.value.date)?.sessionId || sessionKey(validated.value);
+    const sessionId = entrySessionId || sessionKey(validated.value);
     const game = {
       sessionId, schemaVersion: Game.DATA_SCHEMA_VERSION,
       id: editingGameId || IDs.newGameId(),
       ...validated.value,
-      gameOrder: existing ? (existing.gameOrder ?? existing.createdAt ?? existing.id) : nextGameOrder(validated.value.sessionName, validated.value.date),
-      createdAt: existing?.createdAt || now,
+      gameOrder: existing ? IDs.orderValue(existing) : nextGameOrder(sessionId),
+      createdAt: existing?.createdAt ?? now,
       updatedAt: Math.max(now, Number(existing?.updatedAt || 0) + 1)
     };
 
@@ -954,7 +966,7 @@ export const app = (() => {
   function resetEntryForm({ preserveDate = false, preserveSession = false } = {}) {
     const date = preserveDate ? dom.date.value : todayLocal();
     const sessionName = preserveSession ? dom.sessionName.value : newSessionId();
-    if (!preserveSession) dom.sessionType.value = 'League';
+    if (!preserveSession) { entrySessionId = sessionName; dom.sessionType.value = 'League'; }
     dom.date.value = date;
     dom.sessionName.value = sessionName;
     dom.score.value = '';
@@ -991,6 +1003,7 @@ export const app = (() => {
     clearDraft('entry');
     editingGameId = id;
     entryBaseGame = clone(game);
+    entrySessionId = sessionKey(game);
     dom.date.value = game.date;
     dom.sessionName.value = game.sessionName || '';
     dom.sessionType.value = sessionType(game);
@@ -1196,8 +1209,9 @@ export const app = (() => {
       const payload = JSON.parse(await file.text());
       if (!payload || !Array.isArray(payload.games)) throw new Error('Backup does not contain a games array.');
       if (payload.games.some(g => !isValidGame(g))) throw new Error('Invalid game data. Check dates, scores, ball names/frame counts, types and game order. No games were imported.');
-      const imported = payload.games.map(normalizeGame), deleted = payload.tombstones || [];
-      if (!Array.isArray(deleted) || deleted.some(t => IDs.recordId(t?.id) === null || !Number.isSafeInteger(t.updatedAt) || t.updatedAt < 0)) throw new Error('Invalid deletion data.');
+      const imported = payload.games.map(normalizeGame), rawDeleted = payload.tombstones || [];
+      if (!Array.isArray(rawDeleted) || rawDeleted.some(t => !Game.isValidTombstone(t))) throw new Error('Invalid deletion data.');
+      const deleted = rawDeleted.map(Game.normalizeTombstone);
       const ids = [...imported,...deleted].map(g => g.id);
       if (new Set(ids).size !== ids.length) throw new Error('The backup repeats a game ID. Resolve repeated IDs before importing.');
       const tombstones = await getAllFromDb(targetDb,TOMBSTONE_STORE);
@@ -1225,7 +1239,7 @@ export const app = (() => {
       const [current,tombstones] = await Promise.all([getAllFromDb(plan.database,GAME_STORE),getAllFromDb(plan.database,TOMBSTONE_STORE)]);
       if (db !== plan.database) return;
       if (JSON.stringify([current,tombstones]) !== plan.snapshot) throw new Error('History changed while reviewing. Cancel and select the backup again for a fresh preview.');
-      const choices = new Map([...$('importPreviewRows').querySelectorAll('[data-import-id]')].map(el => [Number(el.dataset.importId),el.value]));
+      const choices = new Map([...$('importPreviewRows').querySelectorAll('[data-import-id]')].map(el => [IDs.recordId(el.dataset.importId),el.value]));
       const selected = plan.rows.filter(r => r.kind==='addition' || (r.kind==='conflict' && choices.get(r.id)==='backup'));
       const now = Date.now();
       const upserts = selected.filter(r=>r.game).map(r=>({...r.game,updatedAt:Math.max(now,r.game.updatedAt+1,Number(r.local?.updatedAt||r.tombstone?.updatedAt||0)+1)}));
@@ -1262,9 +1276,11 @@ export const app = (() => {
   async function applyRemoteChanges({ upserts = [], deletes = [], expectedUid } = {}) {
     if (expectedUid !== undefined && activeLocalScope.uid !== expectedUid) return;
     const targetDb = db;
-    const validUpserts = upserts.filter(isValidGame).map(normalizeGame);
-    const validDeletes = deletes.map((deletion) => ({ id: IDs.recordId(deletion.id), updatedAt: Number(deletion.updatedAt || Date.now()) }))
-      .filter((deletion) => deletion.id !== null && Number.isFinite(deletion.updatedAt));
+    if (upserts.some(game => !isValidGame(game)) || deletes.some(deletion => !Game.isValidTombstone(deletion))) {
+      throw new Error('Cloud history contains invalid or unsupported game data. No local changes were applied.');
+    }
+    const validUpserts = upserts.map(normalizeGame);
+    const validDeletes = deletes.map(Game.normalizeTombstone);
     await commitGames(validUpserts, validDeletes, targetDb);
     if (db !== targetDb) return;
     const refreshed = await getAllFromDb(targetDb, GAME_STORE);
@@ -1320,6 +1336,7 @@ export const app = (() => {
     if (hasEntryDraft() && !window.confirm('Discard the current entry and add a game to this session?')) return;
     showView('home', false);
     resetEntryForm();
+    entrySessionId = session.key;
     dom.date.value = session.date;
     dom.sessionName.value = session.games[0].sessionName || '';
     dom.sessionType.value = sessionType(session.games[0]);
@@ -1379,6 +1396,7 @@ export const app = (() => {
     if (readDraft('series') && !restoringDraft) { recoverDraft('series'); return; }
     if (editingGameId) { setStatus(dom.entryStatus, 'Finish or cancel the game edit before entering a series.'); return; }
     dialogScope = db;
+    seriesSessionId = entrySessionId;
     $('seriesDate').value = dom.date.value || todayLocal();
     $('seriesName').value = dom.sessionName.value;
     $('seriesType').value = dom.sessionType.value;
@@ -1423,7 +1441,7 @@ export const app = (() => {
       let id = IDs.newGameId();
       while (used.has(id)) id = IDs.newGameId();
       used.add(id);
-      return { ...value, id, sessionId: games.find(g => g.sessionName === value.sessionName && g.date === value.date)?.sessionId || sessionKey(value), schemaVersion: Game.DATA_SCHEMA_VERSION, gameOrder: nextGameOrder(value.sessionName, value.date) + i, createdAt: now + i, updatedAt: now + i };
+      return { ...value, id, sessionId: seriesSessionId || sessionKey(value), schemaVersion: Game.DATA_SCHEMA_VERSION, gameOrder: nextGameOrder(seriesSessionId || sessionKey(value)) + i, createdAt: now + i, updatedAt: now + i };
     });
     const related = games.filter(g => sessionKey(g) === sessionKey(added[0]) && sessionType(g) !== added[0].sessionType);
     const updates = [...added,...related.map(g => ({...g,sessionType:added[0].sessionType,updatedAt:Math.max(now,Number(g.updatedAt||0)+1)}))];
@@ -1431,6 +1449,7 @@ export const app = (() => {
       await commitGames(updates, [], targetDb);
       if (db !== targetDb) return;
       games = await getAllGames();
+      entrySessionId = added[0].sessionId;
       dom.date.value = values[0].date;
       dom.sessionName.value = values[0].sessionName;
       dom.sessionType.value = values[0].sessionType;
@@ -1559,7 +1578,7 @@ export const app = (() => {
   function updateEntryContext() {
     const date = dom.date.value === todayLocal() ? 'Today' : isValidDate(dom.date.value) ? fmtDate(dom.date.value) : 'Choose a date';
     const name = sessionType({sessionType:dom.sessionType.value});
-    const session = buildSessions(games).find(item => item.key === sessionKey({date:dom.date.value,sessionName:dom.sessionName.value}));
+    const session = buildSessions(games).find(item => item.key === entrySessionId);
     const count = session?.games.length || 0;
     const summary = session ? historySummary(session) : null;
     const totals = summary ? `${count} game${count === 1 ? '' : 's'}${count >= 3 ? ` · ${summary.prefix}${summary.total} total` : ''} · ${summary.prefix}${summary.average.toFixed(1)} avg` : 'New session';
@@ -1582,7 +1601,7 @@ export const app = (() => {
       if (hasEntryDraft()) Drafts.saveDraft(activeLocalScope, 'entry', {version:1, values:JSON.parse(entrySnapshot()), baseline:entryBaseline, base:entryBaseGame}, localStorage);
       if ($('seriesDialog').open) {
         const rows = [...$('seriesRows').children].map(row => ({...Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes','ball','entryDetail'].map(field => [field,row.querySelector(`[data-field="${field}"]`).value])), balls: Balls.draft(row.querySelector('[data-field="ball"]'))}));
-        const draft = {version:1,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,alley:$('seriesAlley').value,noTap:$('seriesNoTap').value === 'no-tap',rows};
+        const draft = {version:1,sessionId:seriesSessionId,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,alley:$('seriesAlley').value,noTap:$('seriesNoTap').value === 'no-tap',rows};
         if (seriesHasInput(draft)) Drafts.saveDraft(activeLocalScope, 'series', draft, localStorage);
         else clearDraft('series');
       }
@@ -1603,6 +1622,7 @@ export const app = (() => {
         Balls.set(dom.ball, Array.isArray(draft.values[11]) ? draft.values[11] : [{name: draft.values[9] || ''}]);
         fillAlleySelect(dom.alley, draft.values[12] || '');
         dom.entryDetail.value = draft.values[13] === 'score-only' ? 'score-only' : 'full';
+        entrySessionId = draft.values[14] || (draft.base ? normalizeGame(draft.base).sessionId : sessionKey({date:dom.date.value,sessionName:dom.sessionName.value}));
         setEntryDetail();
         entryBaseline = draft.baseline;
         // Older drafts lack ball and/or scoring fields. Keep their original values.
@@ -1613,6 +1633,7 @@ export const app = (() => {
           if (baseline.length === 11) baseline.push([{name: baseline[9] || '', frames: ''}]);
           if (baseline.length === 12) baseline.push('');
           if (baseline.length === 13) baseline.push('full');
+          if (baseline.length === 14) baseline.push(entrySessionId);
           entryBaseline = JSON.stringify(baseline);
         } catch (_) {}
         $('gameAdvanced').open = !!dom.ball.value || !!dom.alley.value || dom.noTap.value === 'no-tap';
@@ -1622,6 +1643,7 @@ export const app = (() => {
         updateSessionSuggestions(); setStatus(dom.entryStatus, 'Game draft recovered. Review it before saving.', 'success');
       } else if (kind === 'series' && Array.isArray(draft.rows)) {
         if (editingGameId) { setStatus(dom.entryStatus,'Finish or cancel your game edit before recovering a series.'); return; }
+        seriesSessionId = draft.sessionId || sessionKey({date:draft.date,sessionName:draft.name});
         dialogScope = db; $('seriesRows').innerHTML = '';
         $('seriesDate').value = draft.date; $('seriesName').value = draft.name; $('seriesType').value = sessionType({sessionType:draft.type}); Balls.fillSelect($('seriesBall'), draft.ball || ''); $('seriesAdvanced').open = !!draft.ball;
         fillAlleySelect($('seriesAlley'), draft.alley || '');
@@ -1642,7 +1664,7 @@ export const app = (() => {
   }
 
   function entrySnapshot() {
-    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball', 'noTap'].map((key) => dom[key].value), Balls.draft(dom.ball), dom.alley.value, dom.entryDetail.value || 'full']);
+    return JSON.stringify([editingGameId, ...['date', 'sessionName', 'sessionType', 'score', 'openFrames', 'strikes', 'strikeOpp', 'notes', 'ball', 'noTap'].map((key) => dom[key].value), Balls.draft(dom.ball), dom.alley.value, dom.entryDetail.value || 'full', entrySessionId]);
   }
   function rememberEntry() { entryBaseline = entrySnapshot(); renderEntrySaveState(); }
   function renderEntrySaveState() {
@@ -1777,7 +1799,16 @@ export const app = (() => {
     dom.sessionSelect.addEventListener('change', selectEntrySession);
     $('sessionMode').addEventListener('change', changeSessionMode);
     dom.sessionType.addEventListener('change', () => { updateEntryContext(); persistDrafts(); });
-    dom.date.addEventListener('change', () => { updateSessionSuggestions(); persistDrafts(); });
+    dom.date.addEventListener('change', () => {
+      const session = games.find(game => sessionKey(game) === entrySessionId);
+      if (session && session.date !== dom.date.value) entrySessionId = newSessionId();
+      updateSessionSuggestions(); persistDrafts();
+    });
+    $('seriesDate').addEventListener('change', () => {
+      const session = games.find(game => sessionKey(game) === seriesSessionId);
+      if (session && session.date !== $('seriesDate').value) seriesSessionId = newSessionId();
+      persistDrafts();
+    });
     dom.alley.addEventListener('change', updateEntryContext);
 
     dom.entryDetail.addEventListener('change', () => { setEntryDetail(); persistDrafts(); renderEntrySaveState(); });
@@ -1899,9 +1930,9 @@ export const app = (() => {
       return db === target && activeLocalScope.uid === uid;
     },
     getAccountLocalGameCount,
-    activateAccount,
-    activateGuest,
-    copyAccountDataToGuest,
+    activateAccount: (...args) => changeLocalScope(() => activateAccount(...args)),
+    activateGuest: (...args) => changeLocalScope(() => activateGuest(...args)),
+    copyAccountDataToGuest: (...args) => changeLocalScope(() => copyAccountDataToGuest(...args)),
     applyRemoteChanges,
     renderAll,
     formatDate: fmtDate
@@ -1912,7 +1943,8 @@ export const app = (() => {
     api.ready = false;
     api.startupError = null;
     dom.date.value = todayLocal();
-    dom.sessionName.value = newSessionId();
+    entrySessionId = newSessionId();
+    dom.sessionName.value = entrySessionId;
     dom.sessionType.value = 'League';
     setEntryMode(false);
     wireEvents();
