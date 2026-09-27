@@ -1,6 +1,13 @@
 # Bowling Tracker
 
-## Latest release: v37 — September 26, 2026
+## Latest release: v38 — September 26, 2026
+
+- All dialogs now reserve space for the device status bar, home indicator and landscape notch. Removed conflicting per-dialog height limits and decorative backdrop blur.
+- Main pages and navigation also respect left/right safe areas and the top inset for sticky navigation.
+- Scrolling, focus, saving, data and sync behavior remain unchanged.
+- Validation: the new safe-area browser test reproduces the v37 Series overlap (dialog top 42px with a 62px top inset), then passes for all seven dialogs and five pages in portrait, landscape, reduced-height, small-phone and desktop layouts, including rotation and Save access. Existing mobile-dialog, UX, score-card/offline, cache and update checks pass. Safe areas are emulated in Chromium; physical iPhone rendering remains unverified.
+
+## v37 — September 26, 2026
 
 - Dialogs lock the page behind them, contain touch scrolling, start at the top without opening the keyboard, and restore the previous scroll position on close. Nested dialogs keep the lock until the last one closes.
 - The current section and page position survive reloads and future automatic updates. Profile uses the same navigation path as the four main tabs.
