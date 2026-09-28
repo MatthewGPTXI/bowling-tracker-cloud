@@ -1,6 +1,14 @@
-(() => {
+import * as CloudReader from './modules/cloud-reader.js';
+import * as Groups from './modules/groups.js';
+import {app as App} from './app.js';
+import * as Balls from './balls.js';
+import * as UI from './ui.js';
+import {friends as Friends} from './friend-stats.js';
+import * as Reconciliation from './modules/reconciliation.js';
+import * as IDs from './modules/ids.js';
+export const cloud = (() => {
   'use strict';
-  const openDialog = dialog => window.BowlingUI ? window.BowlingUI.openDialog(dialog) : dialog.showModal();
+  const {openDialog, closeDialog} = UI;
 
   const FIREBASE_SDK_VERSION = '12.17.1';
   const config = window.BOWLING_FIREBASE_CONFIG || {};
@@ -117,7 +125,7 @@
       dom.syncBadge.textContent = text;
       dom.syncBadge.className = `sync-badge ${state}`.trim();
     }
-    window.BowlingApp?.setSyncStatus?.(text, state === 'success' ? 'on' : state === 'working' || state === 'pending' ? 'working' : state === 'error' ? 'error' : 'off');
+    App?.setSyncStatus?.(text, state === 'success' ? 'on' : state === 'working' || state === 'pending' ? 'working' : state === 'error' ? 'error' : 'off');
     if (currentUser) {
       setCloudButton(!navigator.onLine ? 'off' : state === 'success' ? 'on' : state === 'error' ? 'error' : 'working',
         !navigator.onLine ? 'Cloud offline' : state === 'success' ? 'Cloud ✓' : state === 'error' ? 'Cloud error' : 'Cloud…');
@@ -147,13 +155,13 @@
   }
 
   function waitForBowlingApp() {
-    const app = window.BowlingApp;
+    const app = App;
     if (app?.ready) return Promise.resolve(app);
     if (app?.startupError) return Promise.reject(new Error(`App startup failed: ${app.startupError}`));
     return new Promise((resolve, reject) => {
       window.addEventListener('bowling:ready', (event) => {
-        if (event.detail?.ok && window.BowlingApp?.ready) resolve(window.BowlingApp);
-        else reject(new Error(window.BowlingApp?.startupError || 'Local storage is unavailable. Reopen the app to retry.'));
+        if (event.detail?.ok && App?.ready) resolve(App);
+        else reject(new Error(App?.startupError || 'Local storage is unavailable. Reopen the app to retry.'));
       }, { once: true });
     });
   }
@@ -198,7 +206,7 @@
         firebaseStartupError = error;
         console.error(error);
         setCloudButton('error', 'Cloud error');
-        window.BowlingApp?.setSyncStatus?.('Cloud unavailable · saved on device', 'error');
+        App?.setSyncStatus?.('Cloud unavailable · saved on device', 'error');
         setStatus(friendlyError(error), 'error');
         return false;
       } finally {
@@ -216,7 +224,7 @@
 
     if (!configured) {
       setCloudButton('off', 'Cloud setup');
-      window.BowlingApp?.setSyncStatus?.('Local only', 'off');
+      App?.setSyncStatus?.('Local only', 'off');
       dom.signedOut?.classList.add('hidden');
       dom.signedIn?.classList.add('hidden');
       dom.leaderboardSignedOut?.classList.remove('hidden');
@@ -227,15 +235,15 @@
 
     if (!navigator.onLine) {
       setCloudButton('off', 'Cloud offline');
-      window.BowlingApp?.setSyncStatus?.('Offline — saved on device', 'working');
+      App?.setSyncStatus?.('Offline — saved on device', 'working');
     } else if (firebaseStartupError) {
       setCloudButton('error', 'Cloud error');
-      window.BowlingApp?.setSyncStatus?.('Cloud unavailable · saved on device', 'error');
+      App?.setSyncStatus?.('Cloud unavailable · saved on device', 'error');
     } else if (currentUser) {
       setCloudButton('off', 'Cloud');
     } else {
       setCloudButton('off', 'Cloud');
-      window.BowlingApp?.setSyncStatus?.('Local only', 'off');
+      App?.setSyncStatus?.('Local only', 'off');
     }
 
     dom.signedOut?.classList.toggle('hidden', Boolean(currentUser));
@@ -275,8 +283,8 @@
   }
 
   function updateProfileBowlerOptions() {
-    if (!window.BowlingApp || !profile) return;
-    profile.statsBowler = profile.displayName || currentUser?.displayName || window.BowlingApp.getProfileName?.() || 'Bowler';
+    if (!App || !profile) return;
+    profile.statsBowler = profile.displayName || currentUser?.displayName || App.getProfileName?.() || 'Bowler';
   }
 
   async function renderAccount() {
@@ -284,7 +292,7 @@
     if (!currentUser || !profile) return;
     dom.accountEmail.textContent = currentUser.email || 'Signed in';
     dom.profileDisplayName.value = profile.displayName || currentUser.displayName || '';
-    await window.BowlingApp?.setProfileName?.(profile.displayName || currentUser.displayName || 'Bowler');
+    await App?.setProfileName?.(profile.displayName || currentUser.displayName || 'Bowler');
     updateProfileBowlerOptions();
     await loadGroups();
   }
@@ -356,138 +364,28 @@
     return modules.doc(firestore, 'users', currentUser.uid, 'games', String(id));
   }
 
-  function cloudGamePayload(game) {
-    const balls = window.BowlingBalls.list(game);
-    return {
-      id: Number(game.id),
-      recordId: String(game.recordId || game.id),
-      bowler: String(game.bowler),
-      date: String(game.date),
-      sessionName: String(game.sessionName || ''),
-      sessionId: String(game.sessionId || game.sessionName || ''),
-      ball: balls[0]?.name || '',
-      balls,
-      alley: window.BowlingBalls.clean(game.alley),
-      noTap: game.noTap === true,
-      sessionType: ['League','Practice','Tournament'].includes(game.sessionType) ? game.sessionType : 'League',
-      ...(game.gameOrder !== undefined ? {gameOrder:Number(game.gameOrder)} : {}),
-      score: Number(game.score),
-      scoreOnly: game.scoreOnly === true,
-      openFrames: game.scoreOnly === true ? null : Number(game.openFrames),
-      strikes: game.scoreOnly === true ? null : Number(game.strikes),
-      strikeOpportunities: game.scoreOnly === true ? null : Number(game.strikeOpportunities || 10),
-      notes: String(game.notes || ''),
-      createdAt: Number(game.createdAt || Date.now()),
-      updatedAt: Number(game.updatedAt || Date.now()),
-      deleted: false,
-      schemaVersion: 5
-    };
-  }
+  function cloudGamePayload(...args) { return Reconciliation.cloudGamePayload(...args); }
 
-  function cloudDeletePayload(tombstone) {
-    return {
-      id: Number(tombstone.id),
-      recordId: String(tombstone.recordId || tombstone.id),
-      updatedAt: Number(tombstone.updatedAt || Date.now()),
-      deletedAt: Number(tombstone.deletedAt || tombstone.updatedAt || Date.now()),
-      deleted: true,
-      schemaVersion: 5
-    };
-  }
+  function cloudDeletePayload(...args) { return Reconciliation.cloudDeletePayload(...args); }
 
-  function normalizedSessionName(game) {
-    return String(game?.sessionName || '').trim().toLowerCase();
-  }
+  function normalizedSessionName(...args) { return Reconciliation.normalizedSessionName(...args); }
 
-  function comparableGame(game) {
-    return {
-      date: String(game?.date || ''),
-      sessionName: normalizedSessionName(game),
-      balls: window.BowlingBalls.comparable(game),
-      alley: window.BowlingBalls.clean(game?.alley),
-      noTap: game?.noTap === true,
-      sessionType: game?.sessionType || 'League',
-      gameOrder: Number(game?.gameOrder ?? game?.createdAt ?? game?.id ?? 0),
-      score: Number(game?.score || 0),
-      scoreOnly: game?.scoreOnly === true,
-      openFrames: game?.scoreOnly === true ? null : Number(game?.openFrames || 0),
-      strikes: game?.scoreOnly === true ? null : Number(game?.strikes || 0),
-      strikeOpportunities: game?.scoreOnly === true ? null : Number(game?.strikeOpportunities || 10),
-      notes: String(game?.notes || '').trim()
-    };
-  }
+  function comparableGame(...args) { return Reconciliation.comparableGame(...args); }
 
-  function sameGameContent(a, b) {
-    return JSON.stringify(comparableGame(a)) === JSON.stringify(comparableGame(b));
-  }
+  function sameGameContent(...args) { return Reconciliation.sameGameContent(...args); }
 
   function gameReviewHtml(label, game) {
     if (!game) return `<div class="sync-review-game"><strong>${escapeHtml(label)}</strong>Deleted</div>`;
     return `<div class="sync-review-game">
       <strong>${escapeHtml(label)}</strong>
-      ${game.gameOrder !== undefined ? `Game order: ${escapeHtml(game.gameOrder)}<br>` : ''}${escapeHtml(window.BowlingBalls.summary(game))}<br>${game.alley ? `Alley: ${escapeHtml(game.alley)}<br>` : ''}${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
+      ${game.gameOrder !== undefined ? `Game order: ${escapeHtml(game.gameOrder)}<br>` : ''}${escapeHtml(Balls.summary(game))}<br>${game.alley ? `Alley: ${escapeHtml(game.alley)}<br>` : ''}${escapeHtml(game.date)} · ${escapeHtml(game.sessionType || 'League')}<br>
       ${game.noTap === true ? 'No-tap · excluded from standard stats' : 'Standard scoring'}<br>
       Score ${Number(game.score)} · ${game.scoreOnly === true ? 'Score only' : `${Number(game.openFrames)} open · ${Number(game.strikes)}/${Number(game.strikeOpportunities || 10)} strikes`}
       ${game.notes ? `<br>${escapeHtml(game.notes)}` : ''}
     </div>`;
   }
 
-  function detectSyncIssues(localGameMap, tombstoneMap, remoteMap, outbox = {}) {
-    const issues = [];
-
-    // A visible conflict now means one narrow thing: this device changed a
-    // specific record from a known base version, and the cloud independently
-    // changed that same record before the local change could be uploaded.
-    // Normal stale copies and same-looking games with different IDs reconcile
-    // automatically and never interrupt the user.
-    for (const [rawId, item] of Object.entries(outbox || {})) {
-      const id = Number(rawId);
-      if (!Number.isSafeInteger(id) || id <= 0 || !item?.data) continue;
-
-      const local = localGameMap.get(id) || null;
-      const tombstone = tombstoneMap.get(id) || null;
-      const localVersion = local || (tombstone ? { ...tombstone, deleted: true } : null);
-      const remote = remoteMap.get(id) || null;
-
-      // If the local record has changed again since this outbox item was made,
-      // this entry is stale and should not manufacture a conflict.
-      if (!sameCloudVersion(localVersion, item.data)) continue;
-
-      // Already uploaded, or the cloud is still exactly the version we edited.
-      // In either case there is no competing edit to ask the user about.
-      if (sameCloudVersion(remote, item.data) || sameCloudVersion(remote, item.base)) continue;
-
-      const localDeleted = item.data.deleted === true;
-      const remoteDeleted = !remote || remote.deleted === true;
-
-      // Two independently recorded deletions have the same outcome. Reconcile
-      // their timestamps automatically rather than calling this a conflict.
-      if (localDeleted && remoteDeleted) continue;
-
-      if (localDeleted || remoteDeleted) {
-        issues.push({
-          key: `delete:${id}:${localDeleted ? 'local' : 'cloud'}` ,
-          type: 'delete-conflict',
-          id,
-          liveSide: localDeleted ? 'cloud' : 'local',
-          local,
-          tombstone,
-          remote
-        });
-        continue;
-      }
-
-      issues.push({
-        key: `version:${id}` ,
-        type: 'version-conflict',
-        id,
-        local,
-        remote
-      });
-    }
-
-    return issues;
-  }
+  function detectSyncIssues(...args) { return Reconciliation.detectSyncIssues(...args); }
 
   function renderSyncReview(issues, localCount, cloudCount) {
     pendingSyncReview = { issues };
@@ -559,6 +457,7 @@
   }
 
   function outboxKey(uid) { return `bowling-sync-outbox:${uid}`; }
+  function withServerTimestamp(data) { return modules.serverTimestamp ? {...data, serverUpdatedAt: modules.serverTimestamp()} : data; }
   function readOutbox(uid) {
     try { const value = JSON.parse(localStorage.getItem(outboxKey(uid)) || '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch (_) { return {}; }
   }
@@ -592,12 +491,12 @@
         if (!isCurrent()) throw new Error('Account or local history changed. Sync again.');
         const done = [];
         chunk.forEach(([id,item],j) => {
-          const local = localGameMap.get(Number(id)) || (tombstoneMap.has(Number(id)) ? {...tombstoneMap.get(Number(id)),deleted:true} : null);
+          const local = localGameMap.get(IDs.recordId(id)) || (tombstoneMap.has(IDs.recordId(id)) ? {...tombstoneMap.get(IDs.recordId(id)),deleted:true} : null);
           // A later import or another tab may have changed the local record.
           if (!sameCloudVersion(local,item.data)) { done.push(id); return; }
           const remote = snapshots[j].exists() ? snapshots[j].data() : null;
           if (sameCloudVersion(remote,item.data)) {done.push(id);return;}
-          if (sameCloudVersion(remote,item.base)) {tx.set(refs[j],item.data);done.push(id);}
+          if (sameCloudVersion(remote,item.base)) {tx.set(refs[j],withServerTimestamp(item.data));done.push(id);}
         });
         return done;
       });
@@ -608,11 +507,7 @@
     }
   }
 
-  function sameCloudVersion(a, b) {
-    if (!a || !b) return !a && !b;
-    return !!a.deleted === !!b.deleted && Number(a.updatedAt || 0) === Number(b.updatedAt || 0)
-      && (a.deleted || sameGameContent(a,b));
-  }
+  function sameCloudVersion(...args) { return Reconciliation.sameCloudVersion(...args); }
   async function guardedWrites(operations, expected, isCurrent) {
     if (!operations.length) return;
     // Bound each transaction to stay below Firestore's request limits.
@@ -623,12 +518,12 @@
         const snapshots = await Promise.all(chunk.map(op => transaction.get(op.ref)));
         if (!isCurrent()) throw new Error('Account or local history changed. Sync again.');
         snapshots.forEach((snap,j) => {
-          const id = Number(chunk[j].data.id), remote = snap.exists() ? snap.data() : null;
+          const id = IDs.recordId(chunk[j].data.id), remote = snap.exists() ? snap.data() : null;
           if (!sameCloudVersion(remote,expected.get(id) || null)) {
             const error = new Error('Cloud history changed during sync. Sync again to review the latest versions.'); error.code='bowling/conflict'; throw error;
           }
         });
-        chunk.forEach(op => transaction.set(op.ref,op.data));
+        chunk.forEach(op => transaction.set(op.ref,withServerTimestamp(op.data)));
       });
     }
   }
@@ -673,7 +568,7 @@
           const remote = snapshot.exists() ? snapshot.data() : {};
           const result = {}, changed = {};
           for (const {key, local} of inventories) {
-            result[key] = window.BowlingBalls.mergeInventory(remote[key], local);
+            result[key] = Balls.mergeInventory(remote[key], local);
             if (JSON.stringify(result[key]) !== JSON.stringify(remote[key] || [])) changed[key] = result[key];
           }
           if (Object.keys(changed).length) transaction.set(ref, changed, {merge: true});
@@ -689,96 +584,20 @@
       const localGames = app.getGames();
       const localTombstones = await app.getTombstones();
       if (!isCurrentAccount()) return;
-      const localGameMap = new Map(localGames.map((game) => [Number(game.id), game]));
-      const tombstoneMap = new Map(localTombstones.map((t) => [Number(t.id), t]));
+      const localGameMap = new Map(localGames.map((game) => [IDs.recordId(game.id), game]));
+      const tombstoneMap = new Map(localTombstones.map((t) => [IDs.recordId(t.id), t]));
       await flushOutbox(uid, () => isCurrentAccount() && revision === localChangeRevision,localGameMap,tombstoneMap);
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
-      const remoteSnap = await modules.getDocs(modules.collection(firestore, 'users', uid, 'games'));
+      const remoteHistory = await CloudReader.readRemoteHistory({sdk: modules, firestore, uid,
+        isCurrent: () => isCurrentAccount() && revision === localChangeRevision,
+        protocol: profile?.syncProtocolVersion,
+        baseline: app.getSyncBaseline ? await app.getSyncBaseline(uid) : null});
+      const remoteMap = remoteHistory.records;
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
-      const remoteMap = new Map();
-      remoteSnap.forEach((item) => remoteMap.set(Number(item.id), item.data()));
 
-      const syncOutbox = readOutbox(uid);
-      const issues = detectSyncIssues(localGameMap, tombstoneMap, remoteMap, syncOutbox);
-      if (reviewChoices && pendingSyncReview?.issues && JSON.stringify(issues) !== JSON.stringify(pendingSyncReview.issues)) reviewChoices = null;
-      const unresolved = issues.filter((issue) => !reviewChoices?.[issue.key]);
-      const cloudWrites = [];
-      const localUpserts = [];
-      const localDeletes = [];
-      const handledIds = new Set(unresolved.map(issue => issue.id));
-      const resolutionTime = Date.now();
-
-      // Apply explicit user choices first. Standard reconciliation below skips
-      // these IDs so the choices cannot be overwritten by timestamp rules.
-      for (const issue of issues) {
-        const choice = reviewChoices?.[issue.key];
-        if (!choice) continue;
-
-        if (issue.type === 'version-conflict') {
-          handledIds.add(issue.id);
-          if (choice === 'local') {
-            localUpserts.push({...issue.local,updatedAt:resolutionTime});
-            cloudWrites.push({ ref: cloudGameRef(issue.id), data: cloudGamePayload({ ...issue.local, updatedAt: resolutionTime }) });
-          } else {
-            localUpserts.push({ ...issue.remote, updatedAt: resolutionTime });
-            cloudWrites.push({ ref: cloudGameRef(issue.id), data: cloudGamePayload({ ...issue.remote, updatedAt: resolutionTime }) });
-          }
-          continue;
-        }
-
-        if (issue.type === 'delete-conflict') {
-          handledIds.add(issue.id);
-          if (choice === 'keep-game') {
-            const live = issue.liveSide === 'local' ? issue.local : issue.remote;
-            const resolved = { ...live, updatedAt: resolutionTime };
-            localUpserts.push(resolved);
-            cloudWrites.push({ ref: cloudGameRef(issue.id), data: cloudGamePayload(resolved) });
-          } else {
-            const deletion = { id: issue.id, updatedAt: resolutionTime };
-            localDeletes.push(deletion);
-            cloudWrites.push({ ref: cloudGameRef(issue.id), data: cloudDeletePayload(deletion) });
-          }
-          continue;
-        }
-
-      }
-
-      for (const [id, remote] of remoteMap.entries()) {
-        if (handledIds.has(id)) continue;
-        const local = localGameMap.get(id);
-        const tombstone = tombstoneMap.get(id);
-        const remoteAt = Number(remote.updatedAt || 0);
-        const localAt = Number(local?.updatedAt || 0);
-        const deleteAt = Number(tombstone?.updatedAt || 0);
-
-        if (remote.deleted) {
-          if (local && localAt > remoteAt && localAt > deleteAt) {
-            cloudWrites.push({ ref: cloudGameRef(id), data: cloudGamePayload(local) });
-          } else if (tombstone && deleteAt > remoteAt) {
-            cloudWrites.push({ ref: cloudGameRef(id), data: cloudDeletePayload(tombstone) });
-          } else if (local || !tombstone || remoteAt > deleteAt) {
-            localDeletes.push({ id, updatedAt: remoteAt });
-          }
-          continue;
-        }
-
-        if (tombstone && deleteAt >= remoteAt && deleteAt >= localAt) {
-          cloudWrites.push({ ref: cloudGameRef(id), data: cloudDeletePayload(tombstone) });
-        } else if (local && localAt >= remoteAt) {
-          if (localAt > remoteAt) cloudWrites.push({ ref: cloudGameRef(id), data: cloudGamePayload(local) });
-        } else {
-          localUpserts.push(remote);
-        }
-      }
-
-      for (const [id, local] of localGameMap.entries()) {
-        if (handledIds.has(id)) continue;
-        if (!remoteMap.has(id)) cloudWrites.push({ ref: cloudGameRef(id), data: cloudGamePayload(local) });
-      }
-      for (const [id, tombstone] of tombstoneMap.entries()) {
-        if (handledIds.has(id)) continue;
-        if (!remoteMap.has(id)) cloudWrites.push({ ref: cloudGameRef(id), data: cloudDeletePayload(tombstone) });
-      }
+      const plan = Reconciliation.planSync({localGameMap, tombstoneMap, remoteMap, syncOutbox: readOutbox(uid), reviewChoices, reviewedIssues: pendingSyncReview?.issues});
+      const {issues, unresolved, localUpserts, localDeletes} = plan;
+      const cloudWrites = plan.cloudWrites.map(({id, data}) => ({ref: cloudGameRef(id), data}));
 
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
       if (cloudWrites.length) await guardedWrites(cloudWrites,remoteMap,() => isCurrentAccount() && revision === localChangeRevision);
@@ -788,6 +607,8 @@
       }
       if (!isCurrentAccount()) return;
       await publishAllSummaries();
+      if (!isCurrentAccount() || revision !== localChangeRevision) return;
+      if (remoteHistory.snapshot && app.saveSyncBaseline) await app.saveSyncBaseline(remoteHistory.snapshot, uid);
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
       if (unresolved.length) {
         renderSyncReview(issues,app.getGames().length,[...remoteMap.values()].filter(g=>!g.deleted).length);
@@ -953,17 +774,10 @@
 
     try {
       setStatus(`Leaving ${label}…`);
-      const groupRef = modules.doc(firestore, 'groups', groupId);
-      const memberRef = modules.doc(firestore, 'groups', groupId, 'members', currentUser.uid);
-      const snap = await modules.getDoc(groupRef);
-      if (snap.exists() && snap.data().ownerUid === currentUser.uid) {
-        await modules.updateDoc(groupRef, {
-          ownerUid: '',
-          ownerLeftAt: Date.now(),
-          updatedAt: Date.now()
-        });
-      }
-      await modules.deleteDoc(memberRef);
+      const uid = currentUser.uid, revision = authRevision;
+      await Groups.leaveMembership({sdk: modules, firestore, groupId, uid,
+        isCurrent: () => currentUser?.uid === uid && authRevision === revision});
+      if (currentUser?.uid !== uid || authRevision !== revision) return;
       const remaining = (profile.groupIds || []).filter((id) => id !== groupId);
       await setProfileGroupIds(remaining, remaining.includes(selectedGroupId) ? selectedGroupId : (remaining[0] || ''));
       if (selectedGroupId !== (profile.activeGroupId || '')) resetLeaderboardView();
@@ -1051,7 +865,7 @@
   }
 
   function resetLeaderboardView() {
-    window.BowlingFriends?.clear();
+    Friends?.clear();
     dom.leaderboardBody.innerHTML = '';
   }
 
@@ -1104,7 +918,7 @@
   }
 
   function renderLeaderboardRows(members) {
-    window.BowlingFriends?.setMembers(members, { uid: currentUser?.uid, groupId: selectedGroupId, revision: authRevision });
+    Friends?.setMembers(members, { uid: currentUser?.uid, groupId: selectedGroupId, revision: authRevision });
     const metric = dom.metricSelect.value || 'average';
     const info = metricInfo[metric] || metricInfo.average;
     dom.leaderboardMetricHeading.textContent = info.label;
@@ -1280,7 +1094,7 @@
         const value = item.data();
         if (value.deleted) {
           tombstones.push({
-            id: Number(value.id ?? item.id),
+            id: IDs.recordId(value.id ?? item.id),
             updatedAt: Number(value.updatedAt || 0)
           });
         } else {
@@ -1316,7 +1130,7 @@
       if (!isCurrent()) return;
       const payload = {
         app: 'Bowling Tracker',
-        version: window.BowlingApp?.version || 'unknown',
+        version: App?.version || 'unknown',
         backupType: 'firebase-cloud',
         exportedAt: new Date().toISOString(),
         profileName: cloudProfile?.displayName || user.displayName || 'Bowler',
@@ -1350,27 +1164,10 @@
   }
 
   async function detachAccountFromGroups(uid) {
-    const groupIds = [...new Set(profile?.groupIds || [])];
-    const now = Date.now();
-
-    for (const groupId of groupIds) {
-      const groupRef = modules.doc(firestore, 'groups', groupId);
-      const memberRef = modules.doc(firestore, 'groups', groupId, 'members', uid);
-      const groupSnap = await modules.getDoc(groupRef);
-
-      if (groupSnap.exists() && groupSnap.data().ownerUid === uid) {
-        // A shared group belongs to everyone using it, so account deletion does
-        // not erase other bowlers' rows. Remove the deleted UID from ownership
-        // and leave the group usable as an ownerless shared leaderboard.
-        await modules.updateDoc(groupRef, {
-          ownerUid: '',
-          ownerDeletedAt: now,
-          updatedAt: now
-        });
-      }
-
-      // Security rules allow every signed-in user to remove their own member row.
-      await modules.deleteDoc(memberRef);
+    const revision = authRevision;
+    for (const groupId of [...new Set(profile?.groupIds || [])]) {
+      await Groups.leaveMembership({sdk: modules, firestore, groupId, uid,
+        isCurrent: () => currentUser?.uid === uid && authRevision === revision});
     }
   }
 
@@ -1480,9 +1277,9 @@
       renderConnectionState();
       if (configReady() && navigator.onLine) await initFirebase();
     });
-    dom.closeCloudBtn?.addEventListener('click', () => dom.cloudDialog.close());
+    dom.closeCloudBtn?.addEventListener('click', () => closeDialog(dom.cloudDialog));
     dom.cloudDialog?.addEventListener('click', (event) => {
-      if (event.target === dom.cloudDialog) dom.cloudDialog.close();
+      if (event.target === dom.cloudDialog) closeDialog(dom.cloudDialog);
     });
     dom.leaderboardConnectBtn?.addEventListener('click', async () => {
       openDialog(dom.cloudDialog);
@@ -1557,12 +1354,12 @@
     } catch (error) { setSyncBadge('Startup failed','error'); setStatus(friendlyError(error),'error'); }
   }
 
-  window.BowlingCloud = {
+  const api = {
     isBusy: () => syncing,
     isSignedIn: () => Boolean(currentUser),
     getAccount: () => currentUser ? { uid: currentUser.uid, email: currentUser.email || '' } : null,
     syncNow: () => syncAll('Manual sync')
   };
 
-  init();
+  return Object.assign(api, {init});
 })();

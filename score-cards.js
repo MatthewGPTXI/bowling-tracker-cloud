@@ -1,6 +1,10 @@
-(() => {
+import {app as App} from './app.js';
+import * as UI from './ui.js';
+let comparisonProvider = () => null;
+export function setComparisonProvider(provider) { comparisonProvider = provider; }
+export const scoreCards = (() => {
   'use strict';
-  const openDialog = dialog => window.BowlingUI ? window.BowlingUI.openDialog(dialog) : dialog.showModal();
+  const {openDialog, closeDialog} = UI;
   const APP_URL = 'https://matthewgptxi.github.io/bowling-tracker-cloud/';
   const PAGE_SIZE = 24;
   // Fixed destination, precomputed with QR error correction M and a four-module
@@ -214,17 +218,16 @@
   }
 
   const api = {APP_URL, PAGE_SIZE, pages, filename, describe, render};
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  window.BowlingScoreCards = api;
+  if (typeof window === 'undefined' || typeof document === 'undefined') return api;
+
   const $ = id => document.getElementById(id);
   const dialog = $('scoreCardDialog');
   let snapshot = null, scope = '', page = 0, generation = 0, blob = null, objectUrl = '', busy = false;
   const currentScope = () => {
-    const info = window.BowlingApp.getLocalScopeInfo();
+    const info = App.getLocalScopeInfo();
     return `${info.kind}:${info.uid}:${info.dbName}`;
   };
-  const valid = () => snapshot && dialog.open && scope === currentScope() && window.BowlingApp.ready;
+  const valid = () => snapshot && dialog.open && scope === currentScope() && App.ready;
   const canCopy = () => !!(navigator.clipboard?.write && window.ClipboardItem);
   const file = () => new File([blob], filename(snapshot, page), {type: 'image/png'});
   function canShare() {
@@ -243,7 +246,7 @@
   }
   function close() {
     generation++; snapshot = null; busy = false; clearImage();
-    if (dialog.open) dialog.close();
+    if (dialog.open) closeDialog(dialog);
   }
   function buttons() {
     $('copyScoreCard').disabled = busy || !blob || !canCopy();
@@ -291,12 +294,12 @@
   $('closeScoreCard').addEventListener('click', close);
   dialog.addEventListener('close', () => { if (!dialog.open) close(); });
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
-  $('shareOverallStats').addEventListener('click', () => openCard(window.BowlingApp.getScoreCardData()));
-  $('shareFriendComparison').addEventListener('click', () => openCard(window.BowlingFriends?.getComparisonCardData()));
+  $('shareOverallStats').addEventListener('click', () => openCard(App.getScoreCardData()));
+  $('shareFriendComparison').addEventListener('click', () => openCard(comparisonProvider()));
   api.closeComparison = () => { if (snapshot?.kind === 'comparison') close(); };
   $('sessionsList').addEventListener('click', event => {
     const button = event.target.closest('.share-session');
-    if (button) openCard(window.BowlingApp.getScoreCardData(button.dataset.key));
+    if (button) openCard(App.getScoreCardData(button.dataset.key));
   });
   $('scoreCardPrevious').addEventListener('click', () => { if (!busy && valid() && page > 0) { page--; generate(); } });
   $('scoreCardNext').addEventListener('click', () => { if (!busy && valid() && page < pages(snapshot) - 1) { page++; generate(); } });
@@ -328,11 +331,12 @@
     } finally { if (token === generation && valid()) { busy = false; buttons(); } }
   });
   function refresh() {
-    const app = window.BowlingApp;
+    const app = App;
     $('shareOverallStats').disabled = !app?.ready || !app.getGames().some(game => game.noTap !== true);
     if (snapshot && !valid()) close();
   }
   for (const event of ['bowling:ready', 'bowling:rendered']) window.addEventListener(event, refresh);
   window.addEventListener('bowling:local-account-changed', () => { close(); refresh(); });
   refresh();
+  return api;
 })();

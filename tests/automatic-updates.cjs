@@ -1,5 +1,5 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
-const source=fs.readFileSync(path.join(__dirname,'../updates.js'),'utf8');
+const source=require('./helpers/legacy.cjs').source(path.join(__dirname,'../updates.js'));
 const tick=async()=>{for(let i=0;i<20;i++)await Promise.resolve()};
 function harness(initial='32',savedGuard=null){
   const events={},timers=[],storage=new Map(savedGuard?[['bowling-update-reload:/bowling/',JSON.stringify(savedGuard)]]:[]);
@@ -17,7 +17,7 @@ function harness(initial='32',savedGuard=null){
     window:{BowlingUI:{rememberPage(){remembered=true}},BOWLING_VERSION:initial,BowlingApp:{canApplyUpdate:()=>safe},addEventListener:listen},
     fetch:async(url,options)=>{assert(url.startsWith('./build.json?check='));assert.equal(options.cache,'no-store');if(fail)throw Error('offline');return{ok:true,json:async()=>({version:workerRelease})}}
   };
-  vm.runInNewContext(source,c);
+  vm.runInNewContext(source,require('./helpers/legacy.cjs').prepare(c));
   return{c,timers,registration,start:()=>c.window.BowlingUpdates.start(registration),tick,emit:async name=>{for(const fn of events[name]||[])await fn();await tick()},
     version:v=>workerRelease=v,safe:v=>safe=v,focus:v=>focus=v,fail:v=>fail=v,time:()=>now+=10000,
     reloads:()=>reloads,updates:()=>updates};

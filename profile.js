@@ -1,16 +1,16 @@
-(() => {
+import {createInventoryEditor} from './modules/inventory-editor.js';
+import * as IDs from './modules/ids.js';
+import {app as App} from './app.js';
+import {cloud as Cloud} from './cloud.js';
+export const profile = (() => {
   'use strict';
 
   const VIEW_ID = 'view-profile';
   const NAV_ID = 'nav-profile';
   let goalInputDirty = false;
-  let inventoryEditName = '';
-  let inventorySignature = '';
-  let alleyInventoryEditName = '';
-  let alleyInventorySignature = '';
 
   const $ = id => document.getElementById(id);
-  const app = () => window.BowlingApp;
+  const app = () => App;
 
   function scopeKey() {
     const info = app()?.getLocalScopeInfo?.();
@@ -173,7 +173,7 @@
       if (footer) $('profileAbout').appendChild(footer);
       $('profileGroupsBtn').addEventListener('click', () => {
         $('openCloudBtn').click();
-        const target = window.BowlingCloud?.isSignedIn?.() ? $('bowlingGroupSettings') : $('cloudEmailInput');
+        const target = Cloud?.isSignedIn?.() ? $('bowlingGroupSettings') : $('cloudEmailInput');
         if (target?.getClientRects().length) { target.scrollIntoView({block:'center'}); target.focus({preventScroll:true}); }
       });
       $('profileImportExportBtn').addEventListener('click', () => {
@@ -268,7 +268,7 @@
     const scope = app()?.getLocalScopeInfo?.();
 
     $('profileNameSummary').textContent = name;
-    const account = window.BowlingCloud?.getAccount?.();
+    const account = Cloud?.getAccount?.();
     $('profileScopeSummary').textContent = scope?.kind === 'user'
       ? (account?.uid === scope.uid ? account.email || 'Signed in' : 'Saved account profile') : 'Local profile';
     if ($('headerProfileName')) $('headerProfileName').textContent = name;
@@ -301,142 +301,30 @@
     }
   }
 
-  function resetInventoryEditor() {
-    inventoryEditName = '';
-    $('inventoryBallName').value = '';
-    $('saveInventoryBall').textContent = 'Add ball';
-    $('cancelInventoryEdit').hidden = true;
-  }
+  function resetInventoryEditor(...args) { return ballEditor.reset(...args); }
 
-  async function saveInventoryBall(event) {
-    event.preventDefault();
-    const scope = scopeKey();
-    const editing = !!inventoryEditName;
-    $('saveInventoryBall').disabled = true;
-    try {
-      await app().editBallInventory($('inventoryBallName').value, inventoryEditName);
-      if (scope !== scopeKey()) return;
-      resetInventoryEditor();
-      $('inventoryStatus').textContent = editing ? 'Ball renamed. Past games keep their original ball name.' : 'Ball added to your inventory.';
-      $('inventoryBallName').focus();
-    } catch (error) {
-      if (scope === scopeKey()) $('inventoryStatus').textContent = error.message;
-    } finally { $('saveInventoryBall').disabled = !app()?.ready; }
-  }
+  function saveInventoryBall(...args) { return ballEditor.save(...args); }
 
-  function renderInventory() {
-    $('saveInventoryBall').disabled = !app()?.ready;
-    $('inventorySyncNote').textContent = window.BowlingCloud?.isSignedIn?.()
-      ? 'Syncs with your account when online.'
-      : 'Saved on this device. Sign in to sync.';
-    const rows = (app()?.getBallInventory?.() || []).filter(row => !row.removed);
-    const signature = JSON.stringify([scopeKey(), rows]);
-    if (inventorySignature === signature) return;
-    inventorySignature = signature;
-    $('inventoryEmpty').hidden = rows.length > 0;
-    const list = $('ballInventoryList');
-    list.replaceChildren();
-    for (const row of rows) {
-      const item = document.createElement('li');
-      const name = document.createElement('strong'); name.textContent = row.name; item.appendChild(name);
-      const actions = document.createElement('div'); actions.className = 'inventory-actions'; item.appendChild(actions);
-      const rename = document.createElement('button'); rename.type = 'button'; rename.className = 'text-btn'; rename.textContent = 'Rename';
-      rename.setAttribute('aria-label', `Rename ${row.name}`);
-      rename.addEventListener('click', () => {
-        inventoryEditName = row.name; $('inventoryBallName').value = row.name;
-        $('saveInventoryBall').textContent = 'Save name'; $('cancelInventoryEdit').hidden = false;
-        $('inventoryStatus').textContent = ''; $('inventoryBallName').focus();
-      });
-      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'text-btn danger-text'; remove.textContent = 'Remove';
-      remove.setAttribute('aria-label', `Remove ${row.name}`);
-      remove.addEventListener('click', async () => {
-        const scope = scopeKey(); remove.disabled = true;
-        try {
-          await app().editBallInventory(row.name, '', true);
-          if (scope !== scopeKey()) return;
-          if (inventoryEditName === row.name) resetInventoryEditor();
-          $('inventoryStatus').textContent = 'Ball removed from inventory. Past games are unchanged.';
-        } catch (error) { if (scope === scopeKey()) $('inventoryStatus').textContent = error.message; }
-        finally { remove.disabled = false; }
-      });
-      actions.append(rename, remove); list.appendChild(item);
-    }
-  }
+  function renderInventory(...args) { return ballEditor.render(...args); }
 
-  function resetAlleyInventoryEditor() {
-    alleyInventoryEditName = '';
-    $('alleyInventoryAlleyName').value = '';
-    $('saveAlleyInventoryAlley').textContent = 'Add alley';
-    $('cancelAlleyInventoryEdit').hidden = true;
-  }
+  function resetAlleyInventoryEditor(...args) { return alleyEditor.reset(...args); }
 
-  async function saveAlleyInventoryAlley(event) {
-    event.preventDefault();
-    const scope = scopeKey();
-    const editing = !!alleyInventoryEditName;
-    $('saveAlleyInventoryAlley').disabled = true;
-    try {
-      await app().editAlleyInventory($('alleyInventoryAlleyName').value, alleyInventoryEditName);
-      if (scope !== scopeKey()) return;
-      resetAlleyInventoryEditor();
-      $('alleyInventoryStatus').textContent = editing ? 'Alley renamed. Past games keep their original alley name.' : 'Alley added to your alley list.';
-      $('alleyInventoryAlleyName').focus();
-    } catch (error) {
-      if (scope === scopeKey()) $('alleyInventoryStatus').textContent = error.message;
-    } finally { $('saveAlleyInventoryAlley').disabled = !app()?.ready; }
-  }
+  function saveAlleyInventoryAlley(...args) { return alleyEditor.save(...args); }
 
-  function renderAlleyInventory() {
-    $('saveAlleyInventoryAlley').disabled = !app()?.ready;
-    $('alleyInventorySyncNote').textContent = window.BowlingCloud?.isSignedIn?.()
-      ? 'Syncs with your account when online.'
-      : 'Saved on this device. Sign in to sync.';
-    const rows = (app()?.getAlleyInventory?.() || []).filter(row => !row.removed);
-    const signature = JSON.stringify([scopeKey(), rows]);
-    if (alleyInventorySignature === signature) return;
-    alleyInventorySignature = signature;
-    $('alleyInventoryEmpty').hidden = rows.length > 0;
-    const list = $('alleyInventoryList');
-    list.replaceChildren();
-    for (const row of rows) {
-      const item = document.createElement('li');
-      const name = document.createElement('strong'); name.textContent = row.name; item.appendChild(name);
-      const actions = document.createElement('div'); actions.className = 'inventory-actions'; item.appendChild(actions);
-      const rename = document.createElement('button'); rename.type = 'button'; rename.className = 'text-btn'; rename.textContent = 'Rename';
-      rename.setAttribute('aria-label', `Rename ${row.name}`);
-      rename.addEventListener('click', () => {
-        alleyInventoryEditName = row.name; $('alleyInventoryAlleyName').value = row.name;
-        $('saveAlleyInventoryAlley').textContent = 'Save name'; $('cancelAlleyInventoryEdit').hidden = false;
-        $('alleyInventoryStatus').textContent = ''; $('alleyInventoryAlleyName').focus();
-      });
-      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'text-btn danger-text'; remove.textContent = 'Remove';
-      remove.setAttribute('aria-label', `Remove ${row.name}`);
-      remove.addEventListener('click', async () => {
-        const scope = scopeKey(); remove.disabled = true;
-        try {
-          await app().editAlleyInventory(row.name, '', true);
-          if (scope !== scopeKey()) return;
-          if (alleyInventoryEditName === row.name) resetAlleyInventoryEditor();
-          $('alleyInventoryStatus').textContent = 'Alley removed from your alley list. Past games are unchanged.';
-        } catch (error) { if (scope === scopeKey()) $('alleyInventoryStatus').textContent = error.message; }
-        finally { remove.disabled = false; }
-      });
-      actions.append(rename, remove); list.appendChild(item);
-    }
-  }
+  function renderAlleyInventory(...args) { return alleyEditor.render(...args); }
 
   function renderGameBenchmarks() {
     const list = $('sessionsList');
     if (!list || !app()?.getGames) return;
     const allGames = app().getGames();
-    const byId = new Map(allGames.map(game => [Number(game.id), game]));
+    const byId = new Map(allGames.map(game => [IDs.recordId(game.id), game]));
     const standard = allGames.filter(game => game?.noTap !== true && Number.isFinite(Number(game?.score)));
     const average = standard.length ? standard.reduce((sum, game) => sum + Number(game.score), 0) / standard.length : null;
     const goal = readGoal();
     const benchmark = goal ?? average;
 
     list.querySelectorAll('.game-row').forEach(row => {
-      const id = Number(row.querySelector('.game-actions-toggle')?.dataset.id);
+      const id = IDs.recordId(row.querySelector('.game-actions-toggle')?.dataset.id);
       const game = byId.get(id);
       const info = row.querySelector('.game-row-info');
       if (!game || !info) return;
@@ -480,7 +368,7 @@
       const badges = card.querySelector('.session-badges');
       if (!badges) return;
       const visible = [...card.querySelectorAll('.game-row')]
-        .map(row => byId.get(Number(row.querySelector('.game-actions-toggle')?.dataset.id)))
+        .map(row => byId.get(IDs.recordId(row.querySelector('.game-actions-toggle')?.dataset.id)))
         .filter(game => game && game.noTap !== true);
       let status = badges.querySelector('.session-average-status');
       if (average === null || visible.length < 2) { status?.remove(); return; }
@@ -540,6 +428,17 @@
     }
   });
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refresh, { once: true });
-  else refresh();
+  const ballEditor = createInventoryEditor({
+    document, ids: {"input": "inventoryBallName", "save": "saveInventoryBall", "cancel": "cancelInventoryEdit", "status": "inventoryStatus", "sync": "inventorySyncNote", "empty": "inventoryEmpty", "list": "ballInventoryList"}, label: 'ball',
+    scopeKey, ready: () => !!app()?.ready, signedIn: () => !!Cloud?.isSignedIn?.(),
+    get: () => app()?.getBallInventory?.() || [], edit: (...args) => app().editBallInventory(...args)
+  });
+
+  const alleyEditor = createInventoryEditor({
+    document, ids: {"input": "alleyInventoryAlleyName", "save": "saveAlleyInventoryAlley", "cancel": "cancelAlleyInventoryEdit", "status": "alleyInventoryStatus", "sync": "alleyInventorySyncNote", "empty": "alleyInventoryEmpty", "list": "alleyInventoryList"}, label: 'alley',
+    scopeKey, ready: () => !!app()?.ready, signedIn: () => !!Cloud?.isSignedIn?.(),
+    get: () => app()?.getAlleyInventory?.() || [], edit: (...args) => app().editAlleyInventory(...args)
+  });
+
+  return {refresh};
 })();

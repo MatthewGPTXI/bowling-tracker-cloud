@@ -1,6 +1,17 @@
 # Bowling Tracker
 
-## Latest release: v38 — September 26, 2026
+## v39 candidate — reliability and architecture
+
+- Added `npm test` and CI covering the preserved regression suite, direct module tests, mobile/offline browser tests, large histories, and Firestore rules. Pages deployment depends on passing tests.
+- Replaced runtime global dependencies with acyclic ES imports. Extracted domain, storage/migration, navigation, inventory, rendering, draft/backup and cloud reconciliation modules.
+- Restores the selected page directly at startup; all modal operations share one controller. History uses delegated actions and retains unchanged session elements.
+- New games use UUIDs, legacy numeric IDs remain supported, and session identity survives metadata changes. Formal data and backup schema versions are separate from the release version.
+- Added paginated cloud reads and a server-enforced incremental protocol, stronger rules, and owner transfer when leaving a group. Incremental mode and new rules require a separate Firebase rollout.
+- Preserved offline-first IndexedDB, drafts, account isolation, outbox/tombstones, explicit conflict review, escaping, accessibility and existing game formats.
+
+See [architecture and rollout notes](docs/architecture.md) for module ownership, verification, compatibility and external setup. This branch does not itself enable GitHub branch protection or change the Pages source; the authenticated setup script is included.
+
+## Previous release: v38 — September 26, 2026
 
 - All dialogs now reserve space for the device status bar, home indicator and landscape notch. Removed conflicting per-dialog height limits and decorative backdrop blur.
 - Main pages and navigation also respect left/right safe areas and the top inset for sticky navigation.

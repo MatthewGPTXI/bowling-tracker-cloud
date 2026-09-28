@@ -1,18 +1,18 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
-const source=fs.readFileSync(path.join(__dirname,'../cloud.js'),'utf8');
+const source=require('./helpers/legacy.cjs').source(path.join(__dirname,'../cloud.js'));
 const section=(start,end)=>source.slice(source.indexOf('  '+start),source.indexOf('  '+end,source.indexOf('  '+start)));
 (async()=>{
  const remote=new Map(),local=new Map(),removed=new Map(),storage=new Map(),badges=[];let fail=false;
  const game=(id,score)=>({id,date:'2026-09-06',bowler:'Matthew',sessionName:'League',score,openFrames:3,strikes:4,strikeOpportunities:10,createdAt:id,updatedAt:id});
  const app={getGames:()=>[...local.values()],getTombstones:async()=>[...removed.values()],applyRemoteChanges:async({upserts,deletes})=>{upserts.forEach(g=>{local.set(g.id,g);removed.delete(g.id)});deletes.forEach(g=>{removed.set(g.id,g);local.delete(g.id)})}};
- const c={currentUser:{uid:'a'},authRevision:1,localChangeRevision:0,navigator:{onLine:true},firestore:{},pendingLocalChanges:1,pendingSyncReview:null,syncing:false,lastSyncAt:0,localChangeQueue:Promise.resolve(),console:{error(){},warn(){}},Math,Number,Map,Set,JSON,Date,
+ const c={profile:null,currentUser:{uid:'a'},authRevision:1,localChangeRevision:0,navigator:{onLine:true},firestore:{},pendingLocalChanges:1,pendingSyncReview:null,syncing:false,lastSyncAt:0,localChangeQueue:Promise.resolve(),console:{error(){},warn(){}},Math,Number,Map,Set,JSON,Date,
  localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},waitForBowlingApp:async()=>app,publishAllSummaries:async()=>{},loadLeaderboard:async()=>{},setSyncBadge:s=>badges.push(s),setStatus(){},friendlyError:e=>e.message,
  hideSyncReview(){c.pendingSyncReview=null},renderSyncReview(issues){c.pendingSyncReview={issues}},
  modules:{doc:(_,a,uid,b,id)=>id,collection:()=>'',getDocs:async()=>({forEach:f=>remote.forEach((g,id)=>f({id:String(id),data:()=>g}))}),runTransaction:async(_,callback)=>{
  if(fail)throw new Error('Simulated connection loss');const writes=[];const result=await callback({get:async ref=>({exists:()=>remote.has(Number(ref)),data:()=>remote.get(Number(ref))}),set:(ref,data)=>writes.push([Number(ref),data])});writes.forEach(([ref,data])=>remote.set(ref,data));return result;
  }}};
  c.window={BowlingBalls:require('../balls.js')};
- vm.createContext(c);
+ vm.createContext(require('./helpers/legacy.cjs').prepare(c));
  vm.runInContext(section('function cloudGameRef','function renderSyncReview')+section('function outboxKey','function randomGroupCode'),c);
  const base=game(1,150);local.set(1,base);c.queueLocalChange({type:'upsert',game:base,bases:[null]},'a');await c.performSyncAll();assert.equal(remote.get(1).score,150);assert.equal(Object.keys(c.readOutbox('a')).length,0);
  const edit={...base,score:180,updatedAt:2};local.set(1,edit);c.queueLocalChange({type:'upsert',game:edit,bases:[base]},'a');c.navigator.onLine=false;await c.performSyncAll();assert.equal(remote.get(1).score,150);assert(c.readOutbox('a')[1]);
@@ -39,8 +39,8 @@ const section=(start,end)=>source.slice(source.indexOf('  '+start),source.indexO
  remote.set(7,{...game(7,190),noTap:true});await c.performSyncAll();assert.equal(local.get(7).noTap,true);
  assert.equal(Object.keys(c.readOutbox('other')).length,0);await assert.rejects(()=>c.guardedWrites([{ref:'1',data:base}],new Map([[1,base]]),()=>false));
  const requests={},rendered=[];
- const d={currentUser:{uid:'a'},authRevision:1,selectedGroupId:'A',navigator:{onLine:true},firestore:{},console,Date,modules:{collection:(_,type,id)=>id,getDocs:ref=>new Promise(resolve=>requests[ref]=resolve)},setLeaderboardStatus(){},renderLeaderboardRows:rows=>rendered.push(rows),friendlyError:String};
- vm.createContext(d);vm.runInContext(section('let leaderboardRequest','function renderLeaderboardRows'),d);
+ const d={profile:null,currentUser:{uid:'a'},authRevision:1,selectedGroupId:'A',navigator:{onLine:true},firestore:{},console,Date,modules:{collection:(_,type,id)=>id,getDocs:ref=>new Promise(resolve=>requests[ref]=resolve)},setLeaderboardStatus(){},renderLeaderboardRows:rows=>rendered.push(rows),friendlyError:String};
+ vm.createContext(require('./helpers/legacy.cjs').prepare(d));vm.runInContext(section('let leaderboardRequest','function renderLeaderboardRows'),d);
  const first=d.loadLeaderboard();d.selectedGroupId='B';const second=d.loadLeaderboard();requests.B({forEach:f=>f({data:()=>({name:'B'})})});await second;requests.A({forEach:f=>f({data:()=>({name:'A'})})});await first;assert.equal(rendered.length,1);assert.equal(rendered[0][0].name,'B');
  const split={...game(8,180),ball:'Venom',balls:[{name:'Venom',frames:4},{name:'Mercy',frames:6}]};
  local.set(8,split);c.queueLocalChange({type:'upsert',game:split,bases:[null]},'a');await c.performSyncAll();

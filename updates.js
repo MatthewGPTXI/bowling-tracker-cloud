@@ -1,4 +1,6 @@
-(() => {
+import {app as App} from './app.js';
+import * as UI from './ui.js';
+export const updates = (() => {
   'use strict';
   const currentVersion = String(window.BOWLING_VERSION);
   let registration, checking = false, pendingVersion = '', reloading = false, lastCheck = 0, retryTimer;
@@ -20,11 +22,11 @@
     if (!pendingVersion || reloading || document.visibilityState !== 'visible') return;
     // Only poll for an idle moment while an installed update is waiting.
     retryTimer = setTimeout(applyWhenSafe, 2000);
-    if (!window.BowlingApp?.canApplyUpdate?.()) return;
+    if (!App?.canApplyUpdate?.()) return;
     if (document.activeElement?.matches('input, select, textarea, [contenteditable="true"]')) return;
     // Only reload once the complete new offline release controls this page.
     const version = await workerVersion(navigator.serviceWorker.controller);
-    if (version !== pendingVersion || !window.BowlingApp?.canApplyUpdate?.() || reloading) return;
+    if (version !== pendingVersion || !App?.canApplyUpdate?.() || reloading) return;
     if (document.visibilityState !== 'visible' || document.activeElement?.matches('input, select, textarea, [contenteditable="true"]')) return;
     try {
       const last = JSON.parse(sessionStorage.getItem(guardKey) || 'null');
@@ -33,7 +35,7 @@
     } catch (_) { /* Storage restrictions must not prevent an update. */ }
     reloading = true;
     clearTimeout(retryTimer);
-    window.BowlingUI?.rememberPage();
+    UI?.rememberPage();
     location.reload();
   }
 
@@ -67,5 +69,5 @@
     setInterval(check, 5 * 60 * 1000);
     check();
   }
-  window.BowlingUpdates = {start};
+  return {start};
 })();

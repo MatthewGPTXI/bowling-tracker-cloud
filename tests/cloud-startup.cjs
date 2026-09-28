@@ -1,5 +1,5 @@
 const fs = require('fs'), path = require('path'), vm = require('vm'), assert = require('assert');
-const source = fs.readFileSync(path.join(__dirname, '../cloud.js'), 'utf8');
+const source = require('./helpers/legacy.cjs').source(path.join(__dirname, '../cloud.js'));
 const section = (start, end) => source.slice(source.indexOf('  ' + start), source.indexOf('  ' + end, source.indexOf('  ' + start)));
 
 (async () => {
@@ -20,7 +20,7 @@ const section = (start, end) => source.slice(source.indexOf('  ' + start), sourc
     handleAuthStateChanged() {}, setCloudButton: (...args) => buttons.push(args),
     setStatus() {}, friendlyError: e => e.message
   };
-  vm.createContext(c);
+  vm.createContext(require('./helpers/legacy.cjs').prepare(c));
   vm.runInContext(section('async function initFirebase()', 'async function userProfileRef()'), c);
   assert.equal(await c.initFirebase(), false);
   assert.equal(c.firebaseReady, false);
@@ -42,12 +42,12 @@ const section = (start, end) => source.slice(source.indexOf('  ' + start), sourc
   c.setSyncBadge('Needs sync', 'error'); assert.equal(buttons.at(-1)[1], 'Cloud error');
   c.setSyncBadge('Synced just now', 'success'); assert.equal(buttons.at(-1)[1], 'Cloud ✓');
 
-  const appSource = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
+  const appSource = require('./helpers/legacy.cjs').source(path.join(__dirname, '../app.js'));
   let activate;
   const ready = new Promise(resolve => { activate = resolve; });
   const local = { window: {}, navigator: { onLine: true, serviceWorker: { register: async () => ({}), ready } },
     dom: { offlineStatus: { textContent: 'Checking offline support…' } }, offlineCacheReady: false, console };
-  vm.createContext(local);
+  vm.createContext(require('./helpers/legacy.cjs').prepare(local));
   vm.runInContext(appSource.slice(appSource.indexOf('  async function registerServiceWorker()'), appSource.indexOf('  async function applyRemoteChanges(')), local);
   const installing = local.registerServiceWorker(); await Promise.resolve();
   assert.equal(local.offlineCacheReady, false, 'Registration alone does not mean assets are cached');
