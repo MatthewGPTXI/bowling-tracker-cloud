@@ -1,4 +1,4 @@
-# Reliability refactor (v39 candidate)
+# Reliability refactor (v39)
 
 This is an incremental extraction of v38. The app remains vanilla JavaScript with no bundler or runtime dependency added. Firebase continues to load from the existing official SDK URL. Development dependencies run tests only and are excluded from the deployment artifact.
 
@@ -51,6 +51,10 @@ To activate incremental mode safely:
 4. The first successful sync records a full baseline and server cutoff in that account's IndexedDB. Later syncs fetch timestamp changes, including the cutoff boundary, with document-ID tie breaking and pagination. The cursor advances only after reconciliation succeeds. A missing baseline starts with a full read. Failed reads/account changes never advance it. Invalid or unsupported remote records pause sync visibly instead of being silently skipped.
 
 Do not enable the marker against the old ownership-only rules: older clients could write without a timestamp and make cursor reads miss changes. Full fallback remains deliberately available during rollout. Remote physical document deletion is not the application deletion protocol; game deletion uses tombstones. Account deletion retains its existing cleanup path.
+
+The rule rollout suite also exercises schema-5 numeric records from v38, timestamp-free replacements of previously timestamped records, score-only/no-tap games, multiple balls and zero timestamps. Independent same-account Firebase emulator connections observe UUID edits and tombstones through the full reader. After admin enrollment, timestamp-free writes and client changes to the protocol marker are rejected. These tests use synthetic emulator data; they do not establish that every production device has updated.
+
+Before publishing rules, export the currently deployed rules from Firebase administration for rollback. Publish only `firestore:rules` to `bowling-tracker-aad74`, leaving protocol markers off, then verify sign-in, an existing account's sync, inventories and group operations. If these checks fail, restore that saved ruleset. Before enrolling selected accounts, verify updated devices and same-account sync across two devices. To pause incremental mode, a trusted admin can remove the account's protocol marker; the next sign-in/profile load returns the app to full reads.
 
 Group owners transfer ownership atomically to another current member when leaving or deleting their account. A sole-owner group is dissolved. No empty owner UID is written. A disappearing successor or changed account aborts the operation. The new rules validate the successor's membership. An owner can inspect membership even if interrupted group creation omitted their member row. Ownership changing during a leave operation requires a fresh attempt. Legacy ownerless groups are not silently claimed.
 
