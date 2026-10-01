@@ -56,6 +56,8 @@ The rule rollout suite also exercises schema-5 numeric records from v38, timesta
 
 Before publishing rules, export the currently deployed rules from Firebase administration for rollback. Publish only `firestore:rules` to `bowling-tracker-aad74`, leaving protocol markers off, then verify sign-in, an existing account's sync, inventories and group operations. If these checks fail, restore that saved ruleset. Before enrolling selected accounts, verify updated devices and same-account sync across two devices. To pause incremental mode, a trusted admin can remove the account's protocol marker; the next sign-in/profile load returns the app to full reads.
 
+Rollout status, October 1, 2026: the previously deployed rules were saved for rollback and the checked-in emulator-tested rules were published. Production read simulations allowed a private profile's owner, denied a different account, and allowed an existing group owner's membership read. These were rules simulations, not signed-in app/two-device sync tests. No accounts were enrolled into incremental mode.
+
 Group owners transfer ownership atomically to another current member when leaving or deleting their account. A sole-owner group is dissolved. No empty owner UID is written. A disappearing successor or changed account aborts the operation. The new rules validate the successor's membership. An owner can inspect membership even if interrupted group creation omitted their member row. Ownership changing during a leave operation requires a fresh attempt. Legacy ownerless groups are not silently claimed.
 
 Leaderboards remain casual, self-reported social summaries. Field validation limits malformed values but does not make scores authoritative. Competitive rankings would require trusted server aggregation.
@@ -68,6 +70,8 @@ Leaderboards remain casual, self-reported social summaries. Field validation lim
 - CI runs the same tests on PRs and main. The Pages job depends on the required `Tests` job and publishes only application assets.
 - Apply `node scripts/configure-repository.mjs` using an authenticated GitHub CLI with administration rights to require PRs/passing `Tests` (including administrators), prohibit force pushes/deletion, and switch Pages from branch publishing to GitHub Actions. These settings are external to Git and are not enabled merely by committing the workflow.
 
+Repository administration was completed October 1, 2026: main requires a PR, an up-to-date successful GitHub Actions `Tests` check and resolved conversations, including for administrators. Force pushes and branch deletion are blocked. Pages uses GitHub Actions; the former branch publishing path is disabled.
+
 All module dependencies are pre-cached atomically by the service worker; an offline test reloads the ES module app and generates a score card. Native iOS/PWA lifecycle and authenticated production two-device sync still require device verification; the automated browser tests emulate mobile geometry and touch input, and Firebase tests use synthetic/emulated data.
 
 ## Measured performance and CSS scope
@@ -77,3 +81,5 @@ On the development container (Node 24, Chromium mobile viewport), the 5,000-game
 CSS cleanup removes 22 superseded rules, introduces reusable spacing/tap-target tokens, and preserves the existing responsive cascade. A computed-style comparison of all five pages at ten widths from 320 to 1280px found no differences. A broader breakpoint reorder changed geometry, so it was not retained. Deeper consolidation is intentionally deferred until those responsive relationships can be changed and reviewed separately.
 
 The v39 pre-release findings and regression evidence are recorded in `BUG-TEST-REPORT.md`.
+
+The v40 series layout cleanup consolidates the component's superseded rules. Shared label/input rows align wrapped labels with CSS subgrid; the fallback aligns the controls with flex layout. Font-relative container queries reduce columns for smaller cards and enlarged text, with a viewport fallback for older browsers. Collapsed actions share one row and expanded equipment uses the full width. The Android browser regression checks layout/readable labels through 200% text, touch targets, short-height access, score-only mode, saving and recovery. Broader stylesheet consolidation and gradual replacement of legacy VM test adapters remain incremental work.
