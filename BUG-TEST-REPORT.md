@@ -1,8 +1,35 @@
 # Bowling Tracker validation
 
+## v40 Android series layout — October 1, 2026
+
+Reproduced the supplied Android screenshot in Chromium mobile emulation: the wrapped Open frames label placed its input 19px below the adjacent Strikes input. The new layout regression fails against v39 for that misalignment.
+
+Confirmed and fixed:
+
+- Series metrics share label/input rows so wrapped labels cannot displace their controls. A flex fallback retains aligned inputs when subgrid is unavailable.
+- Smaller cards and enlarged text reflow into two or one columns. Label words stay intact, controls do not overlap, and score-only entry uses the full row width.
+- Collapsed Advanced and Remove game share a compact row. Expanded notes/equipment use the available width and keep Remove game below the editor. Optional labels stay with their field title.
+- Tracking/opportunity selectors, the dialog heading and shared session details wrap when needed instead of causing horizontal overflow.
+- Superseded series rules were removed from the stylesheet rather than adding another competing override.
+
+Validation:
+
+- `npm test`: 22 Node/domain suites, 7 browser suites and the Firestore rules emulator tests passed.
+- The new Android suite exercises eight viewport sizes from 320 to 1280px at four text sizes from 100% to 200%, checks whole readable label words, aligned/stacked inputs, 44px touch targets, horizontal overflow and Close/Save access in short viewports. Normal and 200% text screenshots were inspected.
+- Real form controls save three local synthetic games, including score-only, notes, equipment and no-tap/session metadata. Reload/recovery preserves those values. Row removal retains the existing final-row protection.
+- Existing mobile/background-lock/scroll-restoration, safe-area/rotation, navigation/update, offline score-card, IndexedDB, inventory, conflict/outbox and 1,000/5,000-game tests remain green.
+
+Physical Android/iPhone and installed-PWA behavior and signed-in production two-device sync remain unverified. Tests use local synthetic data and the Firebase emulator. The UI update introduces no data migration or Firebase changes.
+
+## Administration status — October 1, 2026
+
+The v39 app was published through CI. Main now requires PRs, an up-to-date passing GitHub Actions Tests check and resolved conversations, with protection enforced for administrators and force pushes/deletion blocked. Pages uses GitHub Actions; the old branch publishing path is disabled.
+
+The previous Firebase rules were saved for rollback before deploying the checked-in, emulator-tested rules to bowling-tracker-aad74. Production read simulations allowed a profile's owner, denied a different account, and allowed an existing group owner's membership read. No accounts were enrolled into incremental sync. Broader CSS consolidation, gradual replacement of legacy VM test adapters and native/device compatibility checks remain incremental follow-up work.
+
 ## v39 candidate pre-release review — September 27, 2026
 
-Reviewed the new domain/storage/session modules, Firebase reconciliation and rules, form/draft state, navigation, history rendering, and offline update/deployment boundaries. The candidate remains unpublished.
+Reviewed the new domain/storage/session modules, Firebase reconciliation and rules, form/draft state, navigation, history rendering, and offline update/deployment boundaries. This section records the candidate before v39 publication; current administration status is above.
 
 Confirmed and fixed:
 

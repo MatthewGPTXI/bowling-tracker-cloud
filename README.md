@@ -1,15 +1,22 @@
 # Bowling Tracker
 
-## v39 candidate — reliability and architecture
+## v40 — Android series layout
+
+- Aligned Score, Open frames and Strikes inputs even when a label wraps. Narrow cards and enlarged text reflow into fewer columns without splitting label words.
+- Collapsed Advanced and Remove game share a compact action row. Expanded equipment fields use the full width; score-only entry also uses a full-width score field.
+- Preserved input validation, equipment, no-tap/session metadata, saving, row removal and draft recovery. New browser coverage checks 320–1280px layouts at 100–200% text size, 44px touch targets and access to Close/Save in short viewports.
+- Physical Android/iPhone and installed-PWA verification remain separate from Chromium emulation.
+
+## v39 — reliability and architecture
 
 - Added `npm test` and CI covering the preserved regression suite, direct module tests, mobile/offline browser tests, large histories, and Firestore rules. Pages deployment depends on passing tests.
 - Replaced runtime global dependencies with acyclic ES imports. Extracted domain, storage/migration, navigation, inventory, rendering, draft/backup and cloud reconciliation modules.
 - Restores the selected page directly at startup; all modal operations share one controller. History uses delegated actions and retains unchanged session elements.
 - New games use UUIDs, legacy numeric IDs remain supported, and session identity survives metadata changes. Formal data and backup schema versions are separate from the release version.
-- Added paginated cloud reads and a server-enforced incremental protocol, stronger rules, and owner transfer when leaving a group. Incremental mode and new rules require a separate Firebase rollout.
+- Added paginated cloud reads and a server-enforced incremental protocol, stronger rules, and owner transfer when leaving a group. The new rules were deployed October 1, 2026; incremental mode remains disabled pending device compatibility checks.
 - Preserved offline-first IndexedDB, drafts, account isolation, outbox/tombstones, explicit conflict review, escaping, accessibility and existing game formats.
 
-See [architecture and rollout notes](docs/architecture.md) for module ownership, verification, compatibility and external setup. This branch does not itself enable GitHub branch protection or change the Pages source; the authenticated setup script is included.
+See [architecture and rollout notes](docs/architecture.md) for module ownership, verification, compatibility and external setup. On October 1, 2026, main was protected with required PRs/passing Tests and Pages was switched to GitHub Actions. These are repository administration settings, not effects of committing the workflow.
 
 ## Previous release: v38 — September 26, 2026
 

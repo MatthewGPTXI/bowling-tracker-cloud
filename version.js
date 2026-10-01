@@ -1,5 +1,5 @@
 // Shared by the page and service worker so release labels cannot drift.
-self.BOWLING_VERSION = '39';
+self.BOWLING_VERSION = '40';
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
     const label = document.getElementById('appVersion');

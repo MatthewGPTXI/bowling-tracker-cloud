@@ -1356,11 +1356,11 @@ export const app = (() => {
     row.className = 'series-row';
     row.innerHTML = `<legend>Game</legend><div class="form-grid series-core">
       <label class="series-tracking">Tracking<select data-field="entryDetail"><option value="full">Full stats</option><option value="score-only">Score only</option></select></label>
-      <label>Score<input data-field="score" type="number" min="0" max="300" step="1" inputmode="numeric" required></label>
-      <label>Open frames<input data-field="openFrames" type="number" min="0" max="10" step="1" inputmode="numeric" required></label>
-      <label>Strikes<input data-field="strikes" type="number" min="0" max="12" step="1" inputmode="numeric" required></label>
+      <label class="series-metric series-score"><span>Score</span><input data-field="score" type="number" min="0" max="300" step="1" inputmode="numeric" required></label>
+      <label class="series-metric"><span>Open frames</span><input data-field="openFrames" type="number" min="0" max="10" step="1" inputmode="numeric" required></label>
+      <label class="series-metric"><span>Strikes</span><input data-field="strikes" type="number" min="0" max="12" step="1" inputmode="numeric" required></label>
       <label>Strike opportunities<select data-field="strikeOpp" required><option value="10">10</option><option value="11">11</option><option value="12">12</option></select></label>
-    </div><details class="advanced-options" data-ball-advanced><summary>Advanced</summary><label class="series-notes">Notes <small>optional</small><input data-field="notes" type="text"></label><div class="ball-editor" data-ball-editor><div class="ball-usage-row" data-ball-first><label class="ball-name-field">Ball <small>optional</small><select data-field="ball" data-ball-select><option value="">No ball selected</option></select></label></div></div></details><button class="text-btn danger-text remove-series-row" type="button">Remove game</button>`;
+    </div><div class="series-row-actions"><details class="advanced-options" data-ball-advanced><summary>Advanced</summary><label class="series-notes"><span>Notes <small>optional</small></span><input data-field="notes" type="text"></label><div class="ball-editor" data-ball-editor><div class="ball-usage-row" data-ball-first><label class="ball-name-field"><span>Ball <small>optional</small></span><select data-field="ball" data-ball-select><option value="">No ball selected</option></select></label></div></div></details><button class="text-btn danger-text remove-series-row" type="button">Remove game</button></div>`;
     const fields = seriesFields(row);
     fields.entryDetail.value = dom.entryDetail.value || 'full';
     setEntryDetail(fields);
