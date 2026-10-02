@@ -21,6 +21,17 @@ export function gameOrder(a, b) { return orderValue(a) - orderValue(b) || (typeo
 
 export function latestSessionOrder(a, b) { return b.date.localeCompare(a.date) || Math.max(...b.games.map(g => g.createdAt || (typeof g.id === 'number' ? g.id : 0))) - Math.max(...a.games.map(g => g.createdAt || (typeof g.id === 'number' ? g.id : 0))); }
 
+// gameOrder is local to a session. Use the same session order as history, then
+// preserve each session's explicit game order. Full history keeps filtered
+// statistics from changing a session's position when its newest game is hidden.
+export function chronologicalGames(source, allGames = source) {
+  const selected = new Map(source.map(game => [game.id,game]));
+  const full = new Map(allGames.map(game => [game.id,game]));
+  for (const game of source) if (!full.has(game.id)) full.set(game.id,game);
+  return buildSessions([...full.values()]).sort((a,b) => latestSessionOrder(b,a) || String(a.key).localeCompare(String(b.key)))
+    .flatMap(session => session.games.map(game => selected.get(game.id)).filter(Boolean));
+}
+
 export function buildSessions(sourceGames) {
   const map = new Map();
   for (const game of sourceGames) {

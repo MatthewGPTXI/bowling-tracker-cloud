@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {newGameId, recordId} from '../modules/ids.js';
 import {normalizeGame, isValidGame, DATA_SCHEMA_VERSION} from '../modules/games.js';
-import {sessionKey, buildSessions} from '../modules/sessions.js';
-import {calculateStats} from '../modules/statistics.js';
+import {sessionKey, buildSessions, chronologicalGames} from '../modules/sessions.js';
+import {calculateStats, progressStats} from '../modules/statistics.js';
 import {planSync, cloudGamePayload, cloudDeletePayload} from '../modules/reconciliation.js';
 import {mergeInventory} from '../modules/inventory.js';
 import {csvEscape} from '../modules/backup.js';
@@ -41,4 +41,18 @@ const removed = mergeInventory([{name:' Ball ',updatedAt:1}], [{name:'ball',upda
 assert.equal(removed.length,1); assert(removed[0].removed);
 assert.deepEqual(mergeInventory(removed,[{name:'Ball',updatedAt:1}]),removed,'Stale inventory cannot resurrect removals');
 assert.equal(csvEscape('=SUM(A1)'),"'=SUM(A1)");
+const chronology=[{...game(1,100),sessionId:'A',gameOrder:1,createdAt:10},
+  {...game(2,200),sessionId:'A',gameOrder:2,createdAt:11},
+  {...game(3,250),sessionId:'B',gameOrder:1,createdAt:20},
+  {...game(4,150),sessionId:'B',gameOrder:2,createdAt:21},
+  {...game(5,300),sessionId:'A',gameOrder:3,createdAt:30,noTap:true}];
+// Full history establishes the session order even when a later no-tap game is
+// omitted from standard statistics. Explicit order applies inside the session.
+const selected=chronology.filter(g=>!g.noTap);
+assert.deepEqual(chronologicalGames(selected,chronology).map(g=>g.id),[3,4,1,2]);
+assert.equal(calculateStats(selected,chronology).recent200.id,2);
+const reordered=chronology.map(g=>g.id===1?{...g,gameOrder:2}:g.id===2?{...g,gameOrder:1}:g);
+assert.deepEqual(chronologicalGames(reordered).map(g=>g.id),[3,4,2,1,5]);
+assert.equal(progressStats(selected,'recent',chronology).points.at(-1).average,175);
+assert.equal(progressStats([{...game(99),date:'2026-01-01'}],'running',chronology).last10.count,1,'Standalone inputs remain supported');
 console.log('PASS direct domain imports: UUID/legacy IDs, stable sessions, idempotent schema normalization, statistics, conflict plans, inventory tombstones and safe CSV.');

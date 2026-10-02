@@ -2,18 +2,30 @@ const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('ass
 const source=require('./helpers/legacy.cjs').source(path.join(__dirname,'../cloud.js'));
 const section=(start,end)=>source.slice(source.indexOf('  '+start),source.indexOf('  '+end,source.indexOf('  '+start)));
 (async()=>{
- const remote=new Map(),local=new Map(),removed=new Map(),storage=new Map(),badges=[];let fail=false;
+ const remote=new Map(),local=new Map(),removed=new Map(),storage=new Map(),badges=[],outboxes={};let fail=false;
  const game=(id,score)=>({id,date:'2026-09-06',bowler:'Matthew',sessionName:'League',score,openFrames:3,strikes:4,strikeOpportunities:10,createdAt:id,updatedAt:id});
  const app={getGames:()=>[...local.values()],getTombstones:async()=>[...removed.values()],applyRemoteChanges:async({upserts,deletes})=>{upserts.forEach(g=>{local.set(g.id,g);removed.delete(g.id)});deletes.forEach(g=>{removed.set(g.id,g);local.delete(g.id)})}};
+ app.getSyncOutbox=uid=>outboxes[uid] || {};
+ app.acknowledgeSyncOutbox=async(items,uid)=>{
+   const latest=outboxes[uid] || {};
+   for(const [id,item] of Object.entries(items))if(JSON.stringify(latest[id])===JSON.stringify(item))delete latest[id];
+ };
  const c={profile:null,currentUser:{uid:'a'},authRevision:1,localChangeRevision:0,navigator:{onLine:true},firestore:{},pendingLocalChanges:1,pendingSyncReview:null,syncing:false,lastSyncAt:0,localChangeQueue:Promise.resolve(),console:{error(){},warn(){}},Math,Number,Map,Set,JSON,Date,
  localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},waitForBowlingApp:async()=>app,publishAllSummaries:async()=>{},loadLeaderboard:async()=>{},setSyncBadge:s=>badges.push(s),setStatus(){},friendlyError:e=>e.message,
  hideSyncReview(){c.pendingSyncReview=null},renderSyncReview(issues){c.pendingSyncReview={issues}},
  modules:{doc:(_,a,uid,b,id)=>id,collection:()=>'',getDocs:async()=>({forEach:f=>remote.forEach((g,id)=>f({id:String(id),data:()=>g}))}),runTransaction:async(_,callback)=>{
  if(fail)throw new Error('Simulated connection loss');const writes=[];const result=await callback({get:async ref=>({exists:()=>remote.has(Number(ref)),data:()=>remote.get(Number(ref))}),set:(ref,data)=>writes.push([Number(ref),data])});writes.forEach(([ref,data])=>remote.set(ref,data));return result;
  }}};
- c.window={BowlingBalls:require('../balls.js')};
+ c.window={BowlingBalls:require('../balls.js'),BowlingApp:app};
  vm.createContext(require('./helpers/legacy.cjs').prepare(c));
- vm.runInContext(section('function cloudGameRef','function renderSyncReview')+section('function outboxKey','function randomGroupCode'),c);
+ vm.runInContext(section('function cloudGameRef','function renderSyncReview')+section('function withServerTimestamp','function randomGroupCode'),c);
+ // Simulate the atomic storage queue here; real IndexedDB behavior is covered
+ // by reliability-browser.mjs. Cloud tests exercise the SDK reconciliation.
+ c.queueLocalChange=(detail,uid)=>{
+   const items=outboxes[uid] ??= {};
+   const values=detail.games || [detail.game];
+   values.forEach((game,i)=>{const data=c.cloudGamePayload(game);items[data.id]={data,base:items[data.id]?.base ?? detail.bases[i] ?? null};});
+ };
  const base=game(1,150);local.set(1,base);c.queueLocalChange({type:'upsert',game:base,bases:[null]},'a');await c.performSyncAll();assert.equal(remote.get(1).score,150);assert.equal(Object.keys(c.readOutbox('a')).length,0);
  const edit={...base,score:180,updatedAt:2};local.set(1,edit);c.queueLocalChange({type:'upsert',game:edit,bases:[base]},'a');c.navigator.onLine=false;await c.performSyncAll();assert.equal(remote.get(1).score,150);assert(c.readOutbox('a')[1]);
  // Recover from durable storage (no in-memory pending request is needed).

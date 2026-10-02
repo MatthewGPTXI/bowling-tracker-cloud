@@ -1,4 +1,4 @@
-import {buildSessions, gameOrder, isNoTap, hasFrameStats} from './sessions.js';
+import {buildSessions, chronologicalGames, isNoTap, hasFrameStats} from './sessions.js';
 export const standardGames = source => source.filter(game => !isNoTap(game));
 
 export function avg(values) {
@@ -54,7 +54,7 @@ export function calculateStats(sourceGames, allGames = sourceGames) {
   const totalFrames = frameCount * 10;
   const totalClosed = totalFrames - totalOpen;
   const cleanGames = detailed.filter((g) => g.openFrames === 0).length;
-  const sortedRecent = [...sourceGames].sort((a, b) => b.date.localeCompare(a.date) || gameOrder(b, a));
+  const sortedRecent = chronologicalGames(sourceGames, allGames).reverse();
   const bestSession = sessions.length ? sessions.reduce((best, s) => s.average > best.average ? s : best) : null;
   const bestSeries = bestThreeGameSeries(sessions, allGames);
   const highGameObj = sourceGames.length ? sourceGames.reduce((best, g) => g.score > best.score ? g : best) : null;
@@ -71,10 +71,7 @@ export function calculateStats(sourceGames, allGames = sourceGames) {
     if (pct === bestPct && g.strikes === best.strikes && Number(g.createdAt || 0) > Number(best.createdAt || 0)) return g;
     return best;
   }) : null;
-  const recent200 = [...sourceGames].filter((g) => g.score >= 200).sort((a, b) => {
-    const dateCmp = String(b.date).localeCompare(String(a.date));
-    return dateCmp || Number(b.createdAt || 0) - Number(a.createdAt || 0);
-  })[0] || null;
+  const recent200 = sortedRecent.find(game => game.score >= 200) || null;
 
   return {
     count,
@@ -104,9 +101,9 @@ export function calculateStats(sourceGames, allGames = sourceGames) {
   };
 }
 
-export function progressStats(source, mode = 'running') {
+export function progressStats(source, mode = 'running', allGames = source) {
   source = standardGames(source);
-  const ordered = [...source].sort((a, b) => a.date.localeCompare(b.date) || gameOrder(a, b));
+  const ordered = chronologicalGames(source, allGames);
   const recent = (count) => {
     const slice = ordered.slice(-count);
     return { count: slice.length, average: slice.length ? slice.reduce((sum, g) => sum + g.score, 0) / slice.length : null };

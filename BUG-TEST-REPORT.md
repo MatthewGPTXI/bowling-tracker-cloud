@@ -1,5 +1,29 @@
 # Bowling Tracker validation
 
+## v41 offline/concurrency review — October 2, 2026
+
+Implemented the five confirmed issues from the code review and checked the surrounding save, sync, account and draft paths.
+
+| Confirmed issue | Fix and evidence |
+| --- | --- |
+| Offline restart edits in a cached account had no conflict base when Firebase had no current user. | Games, tombstones, retry data and the persistent history revision commit in one account-scoped IndexedDB transaction. A real service-worker offline reload, edit, second reload and competing remote version retain the local score and require conflict review. |
+| A stale second browser tab could overwrite a newer save. | The write transaction compares its saved baseline; active game/session editors also retain their original version. Real two-tab checks reject stale saves and metadata updates, retain the form, and recover a rejected game edit after reload. |
+| Delayed profile loads/saves could mix account state or write to the next account. | Firebase references capture the originating user, with UID/auth-revision/profile checks after awaits. Controlled delayed reads/writes cover different accounts, a repeated UID after a later auth cycle, profile creation defaults, saves and group membership operations. A delayed real IndexedDB save-read also cannot replace the next account's game snapshot. |
+| Same-date sessions interleaved game numbers in recent statistics. | Recent statistics use date/session order before the order within each session. A 13-game fixture now reports Last game 250, Last 5 average 210 and Last 10 average 175. Direct domain checks cover reordering and stable filtered/no-tap session positions. |
+| Returning an entry to its baseline left a stale recovery draft. | An owned draft clears when its form returns to the baseline. An unrecovered entry remains available during series work; recovered legacy drafts without a baseline remain dirty and survive further edits/reload. |
+
+The critical review additionally tightened deletion/Undo version checks, import transaction preconditions, account-switch save/read guards and loading-state protection. Late upload acknowledgements preserve a subsequent edit and advance its base to the confirmed upload, avoiding a conflict with that device's own previous save. A confirmed upload is acknowledged even when a competing local edit stops the remainder of sync. Optional cross-tab notification failures cannot turn a committed save into a failed save.
+
+Validation:
+
+- `npm test` passed: 23 unit/domain suites, 8 Chromium browser suites and the Firestore rules emulator suite. The new suites are `tests/account-races.cjs` and `tests/reliability-browser.mjs`; existing suites remain in place.
+- Real IndexedDB tests cover competing transactions from two database connections, atomic rollback after an injected quota failure during retry persistence, earliest pending base/latest edit, late acknowledgements, deletion/Undo races, legacy retry migration and account isolation. No uncaught browser errors were reported.
+- Existing browser coverage passed for full/score-only/no-tap entry, series, sessions, equipment, filters, import/export, edit/delete/Undo, profile/friends, share cards, offline startup, service-worker upgrades, navigation/focus/scroll, safe areas and Android layouts at 320–1280px and 100–200% text size.
+- The 5,000-game browser run measured approximately 175 ms to render and 421 ms to reload/start. Direct Node measurements at 5,000 games were approximately 4.5 ms for statistics and 1.9 ms for trends (median of nine warm runs in this environment).
+- Deployment artifact construction and `git diff --check` passed. The artifact contains 34 application assets and excludes tests/development files. Release/cache versions are consistently v41.
+
+Scope and remaining verification: all checks used synthetic local/emulator records and controlled SDK responses; production bowling records were not changed. Physical iOS/Android installed-PWA behavior and authenticated production two-device sync still require device verification. Every open tab should refresh to v41 before relying on concurrent-tab protection, because older releases cannot enforce the new transaction guards. Same-date chronology follows saved session creation timestamps; the app does not collect the actual bowling time. Incremental cloud sync remains disabled. Broader CSS consolidation and gradual replacement of legacy VM test adapters remain separate cleanup work.
+
 ## v40 Android series layout — October 1, 2026
 
 Reproduced the supplied Android screenshot in Chromium mobile emulation: the wrapped Open frames label placed its input 19px below the adjacent Strikes input. The new layout regression fails against v39 for that misalignment.
