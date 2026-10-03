@@ -1,5 +1,14 @@
 # Bowling Tracker
 
+## v41 — offline saves and concurrent edits
+
+- Games, deletions, pending cloud changes and the history revision save in one account-scoped IndexedDB transaction. Cached-account edits retain their conflict base when Firebase is unavailable after an offline restart.
+- A stale browser tab or delayed cloud download cannot overwrite a newer saved version. Other tabs refresh saved history while keeping active entry buffers; stale game/session edits remain open with a clear recovery message.
+- Delayed profile loads, profile saves and group operations are guarded by their captured account and authentication revision. Sync acknowledgements preserve edits made after an upload.
+- Last game, recent averages and trends use bowling date, session order and then the explicit game order inside each session. Same-date sessions no longer interleave their game numbers.
+- Returning an entry to its original values clears its recovery draft. An unrecovered entry draft remains available while working on a series.
+- Added real IndexedDB/offline/two-tab regressions and controlled Firebase race checks. See [validation](BUG-TEST-REPORT.md) for coverage and remaining device checks.
+
 ## v40 — Android series layout
 
 - Aligned Score, Open frames and Strikes inputs even when a label wraps. Narrow cards and enlarged text reflow into fewer columns without splitting label words.

@@ -45,11 +45,9 @@ const plain = value => JSON.parse(JSON.stringify(value));
   const deletion=events.filter(event=>event.type==='bowling:data-changed').at(-1).detail;
   assert.equal(deletion.type,'batch-delete');assert.equal(deletion.bases.length,6);
   assert(deletion.tombstones.every((item,i)=>item.updatedAt>data[i].updatedAt));
-  const storage=new Map();const outbox={window:c.window,Date,localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},setStatus(){}};
-  vm.createContext(require('./helpers/legacy.cjs').prepare(outbox));vm.runInContext(section('function cloudGamePayload','function normalizedSessionName')+section('function outboxKey','async function flushOutbox'),outbox);
-  outbox.queueLocalChange(deletion,'a');
-  assert.equal(Object.keys(outbox.readOutbox('a')).length,6);
-  assert(outbox.readOutbox('a')[1].data.deleted);assert.equal(outbox.readOutbox('a')[1].base.score,150);
+  const pending=await app.getSyncOutbox('a');
+  assert.equal(Object.keys(pending).length,6);
+  assert(pending[1].data.deleted);assert.equal(pending[1].base.score,150);
 
   // Actual profile event handler preserves goal labels after filtered history renders.
   const listeners={};const profileStorage=new Map([['bowling-goal-average:guest','175']]);

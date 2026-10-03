@@ -23,11 +23,15 @@ This is an incremental extraction of v38. The app remains vanilla JavaScript wit
 | Pure conflict/reconciliation plan | `modules/reconciliation.js` |
 | Bounded cloud reads and cursor protocol | `modules/cloud-reader.js` |
 | Ownership transfer/leave transaction | `modules/groups.js` |
-| Firebase execution, outbox, account revisions | `cloud.js` |
+| Firebase execution and account revisions | `cloud.js` |
 
 The import graph is acyclic and checked in CI. Browser diagnostics retain read-only `window.Bowling*` handles for the preserved browser suites; runtime modules never read them. App/cloud status and update coordination is injected once at bootstrap.
 
-IndexedDB is the durable source of truth for saved games and settings. `app.js` owns the current account's in-memory snapshot; successful transactions replace it. Forms remain transient edit buffers with an explicit baseline, stable session ID and recovered draft. Database scope transitions are serialized so an earlier slow account load cannot replace a later requested account. They do not overwrite saved records until validation and an atomic commit succeed. Session storage owns route/scroll only. Account-scoped localStorage owns recovery drafts and the existing durable sync outbox. Tombstones remain in IndexedDB. Switching accounts clears transient UI state; late operations are guarded by the captured database, UID and revision.
+IndexedDB is the durable source of truth for saved games and settings. `app.js` owns the current account's in-memory snapshot; successful transactions replace it. Forms remain transient edit buffers with an explicit baseline, stable session ID and recovered draft. Database scope transitions are serialized so an earlier slow account load cannot replace a later requested account. They do not overwrite saved records until validation and an atomic commit succeed. Session storage owns route/scroll only. Account-scoped localStorage owns recovery drafts. Games, tombstones, the sync outbox and history revision commit together in IndexedDB, including cached-account edits before Firebase restores its session. Valid pending retries from the previous localStorage outbox are migrated once without replacing a newer queued change. Switching accounts clears transient UI state; late operations are guarded by the captured database, UID and revision.
+
+Local mutations compare their saved baseline inside the write transaction. Remote reconciliation reads a single games/tombstones/outbox/revision snapshot and checks the persistent revision before applying downloads, so missed cross-tab notifications cannot permit stale writes. BroadcastChannel and focus refresh saved history without replacing an active form. Session dialogs retain their original game baseline too. An acknowledged upload clears only its observed queue item; a subsequent edit remains queued with that confirmed version as its new base.
+
+Recent statistics order sessions by bowling date and the same creation-time rule used by history (the newest game creation timestamp determines the order of sessions sharing a date). They then use each session's explicit game order. Full history supplies session positions for filtered statistics, including no-tap exclusions. Dates and creation timestamps estimate chronology; no separate bowling-time field is collected.
 
 ## Data compatibility
 
@@ -35,7 +39,7 @@ New games use `crypto.randomUUID()`. Existing numeric IDs are never regenerated.
 
 Stable session IDs preserve the old date/name grouping when first migrating. Subsequent session metadata edits retain that ID. Changing two sessions to the same date does not silently merge them. Schema-5 cloud `sessionId` values were aliases of the session name and are normalized through the legacy grouping rule.
 
-Devices running older releases do not understand UUID records. Update all devices to v39 before editing newly created games on another device. No forced destructive migration or database replacement is used.
+Devices running older releases do not understand UUID records. Update all devices to v39 before editing newly created games on another device. Refresh every open tab to v41 before relying on concurrent-tab protection: older code cannot enforce the new transaction guards. No forced destructive migration or database replacement is used.
 
 ## Sync safeguards and rollout
 

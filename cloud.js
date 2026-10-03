@@ -260,25 +260,33 @@ export const cloud = (() => {
   }
 
   async function loadOrCreateProfile() {
+    const user = currentUser, revision = authRevision;
+    const isCurrent = () => currentUser?.uid === user?.uid && revision === authRevision;
     const app = await waitForBowlingApp();
-    const ref = await userProfileRef();
+    if (!user || !isCurrent()) return null;
+    const ref = modules.doc(firestore,'users',user.uid);
     const snap = await modules.getDoc(ref);
+    if (!isCurrent()) return null;
+    let loaded;
     if (snap.exists()) {
-      profile = snap.data();
+      loaded = snap.data();
     } else {
-      const defaultBowler = (await app.getDefaultBowler()) || app.getBowlerNames()[0] || currentUser.displayName || '';
-      profile = {
-        email: currentUser.email || '',
-        displayName: currentUser.displayName || defaultBowler || 'Bowler',
-        statsBowler: defaultBowler || currentUser.displayName || 'Bowler',
+      const defaultBowler = (await app.getDefaultBowler()) || app.getBowlerNames()[0] || user.displayName || '';
+      if (!isCurrent()) return null;
+      loaded = {
+        email: user.email || '',
+        displayName: user.displayName || defaultBowler || 'Bowler',
+        statsBowler: defaultBowler || user.displayName || 'Bowler',
         groupIds: [],
         activeGroupId: '',
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
-      await modules.setDoc(ref, profile, { merge: true });
+      await modules.setDoc(ref, loaded, { merge: true });
+      if (!isCurrent()) return null;
     }
-    profile.groupIds = Array.isArray(profile.groupIds) ? profile.groupIds : [];
+    loaded.groupIds = Array.isArray(loaded.groupIds) ? loaded.groupIds : [];
+    profile = loaded;
     return profile;
   }
 
@@ -290,9 +298,11 @@ export const cloud = (() => {
   async function renderAccount() {
     renderConnectionState();
     if (!currentUser || !profile) return;
-    dom.accountEmail.textContent = currentUser.email || 'Signed in';
-    dom.profileDisplayName.value = profile.displayName || currentUser.displayName || '';
-    await App?.setProfileName?.(profile.displayName || currentUser.displayName || 'Bowler');
+    const user = currentUser, revision = authRevision, loaded = profile;
+    dom.accountEmail.textContent = user.email || 'Signed in';
+    dom.profileDisplayName.value = loaded.displayName || user.displayName || '';
+    await App?.setProfileName?.(loaded.displayName || user.displayName || 'Bowler', {expectedUid:user.uid});
+    if (currentUser?.uid !== user.uid || authRevision !== revision || profile !== loaded) return;
     updateProfileBowlerOptions();
     await loadGroups();
   }
@@ -353,6 +363,7 @@ export const cloud = (() => {
       await syncAll('Signed in');
       if (!stillCurrent()) return;
     } catch (error) {
+      if (!stillCurrent()) return;
       console.error(error);
       setStatus(friendlyError(error), 'error');
       setCloudButton('error', 'Cloud error');
@@ -456,39 +467,17 @@ export const cloud = (() => {
     return choices;
   }
 
-  function outboxKey(uid) { return `bowling-sync-outbox:${uid}`; }
   function withServerTimestamp(data) { return modules.serverTimestamp ? {...data, serverUpdatedAt: modules.serverTimestamp()} : data; }
-  function readOutbox(uid) {
-    try { const value = JSON.parse(localStorage.getItem(outboxKey(uid)) || '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch (_) { return {}; }
-  }
-  function saveOutbox(uid, items) {
-    try { localStorage.setItem(outboxKey(uid), JSON.stringify(items)); }
-    catch (_) { setStatus('Could not save sync retry information. Games remain saved locally; use Sync Now when connected.', 'error'); }
-  }
-  function queueLocalChange(detail, uid) {
-    let values;
-    if (detail.type === 'batch-upsert') values = (detail.games || []).map(cloudGamePayload);
-    else if (detail.type === 'batch-delete') values = (detail.tombstones || []).map(cloudDeletePayload);
-    else if (detail.type === 'upsert' && detail.game) values = [cloudGamePayload(detail.game)];
-    else if (detail.type === 'delete' && detail.tombstone) values = [cloudDeletePayload(detail.tombstone)];
-    else return;
-    if (!Array.isArray(detail.bases)) return;
-    const items = readOutbox(uid);
-    values.forEach((data,i) => {
-      const previous = items[data.id];
-      items[data.id] = {data,base:previous ? previous.base : (detail.bases[i] || null)};
-    });
-    saveOutbox(uid,items);
-  }
+  function readOutbox(uid) { return App.getSyncOutbox(uid); }
   async function flushOutbox(uid, isCurrent, localGameMap, tombstoneMap) {
-    const items = readOutbox(uid), entries = Object.entries(items);
+    const items = await readOutbox(uid), entries = Object.entries(items);
     for (let i=0;i<entries.length;i+=100) {
       const chunk = entries.slice(i,i+100);
       const acknowledged = await modules.runTransaction(firestore, async tx => {
-        if (!isCurrent()) throw new Error('Account or local history changed. Sync again.');
+        if (!await isCurrent()) throw reconciliationChangedError();
         const refs = chunk.map(([id])=>modules.doc(firestore,'users',uid,'games',id));
         const snapshots = await Promise.all(refs.map(ref=>tx.get(ref)));
-        if (!isCurrent()) throw new Error('Account or local history changed. Sync again.');
+        if (!await isCurrent()) throw reconciliationChangedError();
         const done = [];
         chunk.forEach(([id,item],j) => {
           const local = localGameMap.get(IDs.recordId(id)) || (tombstoneMap.has(IDs.recordId(id)) ? {...tombstoneMap.get(IDs.recordId(id)),deleted:true} : null);
@@ -500,12 +489,12 @@ export const cloud = (() => {
         });
         return done;
       });
-      if (!isCurrent()) return;
-      const latest = readOutbox(uid);
-      acknowledged.forEach(id => {if (JSON.stringify(latest[id]) === JSON.stringify(items[id])) delete latest[id];});
-      saveOutbox(uid,latest);
+      await acknowledgeOutbox(uid,Object.fromEntries(acknowledged.map(id=>[id,items[id]])));
+      if (!await isCurrent()) return;
     }
   }
+
+  function acknowledgeOutbox(uid, items, acceptedVersions) { return App.acknowledgeSyncOutbox(items,uid,acceptedVersions); }
 
   function sameCloudVersion(...args) { return Reconciliation.sameCloudVersion(...args); }
   async function guardedWrites(operations, expected, isCurrent) {
@@ -514,9 +503,9 @@ export const cloud = (() => {
     for (let i=0; i<operations.length; i+=100) {
       const chunk = operations.slice(i,i+100);
       await modules.runTransaction(firestore, async transaction => {
-        if (!isCurrent()) throw new Error('Account or local history changed. Sync again.');
+        if (!await isCurrent()) throw reconciliationChangedError();
         const snapshots = await Promise.all(chunk.map(op => transaction.get(op.ref)));
-        if (!isCurrent()) throw new Error('Account or local history changed. Sync again.');
+        if (!await isCurrent()) throw reconciliationChangedError();
         snapshots.forEach((snap,j) => {
           const id = IDs.recordId(chunk[j].data.id), remote = snap.exists() ? snap.data() : null;
           if (!sameCloudVersion(remote,expected.get(id) || null)) {
@@ -555,6 +544,7 @@ export const cloud = (() => {
     try {
       const app = await waitForBowlingApp();
       if (!isCurrentAccount()) return;
+      if (app.isLocalScopeReady?.() === false) return;
       if (app.getLocalScopeInfo && app.getLocalScopeInfo().uid !== uid) return;
       const inventories = [
         ['ballInventory', app.getBallInventory, app.mergeBallInventory],
@@ -581,13 +571,18 @@ export const cloud = (() => {
           if (profile) profile[key] = merged[key];
         }
       }
-      const localGames = app.getGames();
-      const localTombstones = await app.getTombstones();
+      const snapshot = app.getSyncState ? await app.getSyncState(uid) : {games:app.getGames(),tombstones:await app.getTombstones(),outbox:await readOutbox(uid)};
+      const localGames = snapshot.games, localTombstones = snapshot.tombstones;
+      let savedRevision = snapshot.revision;
+      const historyIsCurrent = async () => {
+        const currentRevision = savedRevision === undefined ? undefined : await app.getHistoryRevision(uid);
+        return isCurrentAccount() && revision === localChangeRevision && currentRevision === savedRevision;
+      };
       if (!isCurrentAccount()) return;
       const localGameMap = new Map(localGames.map((game) => [IDs.recordId(game.id), game]));
       const tombstoneMap = new Map(localTombstones.map((t) => [IDs.recordId(t.id), t]));
-      await flushOutbox(uid, () => isCurrentAccount() && revision === localChangeRevision,localGameMap,tombstoneMap);
-      if (!isCurrentAccount() || revision !== localChangeRevision) return;
+      await flushOutbox(uid, historyIsCurrent,localGameMap,tombstoneMap);
+      if (!await historyIsCurrent()) throw reconciliationChangedError();
       const remoteHistory = await CloudReader.readRemoteHistory({sdk: modules, firestore, uid,
         isCurrent: () => isCurrentAccount() && revision === localChangeRevision,
         protocol: profile?.syncProtocolVersion,
@@ -595,19 +590,24 @@ export const cloud = (() => {
       const remoteMap = remoteHistory.records;
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
 
-      const plan = Reconciliation.planSync({localGameMap, tombstoneMap, remoteMap, syncOutbox: readOutbox(uid), reviewChoices, reviewedIssues: pendingSyncReview?.issues});
+      if (!await historyIsCurrent()) throw reconciliationChangedError();
+      const pending = await readOutbox(uid);
+      const plan = Reconciliation.planSync({localGameMap, tombstoneMap, remoteMap, syncOutbox: pending, reviewChoices, reviewedIssues: pendingSyncReview?.issues});
       const {issues, unresolved, localUpserts, localDeletes} = plan;
       const cloudWrites = plan.cloudWrites.map(({id, data}) => ({ref: cloudGameRef(id), data}));
 
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
-      if (cloudWrites.length) await guardedWrites(cloudWrites,remoteMap,() => isCurrentAccount() && revision === localChangeRevision);
-      if (!isCurrentAccount() || revision !== localChangeRevision) return;
+      if (cloudWrites.length) await guardedWrites(cloudWrites,remoteMap,historyIsCurrent);
+      if (!await historyIsCurrent()) throw reconciliationChangedError();
       if (localUpserts.length || localDeletes.length) {
-        await app.applyRemoteChanges({ upserts: localUpserts, deletes: localDeletes, expectedUid: uid });
+        const appliedRevision = await app.applyRemoteChanges({ upserts: localUpserts, deletes: localDeletes, expectedUid: uid, expectedRevision:savedRevision });
+        if (savedRevision !== undefined) savedRevision = appliedRevision;
       }
       if (!isCurrentAccount()) return;
+      await app.reloadSavedHistory?.();
+      if (!await historyIsCurrent()) throw reconciliationChangedError();
       await publishAllSummaries();
-      if (!isCurrentAccount() || revision !== localChangeRevision) return;
+      if (!await historyIsCurrent()) throw reconciliationChangedError();
       if (remoteHistory.snapshot && app.saveSyncBaseline) await app.saveSyncBaseline(remoteHistory.snapshot, uid);
       if (!isCurrentAccount() || revision !== localChangeRevision) return;
       if (unresolved.length) {
@@ -621,7 +621,10 @@ export const cloud = (() => {
       // either been written, downloaded, or explicitly resolved. Because the
       // sync is revision-guarded, clearing the outbox here cannot erase a newer
       // local edit that arrived during this pass.
-      saveOutbox(uid, {});
+      const accepted = Object.fromEntries([...localGames,...localTombstones.map(t => ({...t,deleted:true})),
+        ...localUpserts,...localDeletes.map(t => ({...t,deleted:true})),...cloudWrites.map(op => op.data)].map(version => [version.id,version]));
+      await acknowledgeOutbox(uid,pending,accepted);
+      if (!await historyIsCurrent()) throw reconciliationChangedError();
       pendingLocalChanges = 0;
       lastSyncAt = Date.now();
       setSyncBadge('Synced just now', 'success');
@@ -630,7 +633,7 @@ export const cloud = (() => {
     } catch (error) {
       console.error(error);
       if (!isCurrentAccount()) return;
-      if (error?.code === 'bowling/conflict') {
+      if (error?.code === 'bowling/conflict' || error?.code === 'bowling/local-conflict') {
         setSyncBadge('Refreshing cloud…', 'working');
         setStatus('Cloud history changed during sync. Refreshing automatically…');
         setTimeout(() => {
@@ -645,6 +648,12 @@ export const cloud = (() => {
     }
   }
 
+  function reconciliationChangedError() {
+    const error = new Error('Saved history changed during sync. Retrying with the current history.');
+    error.code = 'bowling/local-conflict';
+    return error;
+  }
+
   function randomGroupCode() {
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const bytes = new Uint32Array(8);
@@ -653,15 +662,18 @@ export const cloud = (() => {
   }
 
   async function setProfileGroupIds(groupIds, activeGroupId = selectedGroupId) {
+    const user = currentUser, revision = authRevision, target = profile;
+    if (!user || !target) return;
     const unique = [...new Set(groupIds)];
-    profile.groupIds = unique;
-    profile.activeGroupId = activeGroupId && unique.includes(activeGroupId) ? activeGroupId : (unique[0] || '');
-    profile.updatedAt = Date.now();
-    await modules.setDoc(await userProfileRef(), {
+    const active = activeGroupId && unique.includes(activeGroupId) ? activeGroupId : (unique[0] || '');
+    const updatedAt = Date.now();
+    await modules.setDoc(modules.doc(firestore,'users',user.uid), {
       groupIds: unique,
-      activeGroupId: profile.activeGroupId,
-      updatedAt: profile.updatedAt
+      activeGroupId: active,
+      updatedAt
     }, { merge: true });
+    if (currentUser?.uid !== user.uid || authRevision !== revision || profile !== target) return;
+    Object.assign(target,{groupIds:unique,activeGroupId:active,updatedAt});
   }
 
   async function memberPayload() {
@@ -705,6 +717,9 @@ export const cloud = (() => {
       return;
     }
     if (!await initFirebase() || !currentUser) return;
+    const user = currentUser, revision = authRevision, target = profile;
+    const isCurrent = () => currentUser?.uid === user.uid && authRevision === revision && profile === target;
+    if (!target) return;
 
     try {
       setStatus('Creating private group…');
@@ -716,25 +731,31 @@ export const cloud = (() => {
           await modules.setDoc(ref, {
             name,
             code,
-            ownerUid: currentUser.uid,
+            ownerUid: user.uid,
             createdAt: Date.now(),
             updatedAt: Date.now()
           });
+          if (!isCurrent()) return;
           createdCode = code;
         } catch (error) {
+          if (!isCurrent()) return;
           if (error.code !== 'permission-denied') throw error;
         }
       }
       if (!createdCode) throw new Error('Could not create a unique group code. Try again.');
 
       await setProfileGroupIds([...profile.groupIds, createdCode], createdCode);
+      if (!isCurrent()) return;
       resetLeaderboardView();
       selectedGroupId = createdCode;
       await publishSummaryToGroup(createdCode);
+      if (!isCurrent()) return;
       dom.newGroupName.value = '';
       await loadGroups();
+      if (!isCurrent()) return;
       setStatus(`Group created. Share invite code ${createdCode}.`, 'success');
     } catch (error) {
+      if (!isCurrent()) return;
       console.error(error);
       setStatus(friendlyError(error), 'error');
     }
@@ -747,20 +768,28 @@ export const cloud = (() => {
       return;
     }
     if (!await initFirebase() || !currentUser) return;
+    const user = currentUser, revision = authRevision, target = profile;
+    const isCurrent = () => currentUser?.uid === user.uid && authRevision === revision && profile === target;
+    if (!target) return;
 
     try {
       setStatus('Checking invite code…');
       const ref = modules.doc(firestore, 'groups', code);
       const snap = await modules.getDoc(ref);
+      if (!isCurrent()) return;
       if (!snap.exists()) throw new Error('No group was found with that invite code.');
       await publishSummaryToGroup(code);
+      if (!isCurrent()) return;
       await setProfileGroupIds([...profile.groupIds, code], code);
+      if (!isCurrent()) return;
       resetLeaderboardView();
       selectedGroupId = code;
       dom.joinGroupCode.value = '';
       await loadGroups();
+      if (!isCurrent()) return;
       setStatus(`Joined ${snap.data().name || code}.`, 'success');
     } catch (error) {
+      if (!isCurrent()) return;
       console.error(error);
       setStatus(friendlyError(error), 'error');
     }
@@ -780,6 +809,7 @@ export const cloud = (() => {
       if (currentUser?.uid !== uid || authRevision !== revision) return;
       const remaining = (profile.groupIds || []).filter((id) => id !== groupId);
       await setProfileGroupIds(remaining, remaining.includes(selectedGroupId) ? selectedGroupId : (remaining[0] || ''));
+      if (currentUser?.uid !== uid || authRevision !== revision) return;
       if (selectedGroupId !== (profile.activeGroupId || '')) resetLeaderboardView();
       selectedGroupId = profile.activeGroupId || '';
       await loadGroups();
@@ -854,11 +884,13 @@ export const cloud = (() => {
   }
 
   async function selectGroup(groupId) {
-    if (!groupId || !groups.some((g) => g.id === groupId)) return;
+    if (!currentUser || !profile || !groupId || !groups.some((g) => g.id === groupId)) return;
     if (groupId !== selectedGroupId) resetLeaderboardView();
     selectedGroupId = groupId;
-    profile.activeGroupId = groupId;
-    await modules.setDoc(await userProfileRef(), { activeGroupId: groupId, updatedAt: Date.now() }, { merge: true });
+    const user = currentUser, revision = authRevision, target = profile;
+    await modules.setDoc(modules.doc(firestore,'users',user.uid), { activeGroupId: groupId, updatedAt: Date.now() }, { merge: true });
+    if (currentUser?.uid !== user.uid || authRevision !== revision || profile !== target) return;
+    target.activeGroupId = groupId;
     renderGroups();
     renderLeaderboardShell();
     await loadLeaderboard();
@@ -958,23 +990,31 @@ export const cloud = (() => {
       setStatus('Enter a display name.', 'error');
       return;
     }
+    const user = currentUser, revision = authRevision, target = profile;
+    const isCurrent = () => currentUser?.uid === user.uid && revision === authRevision && profile === target;
+    const updatedAt = Date.now();
     try {
-      profile.displayName = displayName;
-      profile.statsBowler = displayName;
-      profile.updatedAt = Date.now();
-      await modules.updateProfile(currentUser, { displayName });
-      await modules.setDoc(await userProfileRef(), {
+      await modules.updateProfile(user, { displayName });
+      if (!isCurrent()) return;
+      await modules.setDoc(modules.doc(firestore,'users',user.uid), {
         displayName,
         statsBowler: displayName,
-        email: currentUser.email || '',
-        updatedAt: profile.updatedAt
+        email: user.email || '',
+        updatedAt
       }, { merge: true });
+      if (!isCurrent()) return;
+      Object.assign(target,{displayName,statsBowler:displayName,updatedAt});
       const app = await waitForBowlingApp();
-      await app.setProfileName?.(displayName);
+      if (!isCurrent()) return;
+      await app.setProfileName?.(displayName,{expectedUid:user.uid});
+      if (!isCurrent()) return;
       await publishAllSummaries();
+      if (!isCurrent()) return;
       await loadLeaderboard();
+      if (!isCurrent()) return;
       setStatus('Cloud profile saved.', 'success');
     } catch (error) {
+      if (!isCurrent()) return;
       console.error(error);
       setStatus(friendlyError(error), 'error');
     }
@@ -1249,14 +1289,13 @@ export const cloud = (() => {
     }
   }
 
-  // Preserve local edit order, particularly a deletion immediately followed by Undo.
+  // Serialize sync requests; game edits and their retry bases commit in storage.
   let localChangeQueue = Promise.resolve();
   let localChangeRevision = 0;
   function handleLocalDataChanged(event) {
     const detail = event.detail || {};
     const uid = currentUser?.uid;
     if (!uid || (detail.scope !== undefined && detail.scope !== uid)) return;
-    queueLocalChange(detail,uid);
     pendingLocalChanges += 1;
     localChangeRevision += 1;
     setSyncBadge(navigator.onLine ? 'Syncing…' : 'Saved on this device · waiting for connection', navigator.onLine ? 'working' : 'pending');
@@ -1323,6 +1362,10 @@ export const cloud = (() => {
     });
 
     window.addEventListener('bowling:data-changed', handleLocalDataChanged);
+    window.addEventListener('bowling:external-history-changed', () => {
+      localChangeRevision++;
+      if (currentUser && navigator.onLine) syncAll('Updated in another window');
+    });
     window.addEventListener('bowling:profile-options-changed', updateProfileBowlerOptions);
     window.addEventListener('bowling:rendered', updateProfileBowlerOptions);
     window.addEventListener('online', async () => {

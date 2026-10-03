@@ -38,15 +38,18 @@ export const app = (() => {
   let historyLimit = 10;
   const expandedSessions = new Map();
   let entryBaseline = null;
+  let entryDraftOwned = false;
   const dialogBaselines = new Map();
   let undoDeletion = null;
   let undoTimer;
   let editSessionKey = null;
+  let editSessionBaseGames = null;
   let mutationBusy = false;
   let dialogScope = null;
 
   let db;
   let scopeQueue = Promise.resolve();
+  let scopeChanges = 0;
   let activeLocalScope = { kind: 'guest', uid: '', dbName: GUEST_DB_NAME };
   let games = [];
   let editingGameId = null;
@@ -55,6 +58,8 @@ export const app = (() => {
   let offlineCacheReady = false;
   let selectedPhotoUrl = null;
   let activeProfileName = 'Bowler';
+  let historyChannel = null;
+  let historyRefreshRequest = 0;
 
   const elements = new Map();
   const $ = id => {
@@ -268,7 +273,7 @@ export const app = (() => {
 
   function emitDataChanged(detail = { type: 'bulk' }) {
     setSyncStatus('Saved on this device' + (runtime.cloud?.isSignedIn?.() ? ' · awaiting sync' : ' · local only'), 'working');
-    window.dispatchEvent(new CustomEvent('bowling:data-changed', { detail: { ...detail, scope: activeLocalScope.uid } }));
+    window.dispatchEvent(new CustomEvent('bowling:data-changed', { detail: { ...detail, durable: true, scope: activeLocalScope.uid } }));
   }
 
   function userDbName(uid) {
@@ -371,6 +376,7 @@ export const app = (() => {
 
   async function refreshFromActiveDatabase() {
     clearUndo();
+    editSessionBaseGames = null;
     expandedSessions.clear();
     historyLimit = 10;
     for (const id of ['sessionSearch', 'sessionFrom', 'sessionTo']) $(id).value = '';
@@ -378,6 +384,7 @@ export const app = (() => {
     closeDialog($('seriesDialog'));
     closeDialog($('editSessionDialog'));
     games = await getAllGames();
+    await Storage.migrateLegacyOutbox(db, activeLocalScope.uid, localStorage);
     editingGameId = null;
     await loadBallInventory();
     await loadAlleyInventory();
@@ -411,9 +418,11 @@ export const app = (() => {
   // Database opening and migration can finish out of order. Finish each scope
   // transition before starting the next, so the latest requested account wins.
   function changeLocalScope(action) {
+    scopeChanges++;
+    dom.saveGameBtn.disabled = true;
     const task = scopeQueue.then(action);
     scopeQueue = task.catch(() => {});
-    return task;
+    return task.finally(() => { scopeChanges--; dom.saveGameBtn.disabled = mutationBusy || scopeChanges > 0; });
   }
 
   async function getAccountLocalGameCount(uid) {
@@ -809,7 +818,7 @@ export const app = (() => {
   }
 
   async function moveGame(id, direction) {
-    if (mutationBusy) return;
+    if (mutationBusy || scopeChanges) return;
     const session = buildSessions(games).find(s => s.games.some(g => g.id === id));
     if (!session) return;
     const index = session.games.findIndex(g => g.id === id), next = index + direction;
@@ -821,12 +830,14 @@ export const app = (() => {
     try {
       await commitGames(updated, [], targetDb);
       if (db !== targetDb) return;
-      games = await getAllGames(); renderAll();
+      const refreshed = await getAllGames();
+      if (db !== targetDb) return;
+      games = refreshed; renderAll();
       setGameActions(id, true);
       $('gameActionsToggle-' + id)?.focus();
       setStatus($('historyActionStatus'), `Moved game to position ${next + 1}.`, 'success');
       emitDataChanged({type:'batch-upsert',games:clone(updated),bases:updated.map(g => clone(session.games.find(old => old.id === g.id)))});
-    } catch (_) { setStatus($('historyActionStatus'), 'Could not change game order. Please try again.', 'error'); }
+    } catch (error) { if (db === targetDb) setStatus($('historyActionStatus'), error.code === 'bowling/local-conflict' ? error.message : 'Could not change game order. Please try again.', 'error'); }
     finally { mutationBusy = false; }
   }
 
@@ -904,7 +915,7 @@ export const app = (() => {
   function normalizeGame(...args) { return Game.normalizeGame(...args); }
 
   async function saveGameFromForm() {
-    if (mutationBusy) return;
+    if (mutationBusy || scopeChanges) return;
     const validated = validateGameForm();
     if (validated.error) {
       setStatus(dom.entryStatus, validated.error, 'error');
@@ -919,6 +930,7 @@ export const app = (() => {
     const now = Date.now();
     const existing = editingGameId ? games.find((g) => g.id === editingGameId) : null;
     if (editingGameId && (!existing || (!entryBaseGame || JSON.stringify(normalizeGame(existing)) !== JSON.stringify(normalizeGame(entryBaseGame))))) {
+      persistDrafts();
       setStatus(dom.entryStatus, 'This game changed since you opened it. Your draft is kept; cancel and reopen the current game before saving.', 'error'); return;
     }
     const sessionId = entrySessionId || sessionKey(validated.value);
@@ -940,7 +952,9 @@ export const app = (() => {
     try {
       await commitGames(updates, [], targetDb);
       if (db !== targetDb) return;
-      games = await getAllGames();
+      const refreshed = await getAllGames();
+      if (db !== targetDb) return;
+      games = refreshed;
       const returnTo = editingGameId ? editReturn : null;
       if (editingGameId) {
         setStatus(dom.entryStatus, '✓ Game updated', 'success');
@@ -956,10 +970,12 @@ export const app = (() => {
       emitDataChanged({ type: 'batch-upsert', games: clone(updates), bases: clone(bases) });
     } catch (error) {
       console.error(error);
-      setStatus(dom.entryStatus, 'Could not save the game on this device.', 'error');
+      if (db !== targetDb) return;
+      persistDrafts();
+      setStatus(dom.entryStatus, error.code === 'bowling/local-conflict' ? error.message : 'Could not save the game on this device.', 'error');
     } finally {
       mutationBusy = false;
-      dom.saveGameBtn.disabled = false;
+      dom.saveGameBtn.disabled = scopeChanges > 0;
     }
   }
 
@@ -983,6 +999,7 @@ export const app = (() => {
     editingGameId = null;
     editReturn = null;
     entryBaseGame = null;
+    entryDraftOwned = false;
     clearDraft('entry');
     dom.saveGameBtn.textContent = 'Save game';
     dom.cancelEditBtn.classList.add('hidden');
@@ -1037,7 +1054,7 @@ export const app = (() => {
   }
 
   async function confirmDelete(id) {
-    if (mutationBusy) return;
+    if (mutationBusy || scopeChanges) return;
     const game = games.find((g) => g.id === id);
     if (!game) return;
     const targetDb = db;
@@ -1046,7 +1063,9 @@ export const app = (() => {
     try {
       await commitGames([], [tombstone], targetDb);
       if (db !== targetDb) return;
-      games = await getAllGames();
+      const refreshed = await getAllGames();
+      if (db !== targetDb) return;
+      games = refreshed;
       if (editingGameId === id) resetEntryForm({ preserveDate: true, preserveSession: true });
       clearUndo();
       undoDeletion = { game: clone(game), database: targetDb, deletedAt: tombstone.updatedAt };
@@ -1056,12 +1075,12 @@ export const app = (() => {
       renderAll();
       emitDataChanged({ type: 'delete', id, tombstone: clone(tombstone), bases: [clone(game)] });
     } catch (error) {
-      setStatus(dom.entryStatus, 'Could not delete the game. Please try again.', 'error');
+      if (db === targetDb) setStatus(dom.entryStatus, error.code === 'bowling/local-conflict' ? error.message : 'Could not delete the game. Please try again.', 'error');
     } finally { mutationBusy = false; }
   }
 
   async function clearAllHistory() {
-    if (mutationBusy) return;
+    if (mutationBusy || scopeChanges) return;
     if (!games.length) { setStatus(dom.settingsStatus, 'There is no bowling history to delete.'); return; }
     const cloudNote = runtime.cloud?.isSignedIn?.() ? ' The deletions will also sync to your cloud account.' : '';
     if (!window.confirm(`Delete every saved bowling game?${cloudNote} This cannot be undone unless you have an exported backup.`)) return;
@@ -1081,7 +1100,7 @@ export const app = (() => {
       emitDataChanged({type: 'batch-delete', tombstones, bases});
       setStatus(dom.settingsStatus, 'All bowling history deleted.', 'success');
     } catch (error) {
-      if (db === targetDb) setStatus(dom.settingsStatus, 'Could not delete history. Please try again.', 'error');
+      if (db === targetDb) setStatus(dom.settingsStatus, error.code === 'bowling/local-conflict' ? error.message : 'Could not delete history. Please try again.', 'error');
     } finally { mutationBusy = false; dom.clearAllBtn.disabled = false; }
   }
 
@@ -1136,10 +1155,13 @@ export const app = (() => {
     return activeProfileName;
   }
 
-  async function setProfileName(name, { persist = true } = {}) {
+  async function setProfileName(name, { persist = true, expectedUid } = {}) {
+    if (expectedUid !== undefined && expectedUid !== activeLocalScope.uid) return false;
+    const target = db;
     const next = String(name || '').trim() || 'Bowler';
+    if (persist) await setSettingOnDb(target, 'profileName', next);
+    if (target !== db || (expectedUid !== undefined && expectedUid !== activeLocalScope.uid)) return false;
     activeProfileName = next;
-    if (persist) await setSetting('profileName', next);
     updateIdentityBar();
     window.dispatchEvent(new CustomEvent('bowling:profile-options-changed'));
     return next;
@@ -1233,7 +1255,7 @@ export const app = (() => {
   }
   async function confirmImport() {
     const plan = pendingImport;
-    if (!plan || plan.database !== db || mutationBusy) return;
+    if (!plan || plan.database !== db || mutationBusy || scopeChanges) return;
     mutationBusy = true; $('confirmImportBtn').disabled = true;
     try {
       const [current,tombstones] = await Promise.all([getAllFromDb(plan.database,GAME_STORE),getAllFromDb(plan.database,TOMBSTONE_STORE)]);
@@ -1244,15 +1266,18 @@ export const app = (() => {
       const now = Date.now();
       const upserts = selected.filter(r=>r.game).map(r=>({...r.game,updatedAt:Math.max(now,r.game.updatedAt+1,Number(r.local?.updatedAt||r.tombstone?.updatedAt||0)+1)}));
       const deletes = selected.filter(r=>r.deletion).map(r=>({...r.deletion,updatedAt:Math.max(now,r.deletion.updatedAt+1,Number(r.local?.updatedAt||0)+1)}));
-      await commitGames(upserts,deletes,plan.database);
+      await commitGames(upserts,deletes,plan.database,{expectedGames:current,expectedTombstones:tombstones});
       if (db !== plan.database) return;
       if (plan.inventory?.length) await mergeBallInventory(plan.inventory);
+      if (db !== plan.database) return;
       if (plan.alleys?.length) await mergeAlleyInventory(plan.alleys);
       if (db !== plan.database) return;
-      games = await getAllGames(); pendingImport = null; closeDialog($('importPreviewDialog')); renderAll();
+      const refreshed = await getAllGames();
+      if (db !== plan.database) return;
+      games = refreshed; pendingImport = null; closeDialog($('importPreviewDialog')); renderAll();
       if (selected.length || plan.inventory?.length || plan.alleys?.length) emitDataChanged({type:'bulk'});
       setStatus(dom.settingsStatus,`Imported ${upserts.length} games and applied ${deletes.length} reviewed deletions.`,'success');
-    } catch (error) { setStatus($('importPreviewStatus'),error.message,'error'); }
+    } catch (error) { if (db === plan.database) setStatus($('importPreviewStatus'),error.message,'error'); }
     finally { mutationBusy = false; $('confirmImportBtn').disabled = false; }
   }
 
@@ -1273,7 +1298,7 @@ export const app = (() => {
     }
   }
 
-  async function applyRemoteChanges({ upserts = [], deletes = [], expectedUid } = {}) {
+  async function applyRemoteChanges({ upserts = [], deletes = [], expectedUid, expectedRevision } = {}) {
     if (expectedUid !== undefined && activeLocalScope.uid !== expectedUid) return;
     const targetDb = db;
     if (upserts.some(game => !isValidGame(game)) || deletes.some(deletion => !Game.isValidTombstone(deletion))) {
@@ -1281,19 +1306,45 @@ export const app = (() => {
     }
     const validUpserts = upserts.map(normalizeGame);
     const validDeletes = deletes.map(Game.normalizeTombstone);
-    await commitGames(validUpserts, validDeletes, targetDb);
+    const revision = await commitGames(validUpserts, validDeletes, targetDb, {queue:false, expectedGames:undefined, expectedRevision});
     if (db !== targetDb) return;
     const refreshed = await getAllFromDb(targetDb, GAME_STORE);
     if (db !== targetDb) return;
     games = refreshed;
     await mergeBallInventory([], expectedUid);
+    if (db !== targetDb) return;
     await mergeAlleyInventory([], expectedUid);
     if (db !== targetDb) return;
     renderAll();
+    return revision;
   }
 
   // One transaction ensures a series or session edit is saved completely or not at all.
-  function commitGames(upserts = [], deletions = [], database = db) { return Storage.commitGames(database, upserts, deletions); }
+  async function commitGames(upserts = [], deletions = [], database = db, options = {}) {
+    const scope = {...activeLocalScope};
+    const revision = await Storage.commitGames(database, upserts, deletions, {
+      queue: !!scope.uid, expectedGames: database === db ? games : undefined, ...options
+    });
+    historyRefreshRequest++;
+    if (upserts.length || deletions.length) {
+      try { historyChannel?.postMessage({dbName:scope.dbName}); } catch (_) {}
+    }
+    return revision;
+  }
+
+  // Refresh saved data without touching a user's active edit buffers or route.
+  async function reloadSavedHistory() {
+    if (!db || scopeChanges) return;
+    const target = db, request = ++historyRefreshRequest;
+    const snapshot = await Storage.getHistorySnapshot(target);
+    if (db !== target || request !== historyRefreshRequest) return;
+    games = snapshot.games;
+    await loadBallInventory();
+    if (db !== target || request !== historyRefreshRequest) return;
+    await loadAlleyInventory();
+    if (db !== target || request !== historyRefreshRequest) return;
+    renderAll();
+  }
 
   function clearUndo() {
     clearTimeout(undoTimer);
@@ -1303,7 +1354,7 @@ export const app = (() => {
 
   async function undoLastDeletion() {
     const item = undoDeletion;
-    if (!item || item.database !== db || mutationBusy) return;
+    if (!item || item.database !== db || mutationBusy || scopeChanges) return;
     mutationBusy = true;
     $('undoDeleteBtn').disabled = true;
     clearTimeout(undoTimer);
@@ -1317,14 +1368,17 @@ export const app = (() => {
         return;
       }
       const restored = { ...item.game, updatedAt: Math.max(Date.now(), item.deletedAt + 1) };
-      await commitGames([restored], [], item.database);
+      await commitGames([restored], [], item.database, {expectedVersions:[{id:restored.id,version:{...tombstone,deleted:true}}]});
       if (db !== item.database) return;
-      games = await getAllGames();
+      const refreshed = await getAllGames();
+      if (db !== item.database) return;
+      games = refreshed;
       clearUndo();
       renderAll();
       emitDataChanged({ type: 'upsert', game: clone(restored), bases: [{...tombstone, deleted: true}] });
       setStatus(dom.entryStatus, 'Game restored.', 'success');
     } catch (error) {
+      if (db !== item.database) return;
       $('undoMessage').textContent = 'Restore failed. Try Undo again.';
       undoTimer = setTimeout(clearUndo, 15000);
     } finally { mutationBusy = false; $('undoDeleteBtn').disabled = false; }
@@ -1420,7 +1474,7 @@ export const app = (() => {
 
   async function saveSeries(event) {
     event.preventDefault();
-    if (mutationBusy || dialogScope !== db) return;
+    if (mutationBusy || scopeChanges || dialogScope !== db) return;
     const values = [];
     for (const [i, row] of [...$('seriesRows').children].entries()) {
       const fields = { date: $('seriesDate'), sessionName: $('seriesName'), sessionType: $('seriesType'), noTap: $('seriesNoTap'), alley: $('seriesAlley') };
@@ -1448,7 +1502,9 @@ export const app = (() => {
     try {
       await commitGames(updates, [], targetDb);
       if (db !== targetDb) return;
-      games = await getAllGames();
+      const refreshed = await getAllGames();
+      if (db !== targetDb) return;
+      games = refreshed;
       entrySessionId = added[0].sessionId;
       dom.date.value = values[0].date;
       dom.sessionName.value = values[0].sessionName;
@@ -1461,7 +1517,7 @@ export const app = (() => {
       renderAll();
       emitDataChanged({ type: 'batch-upsert', games: clone(updates), bases: [...added.map(() => null),...clone(related)] });
       setStatus(dom.entryStatus, `${added.length} games saved to this session.`, 'success');
-    } catch (error) { setStatus($('seriesStatus'), 'Could not save the series. No games were added. Please try again.', 'error'); }
+    } catch (error) { if (db === targetDb) setStatus($('seriesStatus'), error.code === 'bowling/local-conflict' ? error.message : 'Could not save the series. No games were added. Please try again.', 'error'); }
     finally { mutationBusy = false; $('saveSeriesBtn').disabled = false; }
   }
 
@@ -1469,6 +1525,7 @@ export const app = (() => {
     const session = buildSessions(games).find((s) => s.key === key);
     if (!session) return;
     editSessionKey = key;
+    editSessionBaseGames = clone(session.games);
     dialogScope = db;
     $('editSessionDate').value = session.date;
     $('editSessionName').value = session.games[0].sessionName || '';
@@ -1481,9 +1538,12 @@ export const app = (() => {
 
   async function saveSessionEdit(event) {
     event.preventDefault();
-    if (mutationBusy || dialogScope !== db) return;
+    if (mutationBusy || scopeChanges || dialogScope !== db) return;
     const session = buildSessions(games).find((s) => s.key === editSessionKey);
     if (!session) { setStatus($('sessionEditStatus'), 'This session no longer exists. Close and choose another session.', 'error'); return; }
+    if (JSON.stringify(session.games.map(normalizeGame)) !== JSON.stringify(editSessionBaseGames?.map(normalizeGame))) {
+      setStatus($('sessionEditStatus'), 'This session changed while you were editing it. Your changes are kept; close and reopen the current session before saving.', 'error'); return;
+    }
     const date = $('editSessionDate').value;
     const sessionName = $('editSessionName').value.trim();
     if (!isValidDate(date)) { setStatus($('sessionEditStatus'), 'Please enter a valid bowling date.', 'error'); return; }
@@ -1497,7 +1557,9 @@ export const app = (() => {
     try {
       await commitGames(updated, [], targetDb);
       if (db !== targetDb) return;
-      games = await getAllGames();
+      const refreshed = await getAllGames();
+      if (db !== targetDb) return;
+      games = refreshed;
       if (dom.sessionSelect.value === editSessionKey || session.games.some((g) => g.id === editingGameId)) {
         dom.date.value = date;
         dom.sessionName.value = sessionName;
@@ -1508,11 +1570,11 @@ export const app = (() => {
       if (!entryWasDirty) rememberEntry();
       emitDataChanged({ type: 'batch-upsert', games: clone(updated), bases: clone(session.games) });
       setStatus(dom.entryStatus, `Updated ${updated.length} games in the session.`, 'success');
-    } catch (error) { setStatus($('sessionEditStatus'), 'Could not update this session. No changes were saved.', 'error'); }
+    } catch (error) { if (db === targetDb) setStatus($('sessionEditStatus'), error.code === 'bowling/local-conflict' ? error.message : 'Could not update this session. No changes were saved.', 'error'); }
     finally { mutationBusy = false; $('saveSessionBtn').disabled = false; }
   }
 
-  function progressStats(...args) { return Stats.progressStats(...args); }
+  function progressStats(source, mode) { return Stats.progressStats(source, mode, games); }
 
   function chartScale(...args) { return Stats.chartScale(...args); }
 
@@ -1565,7 +1627,7 @@ export const app = (() => {
 
   function renderHome() {
     const source = standardGames();
-    const recent = [...source].sort((a, b) => b.date.localeCompare(a.date) || gameOrder(b, a));
+    const recent = Sessions.chronologicalGames(source, games).reverse();
     $('homeRecap').innerHTML = `<div><span>Average</span><strong>${source.length ? avg(source.map(game => game.score)).toFixed(1) : '—'}</strong></div><div><span>Last 10</span><strong>${recent.length ? avg(recent.slice(0, 10).map(game => game.score)).toFixed(1) : '—'}</strong></div><div><span>Last game</span><strong>${recent[0]?.score ?? '—'}</strong></div>`;
     const latest = buildSessions(games).sort(latestSessionOrder)[0];
     $('latestSessionShortcut').classList.toggle('hidden', !latest);
@@ -1589,7 +1651,12 @@ export const app = (() => {
   function draftKey(kind) { return Drafts.draftKey(activeLocalScope, kind); }
   function seriesHasInput(...args) { return Drafts.seriesHasInput(...args); }
   function readDraft(kind) { return Drafts.readDraft(activeLocalScope, kind, localStorage); }
-  function clearDraft(kind) { if (!restoringDraft) Drafts.clearDraft(activeLocalScope, kind, localStorage); }
+  function clearDraft(kind) {
+    if (!restoringDraft) {
+      Drafts.clearDraft(activeLocalScope, kind, localStorage);
+      if (kind === 'entry') entryDraftOwned = false;
+    }
+  }
   function showDraftNotice() {
     const entry = !!readDraft('entry'), series = !!readDraft('series');
     $('draftNotice').hidden = !entry && !series;
@@ -1598,7 +1665,10 @@ export const app = (() => {
   function persistDrafts() {
     if (restoringDraft || !db) return;
     try {
-      if (hasEntryDraft()) Drafts.saveDraft(activeLocalScope, 'entry', {version:1, values:JSON.parse(entrySnapshot()), baseline:entryBaseline, base:entryBaseGame}, localStorage);
+      if (hasEntryDraft()) {
+        Drafts.saveDraft(activeLocalScope, 'entry', {version:1, values:JSON.parse(entrySnapshot()), baseline:entryBaseline, base:entryBaseGame}, localStorage);
+        entryDraftOwned = true;
+      } else if (entryDraftOwned) clearDraft('entry');
       if ($('seriesDialog').open) {
         const rows = [...$('seriesRows').children].map(row => ({...Object.fromEntries(['score','openFrames','strikes','strikeOpp','notes','ball','entryDetail'].map(field => [field,row.querySelector(`[data-field="${field}"]`).value])), balls: Balls.draft(row.querySelector('[data-field="ball"]'))}));
         const draft = {version:1,sessionId:seriesSessionId,date:$('seriesDate').value,name:$('seriesName').value,type:$('seriesType').value,ball:$('seriesBall').value,alley:$('seriesAlley').value,noTap:$('seriesNoTap').value === 'no-tap',rows};
@@ -1615,6 +1685,7 @@ export const app = (() => {
     try {
       showView('home');
       if (kind === 'entry' && Array.isArray(draft.values)) {
+        entryDraftOwned = true;
         editingGameId = draft.values[0]; entryBaseGame = draft.base || null;
         editReturn = editingGameId ? {view: 'sessions', y: 0} : null;
         ['date','sessionName','sessionType','score','openFrames','strikes','strikeOpp','notes','ball'].forEach((key,i) => dom[key].value = draft.values[i+1] ?? '');
@@ -1624,7 +1695,9 @@ export const app = (() => {
         dom.entryDetail.value = draft.values[13] === 'score-only' ? 'score-only' : 'full';
         entrySessionId = draft.values[14] || (draft.base ? normalizeGame(draft.base).sessionId : sessionKey({date:dom.date.value,sessionName:dom.sessionName.value}));
         setEntryDetail();
-        entryBaseline = draft.baseline;
+        // Legacy drafts may not contain a baseline. Keep them dirty until they
+        // are saved or explicitly discarded, rather than erasing recovered work.
+        entryBaseline = typeof draft.baseline === 'string' ? draft.baseline : '';
         // Older drafts lack ball and/or scoring fields. Keep their original values.
         try {
           const baseline = JSON.parse(entryBaseline);
@@ -1756,6 +1829,17 @@ export const app = (() => {
   }
 
   function wireEvents() {
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        historyChannel = new BroadcastChannel('bowling-saved-history');
+        historyChannel.onmessage = event => {
+          if (event.data?.dbName !== activeLocalScope.dbName) return;
+          window.dispatchEvent(new CustomEvent('bowling:external-history-changed'));
+          reloadSavedHistory().catch(error => setStatus(dom.entryStatus,error.message,'error'));
+        };
+      } catch (_) {}
+    }
+    window.addEventListener('focus', () => reloadSavedHistory().catch(() => {}));
     Balls.attach(dom.ball, $('gameBallEditor'), $('gameBallFirst'), document, () => { persistDrafts(); renderEntrySaveState(); });
     wireEnhancements();
     wireNavigation();
@@ -1850,13 +1934,17 @@ export const app = (() => {
       if (event.target === dom.settingsDialog) closeDialog(dom.settingsDialog);
     });
     dom.saveDefaultBowlerBtn.addEventListener('click', async () => {
+      if (scopeChanges) return;
       if (activeLocalScope.kind === 'user') {
         setStatus(dom.settingsStatus, 'Change your name in Profile → Account & sync → Display name.', 'error');
         return;
       }
       const name = dom.defaultBowlerInput.value.trim() || 'Bowler';
+      const target = db;
       await setProfileName(name);
-      await setSetting('defaultBowler', name);
+      if (db !== target) return;
+      await setSettingOnDb(target,'defaultBowler', name);
+      if (db !== target) return;
       setStatus(dom.settingsStatus, 'Local profile saved.', 'success');
     });
     dom.exportJsonBtn.addEventListener('click', exportBackup);
@@ -1886,20 +1974,20 @@ export const app = (() => {
 
   const ballService = Inventory.createNamedInventory({
     setting: 'ballInventory', label: 'ball', getDatabase: () => db,
-    getUid: () => activeLocalScope.uid, seeds: ballNames, ready: () => api.ready,
+    getUid: () => activeLocalScope.uid, seeds: ballNames, ready: () => api.ready && !scopeChanges,
     onChange: () => { renderBallOptions(); window.dispatchEvent(new CustomEvent('bowling:inventory-changed')); },
     onEdit: () => emitDataChanged({type: 'inventory'})
   });
 
   const alleyService = Inventory.createNamedInventory({
     setting: 'alleyInventory', label: 'alley', getDatabase: () => db,
-    getUid: () => activeLocalScope.uid, seeds: alleyNames, ready: () => api.ready,
+    getUid: () => activeLocalScope.uid, seeds: alleyNames, ready: () => api.ready && !scopeChanges,
     onChange: () => { renderAlleyOptions(); window.dispatchEvent(new CustomEvent('bowling:alley-inventory-changed')); },
     onEdit: () => emitDataChanged({type: 'inventory'})
   });
 
   const api = {
-    canApplyUpdate: () => api.ready && !mutationBusy && !restoringDraft && !editingGameId && !hasEntryDraft()
+    canApplyUpdate: () => api.ready && !mutationBusy && !scopeChanges && !restoringDraft && !editingGameId && !hasEntryDraft()
       && !undoDeletion && !selectedPhotoUrl && !document.querySelector('dialog[open]')
       && !runtime.cloud?.isBusy?.(),
     version: BACKUP_SCHEMA_VERSION,
@@ -1909,6 +1997,28 @@ export const app = (() => {
     getGames: () => clone(games),
     getScoreCardData,
     getTombstones: async () => clone(await getAllTombstones()),
+    isLocalScopeReady: () => api.ready && !scopeChanges,
+    getSyncState: async uid => {
+      if (scopeChanges || activeLocalScope.uid !== uid) throw Storage.historyChangedError();
+      const target = db, snapshot = await Storage.getHistorySnapshot(target);
+      if (scopeChanges || db !== target || activeLocalScope.uid !== uid) throw Storage.historyChangedError();
+      return clone(snapshot);
+    },
+    getHistoryRevision: async uid => {
+      if (activeLocalScope.uid !== uid) return -1;
+      const target = db, revision = Number(await getSettingFromDb(target,'historyRevision') || 0);
+      return db === target && activeLocalScope.uid === uid ? revision : -1;
+    },
+    getSyncOutbox: async uid => {
+      if (activeLocalScope.uid !== uid) return {};
+      const target = db, pending = await getSettingFromDb(target,'syncOutbox') || {};
+      return db === target && activeLocalScope.uid === uid ? clone(pending) : {};
+    },
+    acknowledgeSyncOutbox: async (items,uid,acceptedVersions) => {
+      if (activeLocalScope.uid !== uid) return;
+      await Storage.acknowledgeOutbox(db,items,acceptedVersions);
+    },
+    reloadSavedHistory,
     getBowlerNames: () => [activeProfileName || 'Bowler'],
     getDefaultBowler: async () => activeProfileName || await getSetting('profileName') || await getSetting('defaultBowler') || 'Bowler',
     getProfileName: () => activeProfileName || 'Bowler',
@@ -1961,6 +2071,7 @@ export const app = (() => {
     try {
       db = await openInitialDatabase();
       games = await getAllGames();
+      await Storage.migrateLegacyOutbox(db, activeLocalScope.uid, localStorage);
       await loadProfileName();
       await loadBallInventory();
       await loadAlleyInventory();
