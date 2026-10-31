@@ -1,5 +1,11 @@
 # Bowling Tracker
 
+## v42 — monthly stats sharing
+
+- Added **Share monthly stats** beside **Share overall stats** in Stats. The card opens on the latest month with standard games; choose any recorded month, including previous years.
+- Monthly PNGs include average, high game, best 3-game series, total pins, strike percentage and closed frame percentage, using the existing Save image, Copy image and device sharing controls. Cards label the selected month and year.
+- Monthly totals exclude no-tap games; frame percentages exclude score-only games. Sharing includes all session types, balls and alleys for that calendar month, independently of Stats filters, and works offline.
+
 ## v41 — offline saves and concurrent edits
 
 - Games, deletions, pending cloud changes and the history revision save in one account-scoped IndexedDB transaction. Cached-account edits retain their conflict base when Firebase is unavailable after an offline restart.

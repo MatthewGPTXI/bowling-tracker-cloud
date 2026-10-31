@@ -703,7 +703,22 @@ export const app = (() => {
     if (!api.ready) return null;
     const session = key === null ? null : buildSessions(games).find(item => item.key === key);
     if (key !== null && !session) return null;
-    const source = session ? session.games : games;
+    return scoreCardSnapshot(session ? session.games : games, session);
+  }
+
+  const scoreCardMonthLabel = month => new Date(month + '-01T12:00:00').toLocaleDateString('en-US', {month: 'long', year: 'numeric'});
+  function getScoreCardMonths() {
+    if (!api.ready) return [];
+    return [...new Set(standardGames().map(game => game.date.slice(0, 7)))].sort().reverse()
+      .map(value => ({value, label: scoreCardMonthLabel(value)}));
+  }
+
+  function getMonthlyScoreCardData(month) {
+    if (!api.ready || typeof month !== 'string' || !/^\d{4}-\d{2}$/.test(month) || !isValidDate(month + '-01')) return null;
+    return scoreCardSnapshot(games.filter(game => game.date.startsWith(month + '-')), null, month);
+  }
+
+  function scoreCardSnapshot(source, session = null, month = null) {
     const noTapCount = source.filter(isNoTap).length;
     const noTapOnly = !!session && noTapCount === source.length;
     const included = noTapOnly ? source.map(game => ({...game, noTap: false})) : standardGames(source);
@@ -711,10 +726,10 @@ export const app = (() => {
     const stats = calculateStats(included);
     const dates = included.map(game => game.date).sort();
     return {
-      kind: session ? 'session' : 'overall',
+      kind: session ? 'session' : month ? 'monthly' : 'overall',
       name: activeProfileName || 'Bowler',
-      date: session?.date || todayLocal(),
-      dateLabel: session ? fmtDate(session.date) : dates[0] === dates.at(-1) ? fmtDate(dates[0]) : `${fmtDate(dates[0])} – ${fmtDate(dates.at(-1))}`,
+      date: session?.date || month || todayLocal(),
+      dateLabel: session ? fmtDate(session.date) : month ? scoreCardMonthLabel(month) : dates[0] === dates.at(-1) ? fmtDate(dates[0]) : `${fmtDate(dates[0])} – ${fmtDate(dates.at(-1))}`,
       asOf: session ? '' : fmtDate(todayLocal()),
       sessionType: session ? sessionType(session.games[0]) : '',
       noTapOnly, noTapCount,
@@ -1996,6 +2011,8 @@ export const app = (() => {
     showView,
     getGames: () => clone(games),
     getScoreCardData,
+    getScoreCardMonths,
+    getMonthlyScoreCardData,
     getTombstones: async () => clone(await getAllTombstones()),
     isLocalScopeReady: () => api.ready && !scopeChanges,
     getSyncState: async uid => {

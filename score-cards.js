@@ -93,11 +93,11 @@ export const scoreCards = (() => {
         + (bowler.self ? 'Latest saved games. ' : `Last shared: ${sharedDate(bowler)}. `)).join('')
       + `No-tap games excluded. Frame stats exclude score-only games. — means unavailable. Bowling Tracker. QR code: ${APP_URL}`;
     const scores = card.scores.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-    return `${card.name}. ${card.kind === 'session' ? card.sessionType + ' session' : 'Overall stats, all time'}. ${card.dateLabel}. `
+    return `${card.name}. ${card.kind === 'session' ? card.sessionType + ' session' : card.kind === 'monthly' ? 'Monthly stats' : 'Overall stats, all time'}. ${card.dateLabel}. `
       + (scores.length ? scores.map(game => `Game ${game.number}: ${game.score}${game.noTap ? ' (no-tap)' : ''}`).join(', ') + '. ' : '')
       + `${card.kind === 'session' ? 'Series total' : 'Total pins'}: ${card.total}. Average: ${decimal(card.average)}. `
       + `Strike percentage: ${percent(card.strikePct)}. Closed frame percentage: ${percent(card.closedFramePct)}. `
-      + (card.kind === 'overall' ? `High game: ${number(card.highGame)}. Best 3-game series: ${number(card.highSeries)}. ` : '')
+      + (card.kind !== 'session' ? `High game: ${number(card.highGame)}. Best 3-game series: ${number(card.highSeries)}. ` : '')
       + notes(card).join('. ') + `. Bowling Tracker. QR code: ${APP_URL}`;
   }
 
@@ -175,7 +175,7 @@ export const scoreCards = (() => {
       text('No-tap excluded · Frame stats exclude score-only games', 64, 1311, 26, colors.muted);
       text('— means unavailable', 64, 1349, 26, colors.muted);
     } else {
-      text(session ? (card.noTapOnly ? 'NO-TAP SESSION' : 'SESSION SCORE CARD') : 'OVERALL STATS · ALL TIME', 130, 77, 27, colors.mint, 700);
+      text(session ? (card.noTapOnly ? 'NO-TAP SESSION' : 'SESSION SCORE CARD') : card.kind === 'monthly' ? 'MONTHLY STATS' : 'OVERALL STATS · ALL TIME', 130, 77, 27, colors.mint, 700);
       text(card.name, 64, 163, 58, colors.text, 750, 790);
       text(session ? `${card.dateLabel} · ${card.sessionType}` : card.dateLabel, 64, 219, 30, colors.muted);
       text(session ? (card.noTapOnly ? 'NO-TAP SERIES TOTAL' : card.noTapCount ? 'STANDARD SERIES TOTAL' : 'SERIES TOTAL') : 'AVERAGE', 64, 300, 28, colors.mint, 650);
@@ -246,6 +246,8 @@ export const scoreCards = (() => {
   }
   function close() {
     generation++; snapshot = null; busy = false; clearImage();
+    $('scoreCardMonthField').hidden = true;
+    $('scoreCardMonth').replaceChildren();
     if (dialog.open) closeDialog(dialog);
   }
   function buttons() {
@@ -283,18 +285,36 @@ export const scoreCards = (() => {
   function openCard(card) {
     if (!card) return;
     snapshot = card; scope = currentScope(); page = 0;
-    $('scoreCardHeading').textContent = card.kind === 'comparison' ? 'Friend comparison card' : card.kind === 'session' ? 'Session score card' : 'Overall stats card';
+    $('scoreCardMonthField').hidden = card.kind !== 'monthly';
+    if (card.kind === 'monthly') $('scoreCardMonth').value = card.date;
+    $('scoreCardHeading').textContent = card.kind === 'comparison' ? 'Friend comparison card' : card.kind === 'session' ? 'Session score card' : card.kind === 'monthly' ? 'Monthly stats card' : 'Overall stats card';
     $('scoreCardScope').textContent = card.kind === 'comparison'
       ? 'All time · standard games · your saved stats and their last shared stats.' : card.kind === 'session'
       ? 'Full session · includes all saved game scores.'
+      : card.kind === 'monthly' ? `${card.dateLabel} · standard games · all session types, balls, and alleys.`
       : 'All time · standard games · includes every date, ball, and alley.';
-    openDialog(dialog);
+    if (!dialog.open) openDialog(dialog);
     generate();
   }
   $('closeScoreCard').addEventListener('click', close);
   dialog.addEventListener('close', () => { if (!dialog.open) close(); });
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   $('shareOverallStats').addEventListener('click', () => openCard(App.getScoreCardData()));
+  $('shareMonthlyStats').addEventListener('click', () => {
+    const months = App.getScoreCardMonths();
+    if (!months.length) return;
+    $('scoreCardMonth').replaceChildren(...months.map(month => {
+      const option = document.createElement('option');
+      option.value = month.value; option.textContent = month.label;
+      return option;
+    }));
+    openCard(App.getMonthlyScoreCardData(months[0].value));
+  });
+  $('scoreCardMonth').addEventListener('change', () => {
+    if (!valid() || snapshot.kind !== 'monthly') return;
+    const card = App.getMonthlyScoreCardData($('scoreCardMonth').value);
+    if (card) openCard(card); else close();
+  });
   $('shareFriendComparison').addEventListener('click', () => openCard(comparisonProvider()));
   api.closeComparison = () => { if (snapshot?.kind === 'comparison') close(); };
   $('sessionsList').addEventListener('click', event => {
@@ -324,7 +344,7 @@ export const scoreCards = (() => {
     const token = generation;
     busy = true; buttons();
     try {
-      await navigator.share({files: [file()], title: snapshot.kind === 'comparison' ? 'Bowling comparison' : snapshot.kind === 'session' ? 'My bowling session' : 'My bowling stats'});
+      await navigator.share({files: [file()], title: snapshot.kind === 'comparison' ? 'Bowling comparison' : snapshot.kind === 'session' ? 'My bowling session' : snapshot.kind === 'monthly' ? `My bowling stats · ${snapshot.dateLabel}` : 'My bowling stats'});
       if (token === generation && valid()) $('scoreCardStatus').textContent = '';
     } catch (error) {
       if (token === generation && valid()) $('scoreCardStatus').textContent = error.name === 'AbortError' ? '' : 'Sharing isn’t available here. Try Save image or Copy image.';
@@ -333,6 +353,7 @@ export const scoreCards = (() => {
   function refresh() {
     const app = App;
     $('shareOverallStats').disabled = !app?.ready || !app.getGames().some(game => game.noTap !== true);
+    $('shareMonthlyStats').disabled = $('shareOverallStats').disabled;
     if (snapshot && !valid()) close();
   }
   for (const event of ['bowling:ready', 'bowling:rendered']) window.addEventListener(event, refresh);
