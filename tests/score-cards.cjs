@@ -14,6 +14,8 @@ const data = [
 ];
 t.setState(database(data),data);
 assert.equal(app.getScoreCardData(),null,'Startup cannot export another profile’s data');
+assert.equal(app.getMonthlyScoreCardData('2026-09'),null);
+assert.equal(app.getScoreCardMonths().length,0);
 app.ready=true;
 const card = app.getScoreCardData(key);
 assert.equal(card.total,690);assert.equal(card.average,230);
@@ -41,7 +43,46 @@ assert.equal(app.getScoreCardData(),null,'No-tap-only history has no overall sta
 const noTapCard=app.getScoreCardData(key);assert.equal(noTapCard.total,380);assert.equal(noTapCard.noTapOnly,true);
 assert.equal(noTapCard.strikePct,30);assert.equal(noTapCard.closedFramePct,60);
 assert(cards.describe(noTapCard).includes('No-tap session'));
+
+// Calendar boundaries, score-only rates and no-tap exclusions apply to every
+// monthly metric, independently of the filters currently selected in Stats.
+const monthlyData = [
+  game(10,'2026-08-31',300),
+  {...game(11,'2026-09-01',180),gameOrder:1,strikes:3,strikeOpportunities:10,openFrames:4},
+  {...game(12,'2026-09-01',210),gameOrder:2,strikes:5,strikeOpportunities:11,openFrames:2},
+  {...game(13,'2026-09-01',240),gameOrder:3,strikes:7,strikeOpportunities:12,openFrames:0},
+  {...partial(14,300),date:'2026-09-30'},
+  {...game(15,'2026-09-15',300),noTap:true},
+  game(16,'2026-10-01',100),
+  game(17,'2025-09-01',200),
+  {...game(18,'2026-07-01',300),noTap:true},
+  {...partial(19,0),date:'2024-02-29'}
+];
+t.setState(database(monthlyData),monthlyData);
+const monthly = app.getMonthlyScoreCardData('2026-09');
+assert.equal(monthly.kind,'monthly');assert.equal(monthly.date,'2026-09');
+assert.equal(monthly.dateLabel,'September 2026');
+assert.equal(monthly.count,4);assert.equal(monthly.sessions,2);
+assert.equal(monthly.total,930);assert.equal(monthly.average,232.5);
+assert.equal(monthly.highGame,300);assert.equal(monthly.highSeries,630);
+assert.equal(monthly.frameCount,3);assert.equal(monthly.strikePct,15/33*100);
+assert.equal(monthly.closedFramePct,80);assert.equal(monthly.noTapCount,1);
+assert.equal(monthly.scores.length,0);
+assert(!JSON.stringify(monthly).includes('Keep notes'));
+assert.deepEqual(Array.from(app.getScoreCardMonths(),month=>month.value),['2026-10','2026-09','2026-08','2025-09','2024-02']);
+assert.equal(app.getScoreCardMonths()[1].label,'September 2026');
+for(const month of ['2026-07','2026-11','2026-13','2026-00','2026-9','2026-09-01','',null,undefined]) {
+  assert.equal(app.getMonthlyScoreCardData(month),null,'No card for missing, no-tap-only or invalid months');
+}
+const leap = app.getMonthlyScoreCardData('2024-02');
+assert.equal(leap.count,1);assert.equal(leap.total,0);assert.equal(leap.average,0);
+assert.equal(leap.highSeries,null);assert.equal(leap.strikePct,null);assert.equal(leap.closedFramePct,null);
+assert.equal(app.getMonthlyScoreCardData('2025-09').total,200,'The same month in a different year is separate');
+assert.equal(app.getScoreCardData().total,monthlyData.filter(game=>!game.noTap).reduce((sum,game)=>sum+game.score,0),'Overall still includes every month');
+monthly.total=1;assert.equal(app.getMonthlyScoreCardData('2026-09').total,930,'Monthly cards are independent snapshots');
+monthly.total=930;
 t.setState(database([]),[]);assert.equal(app.getScoreCardData(),null);
+assert.equal(app.getScoreCardMonths().length,0);assert.equal(app.getMonthlyScoreCardData('2026-09'),null);
 
 // The renderer must preserve every score across bounded-size PNG pages.
 const long={...JSON.parse(safeSnapshot),scores:Array.from({length:61},(_,i)=>({number:i+1,score:100+i,noTap:false})),count:61};
@@ -57,6 +98,14 @@ for(let page=0;page<3;page++) {
   assert(cards.filename(long,page).endsWith(`-${page+1}.png`));
 }
 assert.equal(cards.filename(overall),'bowling-tracker-overall-'+overall.date+'.png');
+canvas.texts=[];cards.render(monthly,canvas);
+assert(canvas.texts.includes('MONTHLY STATS'));assert(canvas.texts.includes('September 2026'));
+assert(!canvas.texts.some(value=>value.includes('ALL TIME')));
+assert(canvas.texts.includes('630'));assert.equal(cards.pages(monthly),1);
+assert.equal(cards.filename(monthly),'bowling-tracker-monthly-2026-09.png');
+assert.match(cards.describe(monthly),/Monthly stats\. September 2026/);
+assert.match(cards.describe(monthly),/High game: 300\. Best 3-game series: 630/);
+assert.match(cards.describe(monthly),/1 no-tap game excluded/);
 const comparison = {kind:'comparison', date:'2026-09-25', asOf:'Sep 25, 2026', scores:[], bowlers:[
   {name:'Matthew', self:true, updatedAt:Date.now(), games:20, frameCount:15, average:180, highGame:280,
     highSeries:630, strikePct:42, closedFramePct:80, cleanGames:3, totalStrikes:63},
@@ -75,4 +124,4 @@ assert(cards.describe(comparison).includes(comparison.bowlers[1].name),'Accessib
 assert(cards.describe(comparison).includes('Frame details: 0 of 3 games'));
 assert(!cards.describe(comparison).includes('undefined'));
 assert(fs.readFileSync(path.join(root,'service-worker.js'),'utf8').includes("'./score-cards.js'"));
-console.log('PASS: score cards preserve game order, weighted frame stats, missing stats, zero scores, no-tap rules, all-time scope, safe snapshots, and all scores across long-session pages.');
+console.log('PASS: score cards preserve monthly/year/leap-day boundaries, game order, weighted frame stats, missing stats, zero scores, no-tap rules, all-time scope, safe snapshots, and all scores across long-session pages.');

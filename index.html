@@ -131,7 +131,7 @@
       </section></div>
       <div id="view-stats" class="app-view" role="region" aria-label="Stats" hidden>
       <section class="panel stats-toolbar" aria-labelledby="statsHeading">
-        <div class="section-heading"><div><h2 id="statsHeading">Statistics</h2></div><div class="button-row"><button id="shareOverallStats" class="btn secondary compact" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog" disabled>Share overall stats</button></div></div>
+        <div class="section-heading"><div><h2 id="statsHeading">Statistics</h2></div><div class="button-row stats-share-actions"><button id="shareOverallStats" class="btn secondary compact" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog" disabled>Share overall stats</button><button id="shareMonthlyStats" class="btn secondary compact" type="button" aria-haspopup="dialog" aria-controls="scoreCardDialog" disabled>Share monthly stats</button></div></div>
         <div class="stats-presets" role="group" aria-label="Statistics date range">
           <button class="range-chip" type="button" data-stats-preset="all" aria-pressed="true">All time</button>
           <button class="range-chip" type="button" data-stats-preset="month" aria-pressed="false">Month</button>
@@ -304,6 +304,7 @@
     <div class="dialog-inner">
       <div class="dialog-header"><h2 id="scoreCardHeading">Score card</h2><button id="closeScoreCard" class="text-btn" type="button" autofocus>Close</button></div>
       <p id="scoreCardScope" class="section-copy"></p>
+      <label id="scoreCardMonthField" hidden>Month<select id="scoreCardMonth"></select></label>
       <div class="score-card-preview"><img id="scoreCardImage" alt="" hidden></div>
       <div id="scoreCardPages" class="score-card-pages" hidden><button id="scoreCardPrevious" class="text-btn" type="button">Previous</button><span id="scoreCardPageLabel"></span><button id="scoreCardNext" class="text-btn" type="button">Next</button></div>
       <div class="button-row score-card-actions"><button id="shareScoreCard" class="btn primary" type="button" hidden>Share…</button><a id="saveScoreCard" class="btn secondary" download hidden>Save image</a><button id="copyScoreCard" class="btn secondary" type="button" disabled>Copy image</button></div>

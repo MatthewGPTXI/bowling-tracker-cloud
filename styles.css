@@ -663,7 +663,8 @@ summary::-webkit-details-marker { display: none; }
   .stats-overview .primary-stat .stat-value { font-size: 3rem; }
   .stats-overview .stat-detail { font-size: .72rem; }
   .stats-toolbar .section-heading { flex-direction: row; gap: var(--space-2); }
-  #shareOverallStats { font-size: .74rem; }
+  .stats-share-actions { width: 100%; }
+  .stats-share-actions .btn { flex: 1; font-size: .74rem; }
   .leaderboard-table th, .leaderboard-table td { padding: 10px 5px; }
 }
 @media (max-width: 360px) {

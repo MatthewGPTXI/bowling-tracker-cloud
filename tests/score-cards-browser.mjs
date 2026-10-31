@@ -32,6 +32,7 @@ try {
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(url);
   await page.waitForFunction(()=>window.BowlingApp?.ready);
+  assert(await page.locator('#shareMonthlyStats').isDisabled(),'Empty histories cannot share monthly stats');
   const seed = async (scores) => {
     await page.evaluate(async scores=>{
       await new Promise((resolve,reject)=>{
@@ -83,6 +84,7 @@ try {
     }});
   });
   await page.click('#nav-stats');await page.click('#shareOverallStats');await page.waitForSelector('#shareScoreCard:visible');
+  assert(!await page.locator('#scoreCardMonthField').isVisible(),'Overall sharing has no month selector');
   await page.click('#shareScoreCard');await page.waitForFunction(()=>window.shared);
   assert.equal(await page.evaluate(()=>window.shared.active),true);
   assert.equal(await page.evaluate(()=>window.shared.type),'image/png');
@@ -93,6 +95,82 @@ try {
     await fs.writeFile(path.join(output,'overall-browser.png'),Buffer.from(data));
   }
   await page.click('#closeScoreCard');
+
+  // Monthly exports use complete calendar months and the same download,
+  // clipboard, native sharing and account guards as the existing cards.
+  await seed([180,210,240]);
+  await page.evaluate(async()=>{
+    await new Promise((resolve,reject)=>{
+      const request=indexedDB.open(window.BowlingApp.getLocalScopeInfo().dbName);
+      request.onsuccess=()=>{
+        const db=request.result,tx=db.transaction('games','readwrite'),store=tx.objectStore('games');
+        const base={sessionName:'Monthly test',sessionType:'Practice',bowler:'Matthew',strikes:4,strikeOpportunities:10,openFrames:3,notes:'Private month note'};
+        store.put({...base,id:10,date:'2026-08-31',score:100});
+        store.put({...base,id:11,date:'2026-10-01',score:300,scoreOnly:true,strikes:null,strikeOpportunities:null,openFrames:null});
+        store.put({...base,id:12,date:'2026-10-31',score:280,noTap:true});
+        store.put({...base,id:13,date:'2026-11-01',score:300,noTap:true});
+        store.put({...base,id:14,date:'2025-09-30',score:150});
+        tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>reject(tx.error);
+      };request.onerror=()=>reject(request.error);
+    });
+  });
+  await page.reload();await page.waitForFunction(()=>window.BowlingApp?.ready);
+  await page.evaluate(()=>{
+    Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>true});
+    Object.defineProperty(navigator,'share',{configurable:true,value:async({files,title})=>{
+      window.sharedMonthly={name:files[0].name,type:files[0].type,title,active:navigator.userActivation.isActive};
+    }});
+  });
+  await page.click('#nav-stats');
+  await page.evaluate(()=>{document.getElementById('statsFrom').value='2099-01-01';document.getElementById('statsType').value='Tournament';});
+  await page.click('#shareMonthlyStats');await page.waitForSelector('#saveScoreCard:visible');
+  assert.equal(await page.locator('#scoreCardHeading').textContent(),'Monthly stats card');
+  assert.equal(await page.locator('#scoreCardMonth').inputValue(),'2026-10','Default to the newest month with standard games');
+  assert.deepEqual(await page.locator('#scoreCardMonth option').evaluateAll(options=>options.map(option=>option.value)),['2026-10','2026-09','2026-08','2025-09']);
+  const octoberAlt=await page.locator('#scoreCardImage').getAttribute('alt');
+  assert.match(octoberAlt,/Monthly stats\. October 2026/);assert.match(octoberAlt,/Average: 300.0/);
+  assert.match(octoberAlt,/Frame stats not recorded/);assert.match(octoberAlt,/1 no-tap game excluded/);
+  await page.selectOption('#scoreCardMonth','2026-09');await page.waitForSelector('#saveScoreCard:visible');
+  assert.match(await page.locator('#scoreCardImage').getAttribute('alt'),/Total pins: 630\. Average: 210.0/);
+  assert.match(await page.locator('#scoreCardScope').textContent(),/^September 2026/);
+  assert.equal(await page.locator('#saveScoreCard').getAttribute('download'),'bowling-tracker-monthly-2026-09.png');
+  assert(!await page.locator('#scoreCardImage').getAttribute('alt').then(alt=>alt.includes('Private')));
+  assert(!await page.locator('#scoreCardPages').isVisible());
+  for(const width of [320,390,768]) {
+    await page.setViewportSize({width,height:844});
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Monthly sharing fits width '+width);
+  }
+  await page.setViewportSize({width:390,height:844});
+  if(output)await page.screenshot({path:path.join(output,'monthly-mobile.png')});
+  const monthlyDownload=page.waitForEvent('download');await page.click('#saveScoreCard');
+  const monthlyFile=await monthlyDownload;
+  assert.equal(monthlyFile.suggestedFilename(),'bowling-tracker-monthly-2026-09.png');
+  const monthlyPng=await fs.readFile(await monthlyFile.path());assert.equal(monthlyPng.subarray(1,4).toString(),'PNG');
+  if(output)await fs.writeFile(path.join(output,'monthly-browser.png'),monthlyPng);
+  await page.click('#copyScoreCard');await page.waitForFunction(()=>document.getElementById('scoreCardStatus').textContent.includes('Image copied'));
+  assert((await page.evaluate(async()=>(await navigator.clipboard.read())[0].types)).includes('image/png'));
+  await page.click('#shareScoreCard');await page.waitForFunction(()=>window.sharedMonthly);
+  assert.deepEqual(await page.evaluate(()=>window.sharedMonthly),{name:'bowling-tracker-monthly-2026-09.png',type:'image/png',title:'My bowling stats · September 2026',active:true});
+  await page.selectOption('#scoreCardMonth','2025-09');await page.waitForSelector('#saveScoreCard:visible');
+  assert.match(await page.locator('#scoreCardImage').getAttribute('alt'),/Monthly stats\. September 2025/);
+  assert.match(await page.locator('#scoreCardImage').getAttribute('alt'),/Total pins: 150/);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'shareMonthlyStats');
+  await page.setViewportSize({width:320,height:844});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Both Stats sharing buttons fit narrow phones');
+  await page.setViewportSize({width:390,height:844});
+  if(output)await page.screenshot({path:path.join(output,'stats-monthly-button.png')});
+  await page.click('#shareOverallStats');await page.waitForSelector('#saveScoreCard:visible');
+  assert(!await page.locator('#scoreCardMonthField').isVisible());
+  assert.match(await page.locator('#scoreCardImage').getAttribute('alt'),/Total pins: 1180/);
+  await page.click('#closeScoreCard');
+  await page.click('#shareMonthlyStats');await page.waitForSelector('#saveScoreCard:visible');
+  await page.evaluate(()=>window.BowlingApp.activateAccount('monthly-test-only'));
+  assert.equal(await page.locator('#scoreCardDialog').evaluate(el=>el.open),false);
+  assert.equal(await page.locator('#scoreCardMonth option').count(),0,'Account changes clear the previous profile’s month list');
+  assert.equal(await page.locator('#scoreCardImage').getAttribute('src'),null);
+  assert(await page.locator('#shareMonthlyStats').isDisabled());
+  console.log('PASS browser: monthly selection across years, real PNG download/clipboard/native share, no-tap/score-only scope, mobile layout, overall preservation and account isolation.');
 
   // Exercise the existing friend dialog and sharing controls with synthetic
   // summaries only. No Firebase connection or production account is used.
@@ -213,6 +291,9 @@ try {
   await offline.setOffline(true);await offlinePage.reload();await offlinePage.waitForFunction(()=>window.BowlingApp?.ready);
   await offlinePage.click('#nav-sessions');await offlinePage.click('.share-session');await offlinePage.waitForSelector('#saveScoreCard:visible');
   assert.match(await offlinePage.locator('#scoreCardImage').getAttribute('alt'),/Series total: 180/);
+  await offlinePage.click('#closeScoreCard');await offlinePage.click('#nav-stats');await offlinePage.click('#shareMonthlyStats');await offlinePage.waitForSelector('#saveScoreCard:visible');
+  assert.match(await offlinePage.locator('#scoreCardImage').getAttribute('alt'),/Monthly stats/);
+  assert.match(await offlinePage.locator('#scoreCardImage').getAttribute('alt'),/Total pins: 180/);
   console.log('PASS browser: offline cached app reloads and generates a complete score card.');
   await offline.close();
 } finally {
