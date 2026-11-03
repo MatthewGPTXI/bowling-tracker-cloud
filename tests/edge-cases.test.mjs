@@ -19,6 +19,13 @@ const invalid = value => assert.equal(isValidGame(value), false, JSON.stringify(
 valid(base);
 valid({...base,scoreOnly:true,score:0,openFrames:null,strikes:null,strikeOpportunities:null});
 valid({...base,score:300,strikes:12,strikeOpportunities:12,openFrames:0});
+for (const impossible of [
+  {score:300,strikes:12,openFrames:1,strikeOpportunities:12},
+  {score:299,strikes:12,openFrames:0,strikeOpportunities:12},
+  {score:0,strikes:5,openFrames:5},
+  {score:99,strikes:0,openFrames:0},
+  {score:150,strikes:10,openFrames:5}
+]) invalid({...base,...impossible});
 valid({...base,notes:'x'.repeat(100000)});
 invalid({...base,notes:'x'.repeat(100001)});
 for (const notes of [null,{},[],42,true]) invalid({...base,notes});
