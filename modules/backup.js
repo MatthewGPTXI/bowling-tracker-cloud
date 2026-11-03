@@ -2,7 +2,7 @@ import {normalizeGame} from './games.js';
 
 export function csvEscape(value) {
   const raw = String(value ?? '');
-  const text = /^[=+@\-\t\r]/.test(raw) ? "'" + raw : raw;
+  const text = /^[\s\uFEFF]*[=+@\-]/.test(raw) || /^[\t\r]/.test(raw) ? "'" + raw : raw;
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
