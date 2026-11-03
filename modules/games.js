@@ -20,8 +20,9 @@ export function isValidDate(value) {
 }
 
 export function isValidGame(game) {
-  const integerIn = (value, low, high) => value !== null && value !== undefined
-    && String(value).trim() !== '' && Number.isInteger(Number(value)) && Number(value) >= low && Number(value) <= high;
+  const integerIn = (value, low, high) => (typeof value === 'number' || typeof value === 'string')
+    && String(value).trim() !== '' && Number.isSafeInteger(Number(value))
+    && Number(value) >= low && Number(value) <= high;
   if (!game || typeof game !== 'object'
     || recordId(game.id) === null
     || typeof game.bowler !== 'string' || !game.bowler.trim()
@@ -38,6 +39,7 @@ export function isValidGame(game) {
       || Number(game.strikeOpportunities) < Number(game.strikes))) return false;
     if (Number(game.score) === 300 && Number(game.strikes) !== 12) return false;
   }
+  if (game.notes !== undefined && (typeof game.notes !== 'string' || game.notes.length > 100000)) return false;
   if (game.alley !== undefined && (typeof game.alley !== 'string' || cleanAlley(game.alley).length > 100)) return false;
   if (game.ball !== undefined && (typeof game.ball !== 'string' || cleanBall(game.ball).length > 100)) return false;
   if (game.balls !== undefined && Balls.error(game.balls)) return false;
