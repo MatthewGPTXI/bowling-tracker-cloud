@@ -1,0 +1,28 @@
+name: Nightly edge-case stress tests
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seeded-domain-stress:
+    name: Edge cases (seed ${{ matrix.seed }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [1, 17, 2026, 314159, 4294967295]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Seeded randomized domain invariants
+        env:
+          BOWLING_TEST_SEED: ${{ matrix.seed }}
+        run: node tests/edge-cases.test.mjs
