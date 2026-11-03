@@ -119,8 +119,9 @@ for(let scenario=0;scenario<1600;scenario++){
   gamesGenerated+=all.length;scenarios++;
 }
 // A partial history should not fabricate a best series by treating missing positions as adjacent.
-const triple=[1,2,3].map((id,i)=>({...base,id,gameOrder:i+1}));
-assert.equal(bestThreeGameSeries(buildSessions(triple),triple.slice(0,2)),null);
+const full=[1,2,3,4].map((id,i)=>({...base,id,gameOrder:i+1}));
+const gap=[full[0],full[2],full[3]];
+assert.equal(bestThreeGameSeries(buildSessions(gap),full),null);
 
 console.log('PASS seeded edge cases: '+scenarios+' scenarios / '+gamesGenerated+' games; seed='+initialSeed+
   '; types, dates, score-only, no-tap, frame denominators, series, normalization, CSV safety.');
